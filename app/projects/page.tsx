@@ -43,7 +43,7 @@ export default function ProjectsPage(){
     setBusy(true);setError("");
     const {data:{user}}=await supabase.auth.getUser();
     if(!user){router.replace("/login");return}
-    const {data:project,error:projectError}=await supabase.from("projects").insert({brand_name:brandName.trim(),brand_description:description.trim()||null}).select().single();
+    const {data:project,error:projectError}=await supabase.from("projects").insert({brand_name:brandName.trim(),brand_description:description.trim()||null,created_by:user.id}).select().single();
     if(projectError||!project){setError(projectError?.message??"Unable to create project.");setBusy(false);return}
     const memberRole=role==="superadmin"?"superadmin":"admin";
     const {error:memberError}=await supabase.from("project_members").insert({project_id:project.id,user_id:user.id,role:memberRole});
