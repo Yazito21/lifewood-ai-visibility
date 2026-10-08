@@ -82,7 +82,6 @@ export default function ProjectsPage(){
         </div>
         <div className="hidden shrink-0 items-center gap-2 sm:flex">
           {role&&<span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium capitalize text-white/70"><ShieldCheck size={13} className="mr-1 inline"/>{role}</span>}
-          <button onClick={signOut} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-white/70 hover:bg-white/10 hover:text-white"><LogOut size={13}/> Sign out</button>
         </div>
       </div>
     </header>
