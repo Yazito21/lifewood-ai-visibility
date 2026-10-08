@@ -42,3 +42,78 @@ h1, h2, h3, h4, h5, h6 { text-transform: capitalize; }
 .platform-table tbody td { padding:.82rem .75rem; border-top:1px solid #edf0ed; vertical-align:middle; }
 .platform-table tbody tr:hover { background:#fafbf9; }
 @media (max-width:640px) { .page-title { font-size:1.85rem; } }
+
+
+/* Operations-platform visual primitives */
+:root {
+  --lw-castleton-green: #0D5B3A;
+  --lw-saffaron: #F5B64C;
+  --lw-dark-serpent: #133020;
+  --lw-paper: #F5EEDB;
+  --lw-border: #D9DED9;
+  --lw-text-light: #617064;
+}
+.ops-page { min-width:0; }
+.ops-card {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 4px 16px rgba(19,48,32,.045);
+  transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+}
+.ops-card:hover { box-shadow: 0 8px 24px rgba(19,48,32,.07); }
+.ops-toolbar {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 3px 12px rgba(19,48,32,.035);
+}
+.ops-kpi {
+  position:relative;
+  overflow:hidden;
+  border:1px solid var(--line);
+  border-radius:1rem;
+  background:#fff;
+  padding:1.25rem;
+  box-shadow:0 4px 16px rgba(19,48,32,.045);
+}
+.ops-kpi::before {
+  content:"";
+  position:absolute;
+  inset:0 auto 0 0;
+  width:4px;
+  background:var(--green);
+}
+.ops-kpi-accent::before { background:var(--orange); }
+.ops-kpi-label {
+  color:var(--muted);
+  font-size:.67rem;
+  font-weight:800;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+}
+.ops-kpi-value {
+  margin-top:.55rem;
+  color:var(--ink);
+  font-size:2rem;
+  font-weight:750;
+  letter-spacing:-.035em;
+}
+.ops-kpi-meta { margin-top:.25rem; color:var(--muted); font-size:.76rem; }
+.ops-section-title { font-size:1rem; font-weight:750; color:var(--ink); }
+.ops-section-description { margin-top:.25rem; color:var(--muted); font-size:.78rem; line-height:1.35rem; }
+.ops-divider { border-color:var(--line); }
+.ops-subtle { background:var(--paper); }
+.ops-status {
+  display:inline-flex;
+  align-items:center;
+  gap:.35rem;
+  border-radius:999px;
+  background:var(--soft);
+  color:var(--green);
+  padding:.35rem .65rem;
+  font-size:.68rem;
+  font-weight:800;
+}
+.ops-page .metric-chart,
+.ops-page [data-chart] { border-radius:1rem; }
