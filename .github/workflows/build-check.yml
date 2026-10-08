@@ -14,4 +14,8 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npx tsc --noEmit
-      - run: npm run build
+      - name: Build application
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://jhauufmrxpsbfrahgclv.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_BidkgIwJErFIj9HSwOS3uw_nz9ZgPNh
+        run: npm run build
