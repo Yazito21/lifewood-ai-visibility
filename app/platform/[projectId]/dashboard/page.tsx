@@ -1,25 +1,145 @@
 "use client";
 
-import { useEffect,useMemo,useState } from "react";
-import { CalendarDays,ExternalLink,RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, ExternalLink, RefreshCw } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
 
-type Metric={metric_date:string;topic:string;visibility_score:number|null;visibility_rank:number|null};
-type Citation={url:string;page_name:string|null;brand_name:string|null;frequency:number};
-const periods=["Today","Last 2 days","Last 7 Days","Last 14 Days","Last 30 Days","Last 90 Days","All Time","Custom"];
-function dateStart(period:string,customStart:string){if(period==="Custom")return customStart||new Date().toISOString().slice(0,10);const d=new Date();d.setHours(0,0,0,0);const days=period==="Today"?0:period==="Last 2 days"?1:period==="Last 7 Days"?6:period==="Last 14 Days"?13:period==="Last 30 Days"?29:period==="Last 90 Days"?89:3650;d.setDate(d.getDate()-days);return d.toISOString().slice(0,10)}
-export default function DashboardPage(){
- const {projectId}=useParams<{projectId:string}>();const [metrics,setMetrics]=useState<Metric[]>([]),[citations,setCitations]=useState<Citation[]>([]),[topics,setTopics]=useState<string[]>([]),[period,setPeriod]=useState("Last 7 Days"),[customStart,setCustomStart]=useState(""),[customEnd,setCustomEnd]=useState(new Date().toISOString().slice(0,10)),[loading,setLoading]=useState(true),[error,setError]=useState("");
- async function load(){setLoading(true);setError("");const {data:p}=await supabase.from("projects").select("topics").eq("id",projectId).single();const topicList=p?.topics??[];setTopics(topicList);const start=dateStart(period,customStart),end=period==="Custom"?customEnd:new Date().toISOString().slice(0,10);const [{data:md,error:me},{data:cd,error:ce}]=await Promise.all([supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id",projectId).eq("llm_provider","Overall").gte("metric_date",start).lte("metric_date",end).order("metric_date"),supabase.from("citations").select("url,page_name,brand_name,frequency").eq("project_id",projectId).eq("is_brand_related",true).gte("metric_date",start).lte("metric_date",end)]);if(me||ce)setError(me?.message||ce?.message||"Unable to load dashboard data.");setMetrics(md??[]);const grouped=new Map<string,Citation>();for(const row of cd??[]){const old=grouped.get(row.url);grouped.set(row.url,{url:row.url,page_name:row.page_name,brand_name:row.brand_name,frequency:(old?.frequency??0)+row.frequency})}setCitations([...grouped.values()].sort((a,b)=>b.frequency-a.frequency).slice(0,5));setLoading(false)}
- useEffect(()=>{load()},[projectId,period,customStart,customEnd]);
- const cardTopics=["Overall",...topics];const latestByTopic=useMemo(()=>{const m:Record<string,Metric|undefined>={};for(const row of metrics){if(!m[row.topic])m[row.topic]=row}return m},[metrics]);
- function chart(topic:string,key:"visibility_score"|"visibility_rank"){return metrics.filter(x=>x.topic===topic).map(x=>({label:new Date(x.metric_date+"T00:00:00").toLocaleDateString(undefined,{month:"short",day:"numeric"}),value:x[key]}))}
- return <ProjectShell><div className="ops-page"><div className="flex flex-col gap-5"><div><p className="page-eyebrow">Dashboard</p><h2 className="page-title mt-1 tracking-tight">AI visibility overview</h2><p className="page-description mt-2">Daily visibility performance across tracked topics.</p></div><div className="ops-filter-panel"><div className="ops-filter-row"><span className="ops-filter-label">Period</span>{periods.map(p=><button key={p} onClick={()=>setPeriod(p)} className={`ops-filter-btn ${period===p?"is-active":""}`}>{p}</button>)}{period==="Custom"&&<><input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} className="platform-input max-w-[180px] text-xs"/><input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} className="platform-input max-w-[180px] text-xs"/></>}</div></div></div>
- {error&&<div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
- <section className="ops-page"><div className="mb-3 flex items-center justify-between"><h3 className="text-lg font-semibold">Latest visibility rank</h3><button onClick={load} className="inline-flex items-center gap-2 platform-btn"><RefreshCw size={14}/> Refresh</button></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{cardTopics.map(topic=>{const m=latestByTopic[topic];return <div key={topic} className="ops-card p-5"><div className="text-xs font-bold uppercase tracking-[0.16em] text-[#66736c]">{topic}</div><div className="mt-2 text-4xl font-semibold">{m?.visibility_rank??"—"}</div><div className="mt-1 text-sm text-[#66736c]">Score {m?.visibility_score!=null?m.visibility_score.toFixed(1)+"%":"—"}</div></div>})}</div></section>
- <section className="ops-page"><h3 className="mb-3 text-lg font-semibold">Daily trends</h3>{loading?<div className="grid gap-5 md:grid-cols-2"><div className="h-64 animate-pulse rounded-2xl bg-white"/><div className="h-64 animate-pulse rounded-2xl bg-white"/></div>:<div className="grid gap-5 md:grid-cols-2">{cardTopics.map(topic=><div key={topic} className="space-y-4"><MetricChart data={chart(topic,"visibility_score")} title={topic+" — Visibility Score"} format="percent"/><MetricChart data={chart(topic,"visibility_rank")} title={topic+" — Visibility Rank"}/></div>)}</div>}</section>
- <section className="mt-8 ops-card p-6"><div className="flex items-center gap-2"><CalendarDays size={18} className="text-[var(--green)]"/><h3 className="text-lg font-semibold">Top cited brand pages</h3></div><p className="mt-1 text-sm text-[#66736c]">The five most frequently cited tracked-brand pages for the selected period.</p><div className="mt-5 overflow-x-auto"><table className="platform-table min-w-[760px]"><thead><tr className="border-b border-[var(--line)] text-xs uppercase tracking-[0.12em] text-[#66736c]"><th className="px-3 py-3">No.</th><th className="px-3 py-3">Page</th><th className="px-3 py-3">Page Name</th><th className="px-3 py-3">Brand Name</th><th className="px-3 py-3">Frequency</th></tr></thead><tbody>{citations.map((c,i)=><tr key={c.url} className="border-b border-[#eef0ee]"><td className="px-3 py-3">{i+1}</td><td className="max-w-[360px] truncate px-3 py-3"><a href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-semibold text-[var(--green)] hover:underline">{c.url}<ExternalLink size={13}/></a></td><td className="px-3 py-3">{c.page_name||"—"}</td><td className="px-3 py-3">{c.brand_name||"—"}</td><td className="px-3 py-3 font-semibold">{c.frequency}</td></tr>)}{!citations.length&&<tr><td colSpan={5} className="px-3 py-10 text-center text-sm text-[#66736c]">No citations recorded for this period.</td></tr>}</tbody></table></div></section>
- </div></ProjectShell>}
+type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null };
+type Citation = { metric_date: string; topic: string | null; url: string; page_name: string | null; brand_name: string | null; is_brand_related: boolean; frequency: number };
+type RankSnapshot = Metric & { previousRank: number | null };
+
+const periods = ["Today", "Last 2 days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"];
+
+function dateStart(period: string, customStart: string) {
+  if (period === "Custom") return customStart || new Date().toISOString().slice(0, 10);
+  const d = new Date(); d.setHours(0, 0, 0, 0);
+  const days = period === "Today" ? 0 : period === "Last 2 days" ? 1 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : 3650;
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+function aggregateCitations(rows: Citation[], topic: string) {
+  const map = new Map<string, { url: string; page_name: string | null; brand_name: string | null; frequency: number }>();
+  for (const row of rows) {
+    if (!row.is_brand_related || (row.topic ?? "Overall") !== topic) continue;
+    const old = map.get(row.url);
+    map.set(row.url, { url: row.url, page_name: row.page_name, brand_name: row.brand_name, frequency: (old?.frequency ?? 0) + row.frequency });
+  }
+  return [...map.values()].sort((a, b) => b.frequency - a.frequency).slice(0, 5);
+}
+
+export default function DashboardPage() {
+  const { projectId } = useParams<{ projectId: string }>();
+  const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [latestMetrics, setLatestMetrics] = useState<Metric[]>([]);
+  const [citations, setCitations] = useState<Citation[]>([]);
+  const [topics, setTopics] = useState<string[]>([]);
+  const [period, setPeriod] = useState("Last 7 Days");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState(new Date().toISOString().slice(0, 10));
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setLoading(true); setError("");
+    const { data: project, error: projectError } = await supabase.from("projects").select("topics").eq("id", projectId).single();
+    const topicList = project?.topics ?? []; setTopics(topicList);
+    const start = dateStart(period, customStart);
+    const end = period === "Custom" ? customEnd : new Date().toISOString().slice(0, 10);
+    const [{ data: chartRows, error: metricsError }, { data: latestRows, error: latestError }, { data: citationRows, error: citationsError }] = await Promise.all([
+      supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").gte("metric_date", start).lte("metric_date", end).order("metric_date"),
+      supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").order("metric_date", { ascending: false }).limit(500),
+      supabase.from("citations").select("metric_date,topic,url,page_name,brand_name,is_brand_related,frequency").eq("project_id", projectId).gte("metric_date", start).lte("metric_date", end),
+    ]);
+    const firstError = projectError || metricsError || latestError || citationsError;
+    if (firstError) setError(firstError.message || "Unable to load dashboard data.");
+    setMetrics(chartRows ?? []); setLatestMetrics(latestRows ?? []); setCitations(citationRows ?? []); setLoading(false);
+  }
+
+  useEffect(() => { void load(); }, [projectId, period, customStart, customEnd]);
+
+  const cardTopics = useMemo(() => ["Overall", ...topics.filter((topic) => topic !== "Overall")], [topics]);
+  const latestByTopic = useMemo(() => {
+    const grouped = new Map<string, Metric[]>();
+    for (const row of latestMetrics) grouped.set(row.topic, [...(grouped.get(row.topic) ?? []), row]);
+    const snapshots = new Map<string, RankSnapshot>();
+    for (const topic of cardTopics) {
+      const rows = grouped.get(topic) ?? []; const current = rows[0];
+      const previous = rows.find((row) => row.metric_date !== current?.metric_date && row.visibility_rank !== null);
+      if (current) snapshots.set(topic, { ...current, previousRank: previous?.visibility_rank ?? null });
+    }
+    return snapshots;
+  }, [latestMetrics, cardTopics]);
+
+  function chart(topic: string, key: "visibility_score" | "visibility_rank") {
+    return metrics.filter((row) => row.topic === topic).map((row) => ({
+      label: new Date(row.metric_date + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      value: row[key],
+    }));
+  }
+
+  return (
+    <ProjectShell>
+      <div className="ops-page space-y-8">
+        <section>
+          <p className="page-eyebrow">Project Overview</p>
+          <h2 className="page-title mt-1">Dashboard</h2>
+          <p className="page-description mt-2">A live overview of AI visibility performance across tracked answer engines and topics.</p>
+        </section>
+
+        <section className="ops-filter-panel">
+          <div className="ops-filter-row">
+            <span className="ops-filter-label">Period</span>
+            {periods.map((item) => <button key={item} onClick={() => setPeriod(item)} className={"ops-filter-btn " + (period === item ? "is-active" : "")}>{item}</button>)}
+            {period === "Custom" && <><label className="sr-only" htmlFor="dashboard-start">Start date</label><input id="dashboard-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="dashboard-end">End date</label><input id="dashboard-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
+          </div>
+        </section>
+
+        {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest ranking, score and movement for every tracked topic.</p></div>
+            <button onClick={() => void load()} className="platform-btn"><RefreshCw size={14} /> Refresh</button>
+          </div>
+          {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
+            <div className="flex gap-4 overflow-x-auto pb-2">
+              {cardTopics.map((topic) => {
+                const snapshot = latestByTopic.get(topic); const currentRank = snapshot?.visibility_rank ?? null; const previousRank = snapshot?.previousRank ?? null;
+                const change = currentRank !== null && previousRank !== null ? previousRank - currentRank : null;
+                return <article key={topic} className="ops-card min-w-[235px] flex-1 p-5 xl:min-w-0">
+                  <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className="rounded-full bg-[var(--soft)] px-2.5 py-1 text-[10px] font-bold text-[var(--primary)]">Latest</span></div>
+                  <div className="mt-4 flex items-end justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Rank</p><p className="mt-1 text-4xl font-semibold tracking-tight">{currentRank ?? "—"}</p></div><div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Score</p><p className="mt-1 text-lg font-semibold">{snapshot?.visibility_score != null ? snapshot.visibility_score.toFixed(1) + "%" : "—"}</p></div></div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[color-mix(in_srgb,var(--border)_35%,transparent)] pt-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Previous Rank</p><p className="mt-1 text-sm font-semibold">{previousRank ?? "—"}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Rank Change</p><p className={"mt-1 text-sm font-semibold " + (change === null ? "text-[var(--muted-foreground)]" : change > 0 ? "text-[var(--primary)]" : change < 0 ? "text-[var(--danger)]" : "text-[var(--muted-foreground)]")}>{change === null ? "—" : change > 0 ? "↑ " + change : change < 0 ? "↓ " + Math.abs(change) : "No change"}</p></div></div>
+                </article>;
+              })}
+            </div>}
+        </section>
+
+        <section className="space-y-4">
+          <div><p className="page-eyebrow">Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Daily Trends</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Daily visibility score and ranking across the selected period.</p></div>
+          <div className="space-y-5">
+            {cardTopics.map((topic) => <div key={topic} className="grid min-w-0 gap-5 xl:grid-cols-2"><MetricChart data={chart(topic, "visibility_score")} title={topic + " — Daily Visibility Score"} format="percent" /><MetricChart data={chart(topic, "visibility_rank")} title={topic + " — Daily Visibility Rank"} invert /></div>)}
+          </div>
+        </section>
+
+        <section className="space-y-5">
+          <div><p className="page-eyebrow">Citations</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Top Cited Brand Pages</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">The five most frequently cited tracked-brand pages for each topic in the selected period.</p></div>
+          {cardTopics.map((topic) => {
+            const rows = aggregateCitations(citations, topic);
+            return <div key={topic} className="ops-card p-5 sm:p-6">
+              <div className="flex items-center gap-2"><span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--soft)] text-[var(--primary)]"><CalendarDays size={16} /></span><h4 className="text-base font-semibold">{topic}</h4></div>
+              <div className="mt-4 overflow-x-auto"><table className="platform-table min-w-[760px]"><thead><tr><th>No.</th><th>Page</th><th>Page Name</th><th>Brand Name</th><th>Frequency</th></tr></thead><tbody>
+                {rows.map((row, index) => <tr key={row.url}><td>{index + 1}</td><td className="max-w-[380px]"><a href={row.url} target="_blank" rel="noreferrer" className="inline-flex max-w-[360px] items-center gap-1 truncate font-semibold text-[var(--green)] hover:underline">{row.url}<ExternalLink size={13} /></a></td><td>{row.page_name || "—"}</td><td>{row.brand_name || "—"}</td><td className="font-semibold">{row.frequency}</td></tr>)}
+                {!rows.length && <tr><td colSpan={5} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No citations recorded for this topic and period.</td></tr>}
+              </tbody></table></div>
+            </div>;
+          })}
+        </section>
+      </div>
+    </ProjectShell>
+  );
+}
