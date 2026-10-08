@@ -9,7 +9,8 @@ type Project={id:string;brand_name:string;brand_description:string|null;brand_lo
 
 export default function ProjectsPage(){
   const router=useRouter();
-  const [projects,setProjects]=useState<Project[]>([]);\n  const [latest,setLatest]=useState<Record<string,{rank:number|null;score:number|null}>>({});
+  const [projects,setProjects]=useState<Project[]>([]);
+  const [latest,setLatest]=useState<Record<string,{rank:number|null;score:number|null}>>({});
   const [role,setRole]=useState<"superadmin"|"admin"|"viewer"|null>(null);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
