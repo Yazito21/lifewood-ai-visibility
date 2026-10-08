@@ -9,7 +9,7 @@ type Project={id:string;brand_name:string;brand_description:string|null;brand_lo
 
 export default function ProjectsPage(){
   const router=useRouter();
-  const [projects,setProjects]=useState<Project[]>([]);
+  const [projects,setProjects]=useState<Project[]>([]);\n  const [latest,setLatest]=useState<Record<string,{rank:number|null;score:number|null}>>({});
   const [role,setRole]=useState<"superadmin"|"admin"|"viewer"|null>(null);
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
@@ -87,10 +87,10 @@ export default function ProjectsPage(){
       projects.length===0?<div className="mt-10 rounded-3xl border border-dashed border-[#cbd4cd] bg-white p-12 text-center"><FolderKanban className="mx-auto text-[#0d5b3a]" size={36}/><h2 className="mt-4 text-xl font-semibold">{emptyMessage}</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#66736c]">Projects become the container for the brand, prompts, LLM configurations, daily AI responses and analytics.</p></div>:
       <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
         {projects.map(p=><article key={p.id} className="group rounded-3xl border border-[#d9ded9] bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-xl">
-          <div className="flex items-start justify-between gap-4"><div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-[#eef4ef] text-[#0d5b3a] font-bold">{p.brand_logo_url?<img src={p.brand_logo_url} alt="" className="h-full w-full object-cover"/>:"AI"}</div><span className="rounded-full bg-[#fff5e0] px-3 py-1 text-xs font-bold text-[#8c5d13]">No data</span></div>
+          <div className="flex items-start justify-between gap-4"><div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl bg-[#eef4ef] text-[#0d5b3a] font-bold">{p.brand_logo_url?<img src={p.brand_logo_url} alt="" className="h-full w-full object-cover"/>:"AI"}</div><span className="rounded-full bg-[#fff5e0] px-3 py-1 text-xs font-bold text-[#8c5d13]">{latest[p.id]?"Tracked":"No data"}</span></div>
           <h2 className="mt-6 text-2xl font-semibold">{p.brand_name}</h2>
           <p className="mt-2 min-h-12 text-sm leading-6 text-[#66736c]">{p.brand_description||"No brand description has been added yet."}</p>
-          <div className="mt-7 rounded-2xl bg-[#f6f3eb] p-4"><div className="text-xs uppercase tracking-[0.15em] text-[#66736c]">Latest Rank & Score</div><div className="mt-2 flex items-end gap-3"><span className="text-3xl font-semibold">—</span><span className="pb-1 text-sm text-[#66736c]">No daily data yet</span></div></div>
+          <div className="mt-7 rounded-2xl bg-[#f6f3eb] p-4"><div className="text-xs uppercase tracking-[0.15em] text-[#66736c]">Latest Rank & Score</div><div className="mt-2 flex items-end gap-3"><span className="text-3xl font-semibold">{latest[p.id]?.rank??"—"}</span><span className="pb-1 text-sm text-[#66736c]">{latest[p.id]?.score!=null?`Score ${Number(latest[p.id].score).toFixed(1)}%`:"No daily data yet"}</span></div></div>
           <div className="mt-5 flex items-center justify-between"><button onClick={()=>router.push("/platform/"+p.id)} className="inline-flex items-center gap-2 text-sm font-semibold text-[#0d5b3a]">Open project <ArrowRight size={16}/></button>{role==="superadmin"&&<button onClick={()=>{setDeleteTarget(p);setConfirmName("")}} className="rounded-lg p-2 text-[#a13f35] hover:bg-red-50" aria-label={"Delete "+p.brand_name}><Trash2 size={17}/></button>}</div>
         </article>)}
       </div>}
