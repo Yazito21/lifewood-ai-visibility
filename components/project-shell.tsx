@@ -112,9 +112,6 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="hidden shrink-0 items-center gap-3 sm:flex">
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-white/65">Project workspace</span>
-            <button type="button" onClick={() => void signOut()} className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-white/70 hover:bg-white/10 hover:text-white">
-              Sign out
-            </button>
           </div>
           <button type="button" onClick={() => setMobileNavOpen((v) => !v)} className="rounded-lg p-2 text-white hover:bg-white/10 sm:hidden" aria-label="Toggle project navigation">
             {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
@@ -139,9 +136,6 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
           </Link>;
         })}
       </nav>
-      {mobileNavOpen && <div className="border-t border-[var(--line)] bg-[var(--card)] p-3 sm:hidden">
-        <button type="button" onClick={() => void signOut()} className="platform-btn w-full">Sign out</button>
-      </div>}
     </div>
 
     <main className="project-main mx-auto min-w-0 max-w-[1500px] p-4 sm:p-7 lg:p-8">
