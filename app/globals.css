@@ -219,13 +219,13 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
   border:1px dashed color-mix(in srgb,var(--line) 70%,transparent);
   border-radius:1rem;
   background:color-mix(in srgb,var(--card) 78%,transparent);
-  color:var(--muted);
+  color:var(--muted-foreground);
   text-align:center;
 }
 .platform-table { width:100%; border-collapse:collapse; font-size:.88rem; }
 .platform-table thead th {
   padding:.8rem .75rem;
-  color:var(--muted);
+  color:var(--muted-foreground);
   font-size:.68rem;
   font-weight:800;
   letter-spacing:.12em;
