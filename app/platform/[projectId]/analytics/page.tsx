@@ -21,38 +21,25 @@ export default function AnalyticsPage(){
       <p className="page-description mt-2">Compare visibility, share of voice and average position by answer engine.</p>
     </header>
 
-    <section className="mt-8 platform-card p-5 sm:p-6">
-      <div className="flex items-start gap-3 border-b border-[var(--line)] pb-4">
-        <div className="platform-icon"><Filter size={17}/></div>
-        <div>
-          <h3 className="text-lg font-semibold">Filters</h3>
-          <p className="mt-1 text-sm text-[var(--muted-foreground)]">Select the period, topics and answer engines to compare.</p>
-        </div>
+    <section className="mt-8 ops-filter-panel">
+      <div className="ops-filter-row">
+        <span className="ops-filter-label">Period</span>
+        {["Today","Last 2 Days","Last 7 Days","Last 14 Days","Last 30 Days","Last 90 Days","All Time"].map(p=>{
+          const normalized=p==="Last 2 Days"?"Last 2 days":p;
+          return <button key={p} onClick={()=>setPeriod(normalized)} className={`ops-filter-btn ${period===normalized?"is-active":""}`}>{p}</button>
+        })}
       </div>
-
-      <div className="pt-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <Filter size={17} className="text-[var(--green)]"/>
-          {["Today","Last 2 Days","Last 7 Days","Last 14 Days","Last 30 Days","Last 90 Days","All Time"].map(p=>{
-            const normalized=p==="Last 2 Days"?"Last 2 days":p;
-            return <button key={p} onClick={()=>setPeriod(normalized)} className={"rounded-xl border px-3 py-2 text-xs font-semibold "+(period===normalized?"border-[var(--green)] bg-[var(--green)] text-white":"border-[var(--line)] bg-white")}>{p}</button>
-          })}
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className="py-2 text-xs font-bold text-[#66736c]">Topics:</span>
-          {topics.map(t=>
-            <button key={t} onClick={()=>setSelectedTopics(v=>v.includes(t)?v.filter(x=>x!==t):[...v,t])} className={"rounded-full px-3 py-1.5 text-xs font-semibold "+(selectedTopics.includes(t)?"bg-[#0d5b3a] text-white":"bg-[var(--soft)] text-[var(--green)]")}>{t}</button>
-          )}
-          {topics.length===0&&<span className="py-2 text-xs text-[#66736c]">No topics configured.</span>}
-        </div>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          <span className="py-2 text-xs font-bold text-[#66736c]">LLMs:</span>
-          {LLMS.map(l=>
-            <button key={l} onClick={()=>setSelectedLlms(v=>v.includes(l)?v.filter(x=>x!==l):[...v,l])} className={"rounded-full px-3 py-1.5 text-xs font-semibold "+(selectedLlms.includes(l)?"bg-[#0d5b3a] text-white":"bg-[var(--soft)] text-[var(--green)]")}>{labels[l]}</button>
-          )}
-        </div>
+      <div className="ops-filter-row">
+        <span className="ops-filter-label">Topics</span>
+        {topics.length ? topics.map(t=>
+          <button key={t} onClick={()=>setSelectedTopics(v=>v.includes(t)?v.filter(x=>x!==t):[...v,t])} className={`ops-filter-pill ${selectedTopics.includes(t)?"is-active":""}`}>{t}</button>
+        ) : <span className="text-xs text-[var(--muted-foreground)]">No topics configured.</span>}
+      </div>
+      <div className="ops-filter-row">
+        <span className="ops-filter-label">Engines</span>
+        {LLMS.map(l=>
+          <button key={l} onClick={()=>setSelectedLlms(v=>v.includes(l)?v.filter(x=>x!==l):[...v,l])} className={`ops-filter-pill ${selectedLlms.includes(l)?"is-active":""}`}>{labels[l]}</button>
+        )}
       </div>
     </section>
 
