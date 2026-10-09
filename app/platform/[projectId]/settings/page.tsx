@@ -13,6 +13,35 @@ export default function SettingsPage(){
  useEffect(()=>{supabase.auth.getUser().then(async({data:{user}})=>{if(!user)return;const {data}=await supabase.from("profiles").select("ui_preferences").eq("id",user.id).single();if(data?.ui_preferences)setPreferences({...preferences,...data.ui_preferences});})},[]);
  useEffect(()=>{document.documentElement.style.fontSize=preferences.text_size+"%";document.body.style.zoom=String(preferences.scale/100);document.documentElement.classList.toggle("dark",preferences.theme==="dark");document.documentElement.dataset.theme=preferences.theme},[preferences]);
  async function saveBrand(){setBusy(true);setMessage("");setError("");const {error}=await supabase.from("projects").update({brand_name:brand.brand_name.trim(),brand_description:brand.brand_description.trim()||null,brand_domains:brand.brand_domains.split("\n").map(x=>x.trim()).filter(Boolean),brand_terms:brand.brand_terms.split("\n").map(x=>x.trim()).filter(Boolean),brand_logo_url:brand.brand_logo_url.trim()||null,topics}).eq("id",projectId);if(error)setError(error.message);else setMessage("Brand settings saved.");setBusy(false)}
+ const allowedLogoTypes=["image/png","image/jpeg","image/webp","image/gif","image/svg+xml","image/avif"];
+ async function uploadLogo(file?:File){
+  if(!file)return;
+  setMessage("");setError("");setLogoPreviewError("");
+  if(!canEdit){setError("Only project Admins and Superadmins can upload a logo.");return;}
+  if(!allowedLogoTypes.includes(file.type)){setError("Unsupported image format. Use PNG, JPEG, WebP, GIF, SVG or AVIF.");return;}
+  if(file.size>5*1024*1024){setError("Logo file must be 5 MB or smaller.");return;}
+  const extensionByType:Record<string,string>={"image/png":"png","image/jpeg":"jpg","image/webp":"webp","image/gif":"gif","image/svg+xml":"svg","image/avif":"avif"};
+  const path=projectId+"/logo."+extensionByType[file.type];
+  setLogoUploading(true);
+  const {error:uploadError}=await supabase.storage.from("project-brand-logos").upload(path,file,{upsert:true,contentType:file.type,cacheControl:"3600"});
+  if(uploadError){setError("Logo upload failed: "+uploadError.message);setLogoUploading(false);return;}
+  const {data}=supabase.storage.from("project-brand-logos").getPublicUrl(path);
+  const url=data.publicUrl+(data.publicUrl.includes("?")?"&":"?")+"v="+Date.now();
+  const {error:updateError}=await supabase.from("projects").update({brand_logo_url:url}).eq("id",projectId);
+  if(updateError){setError("The file uploaded, but the project logo could not be saved: "+updateError.message);setLogoUploading(false);return;}
+  setBrand(v=>({...v,brand_logo_url:url}));setMessage("Brand logo uploaded and saved.");setLogoUploading(false);
+ }
+ async function removeLogo(){
+  if(!canEdit||!brand.brand_logo_url)return;
+  setBusy(true);setMessage("");setError("");
+  const match=brand.brand_logo_url.split("?")[0].toLowerCase().match(/\.(png|jpe?g|webp|gif|svg|avif)$/);
+  const path=projectId+"/logo."+(match?.[1]||"png");
+  const {error:storageError}=await supabase.storage.from("project-brand-logos").remove([path]);
+  if(storageError){setError("Unable to remove the previous logo file: "+storageError.message);setBusy(false);return;}
+  const {error:updateError}=await supabase.from("projects").update({brand_logo_url:null}).eq("id",projectId);
+  if(updateError)setError(updateError.message);else{setBrand(v=>({...v,brand_logo_url:""}));setMessage("Brand logo removed.");}
+  setBusy(false);
+ }
  async function functionErrorMessage(error:any){
   if(error?.context instanceof Response){try{const body=await error.context.clone().json();if(body?.error)return body.error;}catch{}}
   return error?.message||"Failed to contact the Edge Function.";
