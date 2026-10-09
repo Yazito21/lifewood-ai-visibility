@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download, FlaskConical, Play, RefreshCw, CheckSquare, Square, ExternalLink } from "lucide-react";
+import { Download, FlaskConical, Play, RefreshCw, CheckSquare, Square, ExternalLink, Search } from "lucide-react";
 import { useParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import { ProjectShell } from "@/components/project-shell";
@@ -42,6 +42,12 @@ export default function SamplesPage() {
   const [error, setError] = useState("");
   const [payload, setPayload] = useState<SamplePayload | null>(null);
   const [runNumber, setRunNumber] = useState(0);
+  const [resultSearch, setResultSearch] = useState("");
+  const [pagesSearch, setPagesSearch] = useState("");
+  const [competitorsSearch, setCompetitorsSearch] = useState("");
+  const [resultsExpanded, setResultsExpanded] = useState(false);
+  const [pagesExpanded, setPagesExpanded] = useState(false);
+  const [competitorsExpanded, setCompetitorsExpanded] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -67,6 +73,16 @@ export default function SamplesPage() {
     (p.prompt.toLowerCase().includes(search.toLowerCase()) || p.topic.toLowerCase().includes(search.toLowerCase()))
   );
   const selectedPrompts = prompts.filter((p) => selected.includes(p.id));
+  const filteredResults = (payload?.results ?? []).filter((r) =>
+    [r.prompt, r.topic, r.provider, r.status, String(r.prompt_number)].some((value) =>
+      value.toLowerCase().includes(resultSearch.trim().toLowerCase())
+    )
+  );
+  const visibleResults = resultsExpanded ? filteredResults : filteredResults.slice(0, 10);
+  const filteredCompetitors = (payload?.competitors ?? []).filter((c) =>
+    c.domain.toLowerCase().includes(competitorsSearch.trim().toLowerCase())
+  );
+  const visibleCompetitors = competitorsExpanded ? filteredCompetitors : filteredCompetitors.slice(0, 10);
 
   function togglePrompt(id: string) {
     setSelected((current) => current.includes(id) ? current.filter((x) => x !== id) : current.length >= 25 ? current : [...current, id]);
@@ -164,11 +180,11 @@ export default function SamplesPage() {
           <p className="page-description mt-2">Run temporary tests against selected prompts and AI answer engines without changing your platform analytics.</p>
         </header>
 
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="sample-notice rounded-2xl px-4 py-3 text-sm">
           <strong>Temporary runs:</strong> sample results are held only in this page's current session. They are not saved to the database and are excluded from Dashboard and Analytics. Download the Excel workbook before leaving or refreshing the page.
         </div>
 
-        {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+        {error && <div role="alert" className="sample-error rounded-xl px-4 py-3 text-sm">{error}</div>}
 
         <section className="ops-card overflow-hidden">
           <div className="border-b border-[var(--border)] p-5 sm:p-6">
@@ -242,13 +258,19 @@ export default function SamplesPage() {
             <div className="ops-kpi"><div className="ops-kpi-label">Completed</div><div className="ops-kpi-value">{payload.summary.completed}</div><div className="ops-kpi-meta">Successful responses</div></div>
             <div className="ops-kpi"><div className="ops-kpi-label">Failed</div><div className="ops-kpi-value">{payload.summary.failed}</div><div className="ops-kpi-meta">Failed prompt requests</div></div>
           </div>
-          <div className="ops-card overflow-hidden">
-            <div className="p-5"><h3 className="font-semibold">Prompt-level results</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Responses and brand mentions for this temporary run.</p></div>
-            <div className="overflow-x-auto"><table className="platform-table min-w-[850px]"><thead><tr><th>Prompt</th><th>Topic</th><th>Engine</th><th>Status</th><th>Brand mentioned</th><th>Brand pages cited</th></tr></thead><tbody>
-              {payload.results.map((r, i) => <tr key={r.prompt_id + r.provider + i}><td className="max-w-[420px]"><div className="text-xs font-bold text-[var(--muted-foreground)]">#{r.prompt_number}</div><div className="mt-1 whitespace-normal">{r.prompt}</div>{r.response_text && <details className="mt-2"><summary className="cursor-pointer text-xs font-semibold text-[var(--primary)]">View full response</summary><p className="mt-2 max-w-2xl whitespace-pre-wrap text-xs leading-5">{r.response_text}</p></details>}{r.error_message && <p className="mt-1 text-xs text-red-700">{r.error_message}</p>}</td><td>{r.topic}</td><td>{r.provider}</td><td><span className={"ops-status " + (r.status === "completed" ? "text-[var(--primary)]" : "text-red-700")}>{r.status}</span></td><td>{r.status === "completed" ? (r.brand_mentioned ? "Yes" : "No") : "—"}</td><td>{r.citations.filter((c) => c.is_brand_related).length}</td></tr>)}
+          <div className="ops-card overflow-hidden sample-table-card">
+            <div className="p-5"><h3 className="font-semibold">Prompt-level results</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Responses and brand mentions for this temporary run.</p>
+              <div className="sample-table-tools mt-4">
+                <label className="sample-search"><Search size={16} aria-hidden="true"/><input value={resultSearch} onChange={(e) => { setResultSearch(e.target.value); setResultsExpanded(false); }} placeholder="Search results…" aria-label="Search prompt-level results"/></label>
+                <span className="text-xs text-[var(--muted-foreground)]">Showing {visibleResults.length} of {filteredResults.length} matching rows</span>
+              </div>
+            </div>
+            <div className="sample-table-wrap overflow-x-auto"><table className="platform-table sample-data-table min-w-[850px]"><thead><tr><th>Prompt</th><th>Topic</th><th>Engine</th><th>Status</th><th>Brand mentioned</th><th>Brand pages cited</th></tr></thead><tbody>
+              {visibleResults.map((r, i) => <tr key={r.prompt_id + r.provider + i}><td className="max-w-[420px]"><div className="text-xs font-bold text-[var(--muted-foreground)]">#{r.prompt_number}</div><div className="mt-1 whitespace-normal">{r.prompt}</div>{r.response_text && <details className="mt-2"><summary className="cursor-pointer text-xs font-semibold text-[var(--primary)]">View full response</summary><p className="mt-2 max-w-2xl whitespace-pre-wrap text-xs leading-5">{r.response_text}</p></details>}{r.error_message && <p className="mt-1 text-xs text-red-700">{r.error_message}</p>}</td><td>{r.topic}</td><td>{r.provider}</td><td><span className={"ops-status " + (r.status === "completed" ? "text-[var(--primary)]" : "text-red-700")}>{r.status}</span></td><td>{r.status === "completed" ? (r.brand_mentioned ? "Yes" : "No") : "—"}</td><td>{r.citations.filter((c) => c.is_brand_related).length}</td></tr>)}
             </tbody></table></div>
+            {filteredResults.length > 10 && <div className="sample-table-footer"><button type="button" onClick={() => setResultsExpanded((value) => !value)} className="ops-filter-btn">{resultsExpanded ? "Show first 10" : "Show all " + filteredResults.length + " rows"}</button></div>}
           </div>
-          <div className="ops-card overflow-hidden">
+          <div className="ops-card overflow-hidden sample-table-card">
             <div className="p-5"><h3 className="font-semibold">All pages cited</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Every distinct source page identified in the AI response's web-search citations, ranked by frequency across selected prompts. This includes brand and non-brand pages.</p></div>
             {(() => {
               const pages = new Map<string, { url: string; title: string; domain: string; frequency: number; prompts: Set<string>; brandRelated: boolean }>();
@@ -261,18 +283,33 @@ export default function SamplesPage() {
                 pages.set(c.url, item);
               }
               const sorted = [...pages.values()].sort((a,b) => b.frequency - a.frequency || a.title.localeCompare(b.title));
-              return <div className="overflow-x-auto"><table className="platform-table min-w-[850px]"><thead><tr><th>Frequency</th><th>Page title</th><th>Domain</th><th>URL</th><th>Prompts</th><th>Brand page</th></tr></thead><tbody>
-                {sorted.map((p) => <tr key={p.url}><td><span className="font-semibold">{p.frequency}</span></td><td className="max-w-[260px] whitespace-normal">{p.title || "Untitled page"}</td><td>{p.domain}</td><td className="max-w-[360px]"><a className="inline-flex items-center gap-1 break-all font-semibold text-[var(--primary)] hover:underline" href={p.url} target="_blank" rel="noreferrer">{p.url}<ExternalLink size={12}/></a></td><td>{p.prompts.size}</td><td>{p.brandRelated ? "Yes" : "No"}</td></tr>)}
-                {!sorted.length && <tr><td colSpan={6} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No source pages were returned. The run may have had no usable web-search citations, or the API response may not include source metadata.</td></tr>}
-              </tbody></table></div>;
+              const filteredPages = sorted.filter((p) => [p.title, p.domain, p.url].some((value) => value.toLowerCase().includes(pagesSearch.trim().toLowerCase())));
+              const visiblePages = pagesExpanded ? filteredPages : filteredPages.slice(0, 10);
+              return <>
+                <div className="sample-table-tools px-5 pb-4">
+                  <label className="sample-search"><Search size={16} aria-hidden="true"/><input value={pagesSearch} onChange={(e) => { setPagesSearch(e.target.value); setPagesExpanded(false); }} placeholder="Search cited pages…" aria-label="Search cited pages"/></label>
+                  <span className="text-xs text-[var(--muted-foreground)]">Showing {visiblePages.length} of {filteredPages.length} matching rows</span>
+                </div>
+                <div className="sample-table-wrap overflow-x-auto"><table className="platform-table sample-data-table min-w-[850px]"><thead><tr><th>Frequency</th><th>Page title</th><th>Domain</th><th>URL</th><th>Prompts</th><th>Brand page</th></tr></thead><tbody>
+                {visiblePages.map((p) => <tr key={p.url}><td><span className="font-semibold">{p.frequency}</span></td><td className="max-w-[260px] whitespace-normal">{p.title || "Untitled page"}</td><td>{p.domain}</td><td className="max-w-[360px]"><a className="inline-flex items-center gap-1 break-all font-semibold text-[var(--primary)] hover:underline" href={p.url} target="_blank" rel="noreferrer">{p.url}<ExternalLink size={12}/></a></td><td>{p.prompts.size}</td><td>{p.brandRelated ? "Yes" : "No"}</td></tr>)}
+                {!filteredPages.length && <tr><td colSpan={6} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No source pages were returned. The run may have had no usable web-search citations, or the API response may not include source metadata.</td></tr>}
+              </tbody></table></div>
+                {filteredPages.length > 10 && <div className="sample-table-footer"><button type="button" onClick={() => setPagesExpanded((value) => !value)} className="ops-filter-btn">{pagesExpanded ? "Show first 10" : "Show all " + filteredPages.length + " rows"}</button></div>
+              </>;
             })()}
           </div>
-          <div className="ops-card overflow-hidden">
-            <div className="p-5"><h3 className="font-semibold">Observed competitor domains</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Non-brand domains found in response URLs; these are heuristic observations.</p></div>
-            <div className="overflow-x-auto"><table className="platform-table min-w-[500px]"><thead><tr><th>Domain</th><th>Prompt citations</th></tr></thead><tbody>
-              {payload.competitors.map((c) => <tr key={c.domain}><td>{c.domain}</td><td>{c.mentions}</td></tr>)}
-              {!payload.competitors.length && <tr><td colSpan={2} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No competitor domains found.</td></tr>}
+          <div className="ops-card overflow-hidden sample-table-card">
+            <div className="p-5"><h3 className="font-semibold">Observed competitor domains</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Non-brand domains found in response URLs; these are heuristic observations.</p>
+              <div className="sample-table-tools mt-4">
+                <label className="sample-search"><Search size={16} aria-hidden="true"/><input value={competitorsSearch} onChange={(e) => { setCompetitorsSearch(e.target.value); setCompetitorsExpanded(false); }} placeholder="Search competitors…" aria-label="Search competitor domains"/></label>
+                <span className="text-xs text-[var(--muted-foreground)]">Showing {visibleCompetitors.length} of {filteredCompetitors.length} matching rows</span>
+              </div>
+            </div>
+            <div className="sample-table-wrap overflow-x-auto"><table className="platform-table sample-data-table min-w-[500px]"><thead><tr><th>Domain</th><th>Prompt citations</th></tr></thead><tbody>
+              {visibleCompetitors.map((c) => <tr key={c.domain}><td>{c.domain}</td><td>{c.mentions}</td></tr>)}
+              {!filteredCompetitors.length && <tr><td colSpan={2} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No competitor domains found.</td></tr>}
             </tbody></table></div>
+            {filteredCompetitors.length > 10 && <div className="sample-table-footer"><button type="button" onClick={() => setCompetitorsExpanded((value) => !value)} className="ops-filter-btn">{competitorsExpanded ? "Show first 10" : "Show all " + filteredCompetitors.length + " rows"}</button></div>}
           </div>
         </section>}
       </div>
