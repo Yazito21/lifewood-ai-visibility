@@ -50,12 +50,17 @@ function containsTerm(text: string, terms: string[]) {
 }
 
 function escapeRegexTerm(value: string) {
-  return value.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\function containsTerm(text: string, terms: string[]) {
-  const normalized = text.toLocaleLowerCase();
-  return terms.some((term) => term.trim().length > 1 && normalized.includes(term.trim().toLocaleLowerCase()));
-}");
+  return value.replace(/[|\\{}()[\]^$+*?.]/g, (character) => "\\\\" + character);
 }
 
+function containsTerm(text: string, terms: string[]) {
+  const normalized = text.toLocaleLowerCase();
+  return terms.some((term) => term.trim().length > 1 && normalized.includes(term.trim().toLocaleLowerCase()));
+}
+
+function normalizedHostLabel(value: string) {
+  return value.toLowerCase().replace(/^https?:\\/\\//, "").replace(/^www\\./, "").split("/")[0].split(":")[0];
+}
 function matchingSpans(text: string, terms: string[]) {
   const clean = [...new Set(terms.map((term) => term.trim()).filter((term) => term.length > 1))]
     .sort((a, b) => b.length - a.length);
