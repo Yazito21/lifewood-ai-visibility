@@ -154,9 +154,9 @@ export default function DashboardPage() {
               {cardTopics.map((topic) => {
                 const snapshot = latestByTopic.get(topic); const currentRank = snapshot?.visibility_rank ?? null; const previousRank = snapshot?.previousRank ?? null;
                 const change = currentRank !== null && previousRank !== null ? previousRank - currentRank : null;
-                return <article key={topic} className="platform-card min-w-[235px] flex-1 p-5">
-                  <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className="rounded-full bg-[var(--soft)] px-2.5 py-1 text-[10px] font-bold text-[var(--primary)]">Latest</span></div>
-                  <div className="mt-4 flex items-end justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Rank</p><p className="mt-1 text-4xl font-semibold tracking-tight">{currentRank ?? "—"}</p></div><div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Score</p><p className="mt-1 text-lg font-semibold">{snapshot?.visibility_score != null ? snapshot.visibility_score.toFixed(1) + "%" : "—"}</p></div></div>
+                return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (topic === "Overall" ? "platform-card-overall" : "")}>
+                  <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (topic === "Overall" ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>Latest</span></div>
+                  <div className="mt-4 flex items-end justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Rank</p><p className={"mt-1 text-4xl font-semibold tracking-tight " + (topic === "Overall" ? "platform-overall-value" : "")}>{currentRank ?? "—"}</p></div><div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Score</p><p className={"mt-1 text-lg font-semibold " + (topic === "Overall" ? "platform-overall-value" : "")}>{snapshot?.visibility_score != null ? snapshot.visibility_score.toFixed(1) + "%" : "—"}</p></div></div>
                   <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[color-mix(in_srgb,var(--border)_35%,transparent)] pt-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Previous Rank</p><p className="mt-1 text-sm font-semibold">{previousRank ?? "—"}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Rank Change</p><p className={"mt-1 text-sm font-semibold " + (change === null ? "text-[var(--muted-foreground)]" : change > 0 ? "text-[var(--primary)]" : change < 0 ? "text-[var(--danger)]" : "text-[var(--muted-foreground)]")}>{change === null ? "—" : change > 0 ? "↑ " + change : change < 0 ? "↓ " + Math.abs(change) : "No change"}</p></div></div>
                 </article>;
               })}
@@ -166,13 +166,13 @@ export default function DashboardPage() {
         <section className="space-y-4">
           <div><p className="page-eyebrow">Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Daily Trends</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Daily visibility score and ranking across the selected period.</p></div>
           <div className="space-y-5">
-            {cardTopics.map((topic) => <div key={topic} className="grid min-w-0 gap-5 xl:grid-cols-2"><MetricChart data={chart(topic, "visibility_score")} title={topic + " — Daily Visibility Score"} format="percent" /><MetricChart data={chart(topic, "visibility_rank")} title={topic + " — Daily Visibility Rank"} invert /></div>)}
+            {cardTopics.map((topic) => <div key={topic} className="grid min-w-0 gap-5 xl:grid-cols-2"><MetricChart data={chart(topic, "visibility_score")} title={topic + " — Daily Visibility Score"} format="percent" tone={topic === "Overall" ? "overall" : "default"} /><MetricChart data={chart(topic, "visibility_rank")} title={topic + " — Daily Visibility Rank"} invert tone={topic === "Overall" ? "overall" : "default"} /></div>)}
           </div>
         </section>
 
         <section className="space-y-5">
           <div><p className="page-eyebrow">Citations</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Top Cited Brand Pages</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">The five most frequently cited tracked-brand pages for each topic in the selected period.</p></div>
-          {cardTopics.map((topic) => {
+          {cardTopics.filter((topic) => topic !== "Overall").map((topic) => {
             const rows = aggregateCitations(citations, topic);
             return <div key={topic} className="platform-card p-5 sm:p-6">
               <div className="flex items-center gap-2"><span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--soft)] text-[var(--primary)]"><CalendarDays size={16} /></span><h4 className="text-base font-semibold">{topic}</h4></div>
