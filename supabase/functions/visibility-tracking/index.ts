@@ -48,6 +48,35 @@ function containsTerm(text: string, terms: string[]) {
   const normalized = text.toLocaleLowerCase();
   return terms.some((term) => term.trim().length > 1 && normalized.includes(term.trim().toLocaleLowerCase()));
 }
+
+function escapeRegexTerm(value: string) {
+  return value.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\function containsTerm(text: string, terms: string[]) {
+  const normalized = text.toLocaleLowerCase();
+  return terms.some((term) => term.trim().length > 1 && normalized.includes(term.trim().toLocaleLowerCase()));
+}");
+}
+
+function matchingSpans(text: string, terms: string[]) {
+  const clean = [...new Set(terms.map((term) => term.trim()).filter((term) => term.length > 1))]
+    .sort((a, b) => b.length - a.length);
+  if (!clean.length) return [] as Array<{ start: number; end: number }>;
+  const regex = new RegExp("(?<![A-Za-z0-9])(?:" + clean.map(escapeRegexTerm).join("|") + ")(?![A-Za-z0-9])", "gi");
+  const spans: Array<{ start: number; end: number }> = [];
+  for (const match of text.matchAll(regex)) {
+    const start = match.index ?? 0;
+    spans.push({ start, end: start + match[0].length });
+  }
+  return spans;
+}
+
+function countTermMentions(text: string, terms: string[]) {
+  return matchingSpans(text, terms).length;
+}
+
+function normalizedHostLabel(value: string) {
+  return value.toLowerCase().replace(/^https?:\\/\\//, "").replace(/^www\\./, "").split("/")[0].split(":")[0];
+}
+
 function urlsIn(text: string) {
   const matches = text.match(/https?:\/\/[^\s<>"')\]]+/gi) ?? [];
   return [...new Set(matches.map((u) => u.replace(/[.,;:!?]+$/, "")))].slice(0, 40);
@@ -338,22 +367,115 @@ Deno.serve(async (req: Request) => {
       if (error) console.error("COMPETITORS_WRITE_FAILED", error.message);
     }
 
-    const allBrands = new Map<string, number>();
-    for (const [host, count] of competitorMap) allBrands.set(host, count);
     const brandName = String(project.brand_name ?? "Brand");
     const brandTerms = [brandName, ...(Array.isArray(project.brand_terms) ? project.brand_terms.map(String) : [])].filter(Boolean);
+
+    // Build a conservative list of identifiable competing brands from the non-owned
+    // citation names/domains observed in this run. Mentions are matched against the
+    // answer text, not inferred from citation frequency.
+    const competitorAliases = new Map<string, Set<string>>();
+    for (const result of succeeded) {
+      for (const citation of result.citations as Array<Record<string, unknown>>) {
+        if (citation.is_brand_related) continue;
+        const label = String(citation.brand_name ?? "").trim();
+        const domain = normalizedHostLabel(String(citation.domain ?? citation.url ?? ""));
+        const stem = domain.split(".")[0]?.replace(/[-_]+/g, " ") ?? "";
+        const key = (label || stem || domain).toLocaleLowerCase();
+        if (!key) continue;
+        const aliases = competitorAliases.get(key) ?? new Set<string>();
+        if (label.length > 1) aliases.add(label);
+        if (domain.length > 1) aliases.add(domain);
+        if (stem.length > 1) aliases.add(stem);
+        competitorAliases.set(key, aliases);
+      }
+    }
+    const competitorEntities = [...competitorAliases.entries()].map(([key, aliases]) => ({
+      key,
+      aliases: [...aliases].filter((alias) => !brandTerms.some((term) => term.toLowerCase() === alias.toLowerCase())),
+    })).filter((entity) => entity.aliases.length > 0);
+    const brandKey = "__tracked_brand__";
+    const entities = [
+      { key: brandKey, aliases: brandTerms },
+      ...competitorEntities,
+    ];
+
+    function analyzeSubset(subset: Array<Record<string, unknown>>) {
+      const brandResponseCount = subset.filter((result) =>
+        countTermMentions(String(result.response_text ?? ""), brandTerms) > 0
+      ).length;
+      const visibilityScore = subset.length ? Math.round(brandResponseCount / subset.length * 1000) / 10 : 0;
+
+      const mentionCounts = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
+      const presenceCounts = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
+      const positionTotals = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
+      const positionSamples = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
+      let totalBrandMentions = 0;
+      let targetPositionTotal = 0;
+      let targetPositionSamples = 0;
+
+      for (const result of subset) {
+        const text = String(result.response_text ?? "");
+        const firstPositions = new Map<string, number>();
+        for (const entity of entities) {
+          const spans = matchingSpans(text, entity.aliases);
+          mentionCounts.set(entity.key, (mentionCounts.get(entity.key) ?? 0) + spans.length);
+          if (spans.length) {
+            presenceCounts.set(entity.key, (presenceCounts.get(entity.key) ?? 0) + 1);
+            firstPositions.set(entity.key, spans[0].start);
+          }
+        }
+        totalBrandMentions += entities.reduce((sum, entity) => sum + countTermMentions(text, entity.aliases), 0);
+        if (firstPositions.has(brandKey)) {
+          const ordered = [...firstPositions.entries()].sort((a, b) => a[1] - b[1]);
+          const targetPosition = ordered.findIndex(([key]) => key === brandKey) + 1;
+          if (targetPosition > 0) {
+            targetPositionTotal += targetPosition;
+            targetPositionSamples += 1;
+          }
+        }
+        for (const [key, firstPosition] of firstPositions) {
+          const ordered = [...firstPositions.entries()].sort((a, b) => a[1] - b[1]);
+          const rank = ordered.findIndex(([candidate]) => candidate === key) + 1;
+          if (rank > 0) {
+            positionTotals.set(key, (positionTotals.get(key) ?? 0) + rank);
+            positionSamples.set(key, (positionSamples.get(key) ?? 0) + 1);
+          }
+        }
+      }
+
+      const brandMentions = mentionCounts.get(brandKey) ?? 0;
+      const shareOfVoice = totalBrandMentions > 0 ? Math.round(brandMentions / totalBrandMentions * 1000) / 10 : 0;
+      const averagePosition = targetPositionSamples > 0
+        ? Math.round(targetPositionTotal / targetPositionSamples * 100) / 100
+        : null;
+      const visibilityRank = 1 + [...presenceCounts.entries()]
+        .filter(([key, count]) => key !== brandKey && count > brandResponseCount).length;
+      const shareOfVoiceRank = 1 + [...mentionCounts.entries()]
+        .filter(([key, count]) => key !== brandKey && count > brandMentions).length;
+      const competitorAveragePositions = [...positionTotals.entries()]
+        .filter(([key]) => key !== brandKey)
+        .map(([key, total]) => ({ key, average: (positionSamples.get(key) ?? 0) ? total / (positionSamples.get(key) ?? 1) : null }))
+        .filter((item) => item.average !== null) as Array<{ key: string; average: number }>;
+      const averagePositionRank = averagePosition === null
+        ? null
+        : 1 + competitorAveragePositions.filter((item) => item.average! < averagePosition).length;
+
+      return {
+        visibility_score: visibilityScore,
+        visibility_rank: visibilityRank,
+        share_of_voice_score: shareOfVoice,
+        share_of_voice_rank: shareOfVoiceRank,
+        average_position: averagePosition,
+        average_position_rank: averagePositionRank,
+      };
+    }
+
     for (const topic of ["Overall", ...topicNames]) {
       const subset = succeeded.filter((r) => topic === "Overall" || r.topic === topic);
-      const mentioned = subset.filter((r) => containsTerm(String(r.response_text ?? ""), brandTerms)).length;
-      const score = subset.length ? Math.round(mentioned / subset.length * 1000) / 10 : 0;
-      const hosts = new Map<string,number>();
-      for (const result of subset) for (const host of result.competitor_hosts as string[]) hosts.set(host, (hosts.get(host) ?? 0) + 1);
-      const rank = 1 + [...hosts.values()].filter((count) => count > mentioned).length;
+      const metrics = analyzeSubset(subset);
       const row = {
         project_id: projectId, metric_date: day, topic, llm_provider: "Overall",
-        visibility_score: score, visibility_rank: rank,
-        share_of_voice_score: score, share_of_voice_rank: rank,
-        average_position: null, average_position_rank: null,
+        ...metrics,
         citation_count: subset.reduce((sum, r) => sum + (r.citations as unknown[]).length, 0),
       };
       const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,topic,llm_provider" });
@@ -363,7 +485,7 @@ Deno.serve(async (req: Request) => {
       if (providerError) console.error("PROVIDER_METRICS_WRITE_FAILED", topic, providerError.message);
     }
 
-    const status = failed.length === 0 ? "completed" : succeeded.length ? "partial" : "failed";
+        const status = failed.length === 0 ? "completed" : succeeded.length ? "partial" : "failed";
     await admin.from("tracking_runs").update({
       status, completed_prompts: succeeded.length, failed_prompts: failed.length,
       error_message: failed.length ? String(failed.length) + " prompt(s) failed." : null,
