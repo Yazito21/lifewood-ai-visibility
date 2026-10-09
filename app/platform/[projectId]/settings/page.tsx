@@ -39,8 +39,8 @@ export default function SettingsPage(){
   const {error:storageError}=await supabase.storage.from("project-brand-logos").remove([path]);
   if(storageError){setError("Unable to remove the previous logo file: "+storageError.message);setBusy(false);return;}
   const {error:updateError}=await supabase.from("projects").update({brand_logo_url:null}).eq("id",projectId);
-  if(updateError)setError(updateError.message);else{setBrand(v=>({...v,brand_logo_url:""}));setMessage("Brand logo removed.");}
-  setBusy(false);
+  if(updateError){setError(updateError.message);setBusy(false);return;}
+  setBrand(v=>({...v,brand_logo_url:""}));setMessage("Brand logo removed.");setBusy(false);
  }
  async function functionErrorMessage(error:any){
   if(error?.context instanceof Response){try{const body=await error.context.clone().json();if(body?.error)return body.error;}catch{}}
