@@ -13,6 +13,19 @@ type RankSnapshot = Metric & { previousRank: number | null };
 
 const periods = ["Today", "Last 2 days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"];
 
+function malaysiaDateString(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kuala_Lumpur",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+  return `${year}-${month}-${day}`;
+}
+
 function dateStart(period: string, customStart: string) {
   if (period === "Custom") return customStart || new Date().toISOString().slice(0, 10);
   const d = new Date(); d.setHours(0, 0, 0, 0);
