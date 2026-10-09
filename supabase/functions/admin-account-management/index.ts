@@ -115,7 +115,7 @@ Deno.serve(withSupabase({ auth: "user" }, async (req, ctx) => {
     if (action === "update") {
       if (!name || !email) return json({ error: "Name and email are required." }, 400);
       if (password && password.length < 8) return json({ error: "Password must be at least 8 characters." }, 400);
-      if (requestedProjects.length === 0) return json({ error: "Assign the account to at least one project." }, 400);
+      if (requestedProjects.length === 0 && !isSuperadmin) return json({ error: "Assign the account to at least one project." }, 400);
       if (requestedProjects.some((id: string) => !manageableProjectIds.includes(id))) return json({ error: "You can only assign accounts to projects you manage." }, 403);
       if (targetId === callerId && isSuperadmin && requestedRole !== "superadmin") return json({ error: "You cannot remove your own Superadmin role." }, 403);
 
