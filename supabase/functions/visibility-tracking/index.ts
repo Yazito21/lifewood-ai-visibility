@@ -298,7 +298,6 @@ Deno.serve(async (req: Request) => {
     const citationsMap = new Map<string, Record<string,unknown>>();
     const competitorMap = new Map<string, number>();
     const competitorTopicMap = new Map<string, number>();
-    const competitorTopicMap = new Map<string, number>();
     for (const result of succeeded) {
       for (const c of result.citations as Array<Record<string,unknown>>) {
         const key = String(c.url) + "|" + String(result.topic);
