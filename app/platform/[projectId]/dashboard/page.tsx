@@ -102,14 +102,18 @@ export default function DashboardPage() {
     async function loadPermissions() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      const [{ data: profile }, { data: member }] = await Promise.all([
+      const [{ data: profile }, { data: member }, { data: dailyClaim }] = await Promise.all([
         supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
         supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle(),
+        supabase.from("tracking_run_daily_claims").select("run_date").eq("project_id", projectId).eq("run_date", malaysiaDateString()).maybeSingle(),
       ]);
-      if (alive) setCanRunTracking(
-        profile?.role === "superadmin" || profile?.role === "admin" ||
-        member?.role === "superadmin" || member?.role === "admin"
-      );
+      if (alive) {
+        setCanRunTracking(
+          profile?.role === "superadmin" || profile?.role === "admin" ||
+          member?.role === "superadmin" || member?.role === "admin"
+        );
+        setDailyRunClaimed(Boolean(dailyClaim));
+      }
     }
     void loadPermissions();
     return () => { alive = false; };
