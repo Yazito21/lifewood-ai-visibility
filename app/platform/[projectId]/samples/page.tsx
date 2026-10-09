@@ -90,7 +90,12 @@ export default function SamplesPage() {
       if (error) {
         let message = error.message;
         if (error.context instanceof Response) {
-          try { message = (await error.context.clone().json())?.error || message; } catch { /* keep SDK message */ }
+          try {
+            const body = await error.context.clone().json();
+            message = body?.details
+              ? `${body.error}: ${JSON.stringify(body.details)}`
+              : (body?.error || message);
+          } catch { /* keep SDK message */ }
         }
         throw new Error(message);
       }
