@@ -50,10 +50,10 @@ export default function AnalyticsPage(){
       : <div className="mt-6 grid gap-5 md:grid-cols-2">
           <MetricChart data={aggregate("visibility_score")} title="Visibility Score" format="percent"/>
           <MetricChart data={aggregate("visibility_rank")} title="Visibility Rank"/>
-          <MetricChart data={aggregate("share_of_voice_score")} title="Share of Voice Score" format="percent"/>
-          <MetricChart data={aggregate("share_of_voice_rank")} title="Share of Voice Rank"/>
-          <MetricChart data={aggregate("average_position")} title="Average Position"/>
-          <MetricChart data={aggregate("average_position_rank")} title="Average Position Rank"/>
+          <MetricChart data={aggregate("share_of_voice_score")} title="Share of Voice" description="Your brand mentions divided by all identifiable brand mentions across the selected responses." format="percent"/>
+          <MetricChart data={aggregate("share_of_voice_rank")} title="Share of Voice Rank" description="Your rank against the other identifiable brands by share of voice; rank 1 is best."/>
+          <MetricChart data={aggregate("average_position")} title="Average Position" description="The average order in which your brand is first mentioned relative to other identifiable brands in each response where it appears. Lower is better."/>
+          <MetricChart data={aggregate("average_position_rank")} title="Average Position Rank" description="Your rank compared with identifiable competitors by average mention position; rank 1 is best."/>
         </div>
     }
 
