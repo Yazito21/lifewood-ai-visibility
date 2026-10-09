@@ -206,7 +206,7 @@ export default function PromptsPage() {
       </div>
       {filtered.length > 10 && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-4">
         <p className="text-sm text-[#66736c]">Showing {visible.length} of {filtered.length} prompts</p>
-        <button type="button" onClick={() => setExpanded((value) => !value)} className="ops-filter-btn">{expanded ? "Show first 10" : `Show all ${filtered.length} prompts`}</button>
+        <button type="button" onClick={() => setExpanded((value) => !value)} className="ops-filter-btn">{expanded ? "Show first 10" : "Show all " + filtered.length + " prompts"}</button>
       </div>}
       <p className="mt-3 text-xs text-[#66736c]">Rank metrics are the latest available values for each prompt’s topic; the tracking system currently calculates these metrics at topic level.</p>
     </section>
