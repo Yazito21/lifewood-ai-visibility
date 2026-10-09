@@ -97,7 +97,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
               <ArrowLeft size={13} /> All projects
             </Link>
             <div className="flex min-w-0 items-center gap-3">
-              <div className="inline-flex h-14 min-w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-white shadow-sm">
+              <div className="inline-flex h-14 min-w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/20 bg-white !bg-white shadow-sm">
                 {project.brand_logo_url
                   ? <img src={project.brand_logo_url} alt="" className="h-full w-auto max-w-[240px] object-contain p-1.5" />
                   : <span className="font-black text-[var(--lw-castleton-green)]">AI</span>}
