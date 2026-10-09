@@ -11,7 +11,7 @@ Deno.serve(withSupabase({ auth: "user" }, async (req, ctx) => {
     const action = String(body?.action ?? "");
     const projectId = String(body?.project_id ?? "").trim();
     const authorization = req.headers.get("Authorization") ?? "";
-    const accessToken = authorization.match(/^Bearer\\s+(.+)$/i)?.[1];
+    const accessToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
     if (!projectId) return json({ error: "Missing project ID. Please reopen this page from a project workspace." }, 400);
     if (!accessToken) return json({ error: "Your session is missing. Please sign in again and retry." }, 401);
 
