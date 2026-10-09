@@ -2,10 +2,10 @@
 
 export type ChartPoint = { label: string; value: number | null };
 
-export function MetricChart({ data, title, format = "number", invert = false, tone = "default" }: { data: ChartPoint[]; title: string; format?: "number" | "percent"; invert?: boolean; tone?: "default" | "overall" }) {
+export function MetricChart({ data, title, description, format = "number", invert = false, tone = "default" }: { data: ChartPoint[]; title: string; description?: string; format?: "number" | "percent"; invert?: boolean; tone?: "default" | "overall" }) {
   const valid = data.filter((point) => point.value !== null) as { label: string; value: number }[];
   const display = (value: number) => format === "percent" ? value.toFixed(1) + "%" : Number.isInteger(value) ? String(value) : value.toFixed(1);
-  if (!valid.length) return <div className={"platform-card flex min-h-[19rem] items-center justify-center px-6 text-center text-sm text-[var(--muted-foreground)] " + (tone === "overall" ? "platform-card-overall" : "")}>No data for this period.</div>;
+  if (!valid.length) return <div className={"platform-card min-w-0 min-h-[19rem] p-5 sm:p-6 " + (tone === "overall" ? "platform-card-overall" : "")}><h4 className="text-sm font-semibold">{title}</h4>{description && <p className="mt-1 text-xs text-[var(--muted-foreground)]">{description}</p>}<div className="flex min-h-[13rem] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">No recorded values for this period. A new tracking run may be needed to populate this metric.</div></div>;
 
   const values = valid.map((point) => point.value);
   const min = Math.min(...values), max = Math.max(...values), range = max - min || 1;
@@ -23,7 +23,7 @@ export function MetricChart({ data, title, format = "number", invert = false, to
   const latestLabelAnchor = latest.x >= w - 100 ? "end" : "start";
 
   return <div className={"platform-card min-w-0 p-5 sm:p-6 " + (tone === "overall" ? "platform-card-overall" : "")}>
-    <div className="mb-4"><h4 className="text-sm font-semibold">{title}</h4></div>
+    <div className="mb-4"><h4 className="text-sm font-semibold">{title}</h4>{description && <p className="mt-1 text-xs text-[var(--muted-foreground)]">{description}</p>}</div>
     <svg viewBox={"0 0 " + w + " " + h} className="h-64 w-full overflow-visible" role="img" aria-label={title}>
       <line x1={padX} y1={h - padY} x2={w - padX} y2={h - padY} stroke="var(--input)" />
       <line x1={padX} y1={padY} x2={padX} y2={h - padY} stroke="var(--input)" />
