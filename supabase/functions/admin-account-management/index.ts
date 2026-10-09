@@ -9,11 +9,18 @@ Deno.serve(withSupabase({ auth: "user" }, async (req, ctx) => {
     if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);
     const body = await req.json();
     const action = String(body?.action ?? "");
-    const projectId = String(body?.project_id ?? "");
-    const callerId = String(ctx.userClaims?.sub ?? "");
-    if (!projectId || !callerId) return json({ error: "Missing authentication or project." }, 400);
+    const projectId = String(body?.project_id ?? "").trim();
+    const authorization = req.headers.get("Authorization") ?? "";
+    const accessToken = authorization.match(/^Bearer\\s+(.+)$/i)?.[1];
+    if (!projectId) return json({ error: "Missing project ID. Please reopen this page from a project workspace." }, 400);
+    if (!accessToken) return json({ error: "Your session is missing. Please sign in again and retry." }, 401);
 
     const admin = ctx.supabaseAdmin;
+    // Resolve the caller from the verified access token instead of relying on
+    // an undocumented ctx.userClaims shape.
+    const { data: authData, error: authError } = await admin.auth.getUser(accessToken);
+    const callerId = authData?.user?.id ?? "";
+    if (authError || !callerId) return json({ error: "Your session is invalid or expired. Please sign in again." }, 401);
     const { data: caller, error: callerError } = await admin.from("profiles")
       .select("id,role").eq("id", callerId).single();
     if (callerError || !caller) return json({ error: "Your account profile could not be loaded." }, 403);
