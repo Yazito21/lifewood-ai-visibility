@@ -169,6 +169,7 @@ export default function DashboardPage() {
         </section>
 
         {trackingMessage && <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{trackingMessage}</div>}
+        {canRunTracking && dailyRunClaimed && !trackingMessage && <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Today's full tracking run has already been claimed. Another run will be available after midnight Malaysia Time (MYT).</div>}
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
         <section className="space-y-4">
