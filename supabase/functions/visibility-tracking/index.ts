@@ -67,6 +67,10 @@ function countTermMentions(text: string, terms: string[]) {
 }
 
 
+function normalizedHostLabel(value: string) {
+  return value.toLowerCase().replace("https://", "").replace("http://", "").replace(/^www[.]/, "").split("/")[0].split(":")[0];
+}
+
 function urlsIn(text: string) {
   const matches = text.match(/https?:\/\/[^\s<>"')\]]+/gi) ?? [];
   return [...new Set(matches.map((u) => u.replace(/[.,;:!?]+$/, "")))].slice(0, 40);
