@@ -44,6 +44,7 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [tracking, setTracking] = useState(false);
   const [canRunTracking, setCanRunTracking] = useState(false);
+  const [dailyRunClaimed, setDailyRunClaimed] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState("");
 
   async function load() {
