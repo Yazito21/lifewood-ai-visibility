@@ -49,23 +49,11 @@ function containsTerm(text: string, terms: string[]) {
   return terms.some((term) => term.trim().length > 1 && normalized.includes(term.trim().toLocaleLowerCase()));
 }
 
-function escapeRegexTerm(value: string) {
-  return value.replace(/[|\\{}()[\]^$+*?.]/g, (character) => "\\" + character);
-}
-
-function containsTerm(text: string, terms: string[]) {
-  const normalized = text.toLocaleLowerCase();
-  return terms.some((term) => term.trim().length > 1 && normalized.includes(term.trim().toLocaleLowerCase()));
-}
-
-function normalizedHostLabel(value: string) {
-  return value.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0].split(":")[0];
-}
 function matchingSpans(text: string, terms: string[]) {
   const clean = [...new Set(terms.map((term) => term.trim()).filter((term) => term.length > 1))]
     .sort((a, b) => b.length - a.length);
   if (!clean.length) return [] as Array<{ start: number; end: number }>;
-  const regex = new RegExp("(?<![A-Za-z0-9])(?:" + clean.map(escapeRegexTerm).join("|") + ")(?![A-Za-z0-9])", "gi");
+  const regex = new RegExp("(?<![A-Za-z0-9])(?:" + clean.map(escapeRegex).join("|") + ")(?![A-Za-z0-9])", "gi");
   const spans: Array<{ start: number; end: number }> = [];
   for (const match of text.matchAll(regex)) {
     const start = match.index ?? 0;
@@ -78,9 +66,6 @@ function countTermMentions(text: string, terms: string[]) {
   return matchingSpans(text, terms).length;
 }
 
-function normalizedHostLabel(value: string) {
-  return value.toLowerCase().replace(/^https?:\\/\\//, "").replace(/^www\\./, "").split("/")[0].split(":")[0];
-}
 
 function urlsIn(text: string) {
   const matches = text.match(/https?:\/\/[^\s<>"')\]]+/gi) ?? [];
