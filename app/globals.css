@@ -336,3 +336,16 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
   background:var(--primary);
   color:var(--primary-foreground);
 }
+
+
+/* Visually distinguish project-wide Overall metrics from topic-specific data. */
+.platform-card-overall {
+  border-color: color-mix(in srgb, var(--orange) 78%, var(--line));
+  background: color-mix(in srgb, var(--orange) 9%, var(--card));
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--orange) 10%, transparent);
+}
+.platform-overall-value { color: color-mix(in srgb, var(--orange) 68%, var(--foreground)); }
+.platform-overall-pill {
+  background: color-mix(in srgb, var(--orange) 22%, var(--card));
+  color: color-mix(in srgb, var(--orange) 62%, var(--foreground));
+}
