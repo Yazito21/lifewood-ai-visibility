@@ -189,7 +189,7 @@ export default function PromptsPage() {
             {visible.map((prompt) => {
               const metric = latestMetrics[prompt.topic];
               return <tr key={prompt.id} className="border-b border-[#eef0ee]">
-                {canEdit && <td className="px-3 py-3"><input type="checkbox" checked={selectedIds.includes(prompt.id)} onChange={() => togglePrompt(prompt.id)} aria-label={`Select prompt ${prompt.prompt_number}`} className="h-4 w-4 accent-[#0d5b3a]"/></td>}
+                {canEdit && <td className="px-3 py-3"><input type="checkbox" checked={selectedIds.includes(prompt.id)} onChange={() => togglePrompt(prompt.id)} aria-label={"Select prompt " + prompt.prompt_number} className="h-4 w-4 accent-[#0d5b3a]"/></td>}
                 <td className="px-3 py-3">{prompt.prompt_number}</td>
                 <td className="max-w-[420px] whitespace-normal px-3 py-3">{prompt.prompt}</td>
                 <td className="px-3 py-3"><span className="rounded-full bg-[var(--soft)] px-2.5 py-1 text-xs font-semibold text-[var(--green)]">{prompt.topic}</span></td>
@@ -197,7 +197,7 @@ export default function PromptsPage() {
                 <td className="px-3 py-3 font-semibold">{metric?.visibility_rank ?? "—"}</td>
                 <td className="px-3 py-3 font-semibold">{metric?.share_of_voice_rank ?? "—"}</td>
                 <td className="px-3 py-3 font-semibold">{metric?.average_position_rank ?? "—"}</td>
-                {canEdit && <td className="px-3 py-3"><button onClick={() => setDeleteIds([prompt.id])} aria-label={`Delete prompt ${prompt.prompt_number}`} className="rounded-lg p-2 text-[#a13f35] hover:bg-red-50"><Trash2 size={16}/></button></td>}
+                {canEdit && <td className="px-3 py-3"><button onClick={() => setDeleteIds([prompt.id])} aria-label={"Delete prompt " + prompt.prompt_number} className="rounded-lg p-2 text-[#a13f35] hover:bg-red-50"><Trash2 size={16}/></button></td>}
               </tr>;
             })}
             {!visible.length && <tr><td colSpan={canEdit ? 9 : 7} className="px-3 py-10 text-center text-sm text-[#66736c]">No prompts found.</td></tr>}
