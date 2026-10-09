@@ -200,7 +200,7 @@ export default function PromptsPage() {
                 {canEdit && <td className="px-3 py-3"><button onClick={() => setDeleteIds([prompt.id])} aria-label={`Delete prompt ${prompt.prompt_number}`} className="rounded-lg p-2 text-[#a13f35] hover:bg-red-50"><Trash2 size={16}/></button></td>}
               </tr>;
             })}
-            {!visible.length && <tr><td colSpan={canEdit ? 9 : 8} className="px-3 py-10 text-center text-sm text-[#66736c]">No prompts found.</td></tr>}
+            {!visible.length && <tr><td colSpan={canEdit ? 9 : 7} className="px-3 py-10 text-center text-sm text-[#66736c]">No prompts found.</td></tr>}
           </tbody>
         </table>
       </div>
