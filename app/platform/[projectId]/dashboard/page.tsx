@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ExternalLink, RefreshCw } from "lucide-react";
+import { CalendarDays, ExternalLink, RefreshCw, Play } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { MetricChart } from "@/components/metric-chart";
@@ -42,6 +42,8 @@ export default function DashboardPage() {
   const [customEnd, setCustomEnd] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [tracking, setTracking] = useState(false);
+  const [trackingMessage, setTrackingMessage] = useState("");
 
   async function load() {
     setLoading(true); setError("");
@@ -57,6 +59,27 @@ export default function DashboardPage() {
     const firstError = projectError || metricsError || latestError || citationsError;
     if (firstError) setError(firstError.message || "Unable to load dashboard data.");
     setMetrics(chartRows ?? []); setLatestMetrics(latestRows ?? []); setCitations(citationRows ?? []); setLoading(false);
+  }
+
+  async function runTracking() {
+    setTracking(true); setTrackingMessage(""); setError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("visibility-tracking", {
+        body: { mode: "persistent", project_id: projectId, providers: ["chatgpt"] },
+      });
+      if (error) {
+        let message = error.message;
+        if (error.context instanceof Response) {
+          try { message = (await error.context.clone().json())?.error || message; } catch { /* use SDK message */ }
+        }
+        throw new Error(message);
+      }
+      if (data?.error) throw new Error(data.error);
+      setTrackingMessage(`Tracking ${data.status}: ${data.completed_prompts} of ${data.total_prompts} prompts completed.`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setTracking(false); }
   }
 
   useEffect(() => { void load(); }, [projectId, period, customStart, customEnd]);
@@ -98,12 +121,13 @@ export default function DashboardPage() {
           </div>
         </section>
 
+        {trackingMessage && <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{trackingMessage}</div>}
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest ranking, score and movement for every tracked topic.</p></div>
-            <button onClick={() => void load()} className="platform-btn"><RefreshCw size={14} /> Refresh</button>
+            <div className="flex flex-wrap gap-2"><button onClick={runTracking} disabled={tracking} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button><button onClick={() => void load()} disabled={tracking} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
