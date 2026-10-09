@@ -118,7 +118,7 @@ export default function ProjectsPage(){
           <div className="mt-5 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
             {projects.map(project=><article key={project.id} className="platform-card group p-6 transition hover:-translate-y-0.5 hover:shadow-lg">
               <div className="flex items-start justify-between gap-4">
-                <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl bg-[var(--primary)]/10 font-black text-[var(--primary)]">{project.brand_logo_url?<img src={project.brand_logo_url} alt="" className="h-full w-full object-contain"/>:"AI"}</div>
+                <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl border border-white/70 bg-white font-black text-[var(--primary)]">{project.brand_logo_url?<img src={project.brand_logo_url} alt="" className="h-full w-full bg-white object-contain p-1"/>:"AI"}</div>
                 <ArrowRight className="text-[#c3ccc6] transition group-hover:translate-x-1 group-hover:text-[var(--primary)]" size={19}/>
               </div>
               <h3 className="mt-6 text-lg font-semibold">{project.brand_name}</h3>

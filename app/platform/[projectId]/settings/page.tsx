@@ -1,18 +1,47 @@
 "use client";
 import { useEffect,useState } from "react";
-import { Check,Eye,EyeOff,Plus,Save,Trash2,ShieldCheck,Settings2 } from "lucide-react";
+import { Check,Eye,EyeOff,Plus,Save,Trash2,ShieldCheck,Settings2,Upload,Image as ImageIcon,X } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell,UserRole } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 const providers=[["chatgpt","ChatGPT"],["gemini","Gemini"],["perplexity","Perplexity"],["google_ai_overview","Google AI Overview"],["claude","Claude"]] as const;
 export default function SettingsPage(){
- const {projectId}=useParams<{projectId:string}>();const [role,setRole]=useState<UserRole>("viewer"),[brand,setBrand]=useState({brand_name:"",brand_description:"",brand_domains:"",brand_terms:"",brand_logo_url:""}),[topics,setTopics]=useState<string[]>([]),[newTopic,setNewTopic]=useState(""),[llms,setLlms]=useState<Record<string,{enabled:boolean;last4:string|null;key_updated_at:string|null}>>({}),[keys,setKeys]=useState<Record<string,string>>({}),[show,setShow]=useState<Record<string,boolean>>({}),[password,setPassword]=useState(""),[preferences,setPreferences]=useState({theme:"light",text_size:100,scale:100}),[message,setMessage]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false);
+ const {projectId}=useParams<{projectId:string}>();const [role,setRole]=useState<UserRole>("viewer"),[brand,setBrand]=useState({brand_name:"",brand_description:"",brand_domains:"",brand_terms:"",brand_logo_url:""}),[topics,setTopics]=useState<string[]>([]),[newTopic,setNewTopic]=useState(""),[llms,setLlms]=useState<Record<string,{enabled:boolean;last4:string|null;key_updated_at:string|null}>>({}),[keys,setKeys]=useState<Record<string,string>>({}),[show,setShow]=useState<Record<string,boolean>>({}),[password,setPassword]=useState(""),[preferences,setPreferences]=useState({theme:"light",text_size:100,scale:100}),[message,setMessage]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false),[logoUploading,setLogoUploading]=useState(false),[logoPreviewError,setLogoPreviewError]=useState("");
  async function load(){const {data:{user}}=await supabase.auth.getUser();if(!user)return;const [{data:p},{data:profile},{data:m},{data:configs}]=await Promise.all([supabase.from("projects").select("brand_name,brand_description,brand_domains,brand_terms,brand_logo_url,topics").eq("id",projectId).single(),supabase.from("profiles").select("role").eq("id",user.id).single(),supabase.from("project_members").select("role").eq("project_id",projectId).eq("user_id",user.id).maybeSingle(),supabase.from("llm_configs").select("provider,enabled,api_key_last4,key_updated_at").eq("project_id",projectId)]);setRole(profile?.role==="superadmin"?"superadmin":m?.role??profile?.role??"viewer");if(p){setBrand({brand_name:p.brand_name,brand_description:p.brand_description||"",brand_domains:(p.brand_domains||[]).join("\n"),brand_terms:(p.brand_terms||[]).join("\n"),brand_logo_url:p.brand_logo_url||""});setTopics(p.topics||[])}const map:Record<string,{enabled:boolean;last4:string|null;key_updated_at:string|null}>={};for(const c of configs??[])map[c.provider]={enabled:c.enabled,last4:c.api_key_last4,key_updated_at:c.key_updated_at};setLlms(map)}
  useEffect(()=>{load()},[projectId]);
- const canEdit=role!=="viewer";
+ const canEdit=role==="admin"||role==="superadmin";
  useEffect(()=>{supabase.auth.getUser().then(async({data:{user}})=>{if(!user)return;const {data}=await supabase.from("profiles").select("ui_preferences").eq("id",user.id).single();if(data?.ui_preferences)setPreferences({...preferences,...data.ui_preferences});})},[]);
  useEffect(()=>{document.documentElement.style.fontSize=preferences.text_size+"%";document.body.style.zoom=String(preferences.scale/100);document.documentElement.classList.toggle("dark",preferences.theme==="dark");document.documentElement.dataset.theme=preferences.theme},[preferences]);
- async function saveBrand(){setBusy(true);setMessage("");setError("");const {error}=await supabase.from("projects").update({brand_name:brand.brand_name.trim(),brand_description:brand.brand_description.trim()||null,brand_domains:brand.brand_domains.split("\n").map(x=>x.trim()).filter(Boolean),brand_terms:brand.brand_terms.split("\n").map(x=>x.trim()).filter(Boolean),brand_logo_url:brand.brand_logo_url.trim()||null,topics}).eq("id",projectId);if(error)setError(error.message);else setMessage("Brand settings saved.");setBusy(false)}
+ async function saveBrand(){setBusy(true);setMessage("");setError("");const {error}=await supabase.from("projects").update({brand_name:brand.brand_name.trim(),brand_description:brand.brand_description.trim()||null,brand_domains:brand.brand_domains.split("\n").map(x=>x.trim()).filter(Boolean),brand_terms:brand.brand_terms.split("\n").map(x=>x.trim()).filter(Boolean),topics}).eq("id",projectId);if(error)setError(error.message);else setMessage("Brand settings saved.");setBusy(false)}
+ const allowedLogoTypes=["image/png","image/jpeg","image/webp","image/gif","image/svg+xml","image/avif"];
+ async function uploadLogo(file?:File){
+  if(!file)return;
+  setMessage("");setError("");setLogoPreviewError("");
+  if(!canEdit){setError("Only project Admins and Superadmins can upload a logo.");return;}
+  if(!allowedLogoTypes.includes(file.type)){setError("Unsupported image format. Use PNG, JPEG, WebP, GIF, SVG or AVIF.");return;}
+  if(file.size>5*1024*1024){setError("Logo file must be 5 MB or smaller.");return;}
+  const extensionByType:Record<string,string>={"image/png":"png","image/jpeg":"jpg","image/webp":"webp","image/gif":"gif","image/svg+xml":"svg","image/avif":"avif"};
+  const path=projectId+"/logo."+extensionByType[file.type];
+  setLogoUploading(true);
+  const {error:uploadError}=await supabase.storage.from("project-brand-logos").upload(path,file,{upsert:true,contentType:file.type,cacheControl:"3600"});
+  if(uploadError){setError("Logo upload failed: "+uploadError.message);setLogoUploading(false);return;}
+  const {data}=supabase.storage.from("project-brand-logos").getPublicUrl(path);
+  const url=data.publicUrl+(data.publicUrl.includes("?")?"&":"?")+"v="+Date.now();
+  const {error:updateError}=await supabase.from("projects").update({brand_logo_url:url}).eq("id",projectId);
+  if(updateError){setError("The file uploaded, but the project logo could not be saved: "+updateError.message);setLogoUploading(false);return;}
+  setBrand(v=>({...v,brand_logo_url:url}));setMessage("Brand logo uploaded and saved.");setLogoUploading(false);
+ }
+ async function removeLogo(){
+  if(!canEdit||!brand.brand_logo_url)return;
+  setBusy(true);setMessage("");setError("");
+  const match=brand.brand_logo_url.split("?")[0].toLowerCase().match(/\.(png|jpe?g|webp|gif|svg|avif)$/);
+  const path=projectId+"/logo."+(match?.[1]||"png");
+  const {error:storageError}=await supabase.storage.from("project-brand-logos").remove([path]);
+  if(storageError){setError("Unable to remove the previous logo file: "+storageError.message);setBusy(false);return;}
+  const {error:updateError}=await supabase.from("projects").update({brand_logo_url:null}).eq("id",projectId);
+  if(updateError){setError(updateError.message);setBusy(false);return;}
+  setBrand(v=>({...v,brand_logo_url:""}));setMessage("Brand logo removed.");setBusy(false);
+ }
  async function functionErrorMessage(error:any){
   if(error?.context instanceof Response){try{const body=await error.context.clone().json();if(body?.error)return body.error;}catch{}}
   return error?.message||"Failed to contact the Edge Function.";
@@ -62,10 +91,26 @@ export default function SettingsPage(){
                   Brand name
                   <input disabled={!canEdit} value={brand.brand_name} onChange={e=>setBrand({...brand,brand_name:e.target.value})} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]"/>
                 </label>
-                <label className="text-sm font-semibold">
-                  Logo URL
-                  <input disabled={!canEdit} value={brand.brand_logo_url} onChange={e=>setBrand({...brand,brand_logo_url:e.target.value})} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]"/>
-                </label>
+                <div className="text-sm font-semibold">
+                  Brand logo
+                  <p className="mt-1 text-xs font-normal text-[var(--muted-foreground)]">Upload an image file for the workspace header. PNG, JPEG, WebP, GIF, SVG or AVIF · Max 5 MB.</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-4 rounded-xl border border-[var(--line)] p-3">
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--line)] bg-white">
+                      {brand.brand_logo_url ? <img src={brand.brand_logo_url} alt="Brand logo preview" onError={()=>setLogoPreviewError("The saved logo preview could not be loaded.")} onLoad={()=>setLogoPreviewError("")} className="h-full w-full object-contain p-1.5"/> : <ImageIcon size={22} className="text-slate-400"/>}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {brand.brand_logo_url ? <p className="break-all text-xs font-normal text-[var(--muted-foreground)]">Logo uploaded</p> : <p className="text-xs font-normal text-[var(--muted-foreground)]">No logo uploaded. The header will show the default AI mark.</p>}
+                      {logoPreviewError&&<p className="mt-1 text-xs font-normal text-red-600">{logoPreviewError}</p>}
+                      {canEdit&&<div className="mt-2 flex flex-wrap gap-2">
+                        <label className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-semibold ${logoUploading?"pointer-events-none opacity-50":"hover:bg-[var(--soft)]"}`}>
+                          <Upload size={14}/>{logoUploading?"Uploading…":brand.brand_logo_url?"Replace logo":"Upload logo"}
+                          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/avif" disabled={logoUploading||busy} onChange={e=>{const file=e.target.files?.[0];void uploadLogo(file);e.currentTarget.value="";}} className="sr-only"/>
+                        </label>
+                        {brand.brand_logo_url&&<button type="button" disabled={busy||logoUploading} onClick={()=>void removeLogo()} className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50"><X size={14}/>Remove logo</button>}
+                      </div>}
+                    </div>
+                  </div>
+                </div>
                 <label className="text-sm font-semibold lg:col-span-2">
                   Description
                   <textarea disabled={!canEdit} rows={4} value={brand.brand_description} onChange={e=>setBrand({...brand,brand_description:e.target.value})} className="mt-2 w-full resize-none platform-input disabled:bg-[var(--paper)]"/>
