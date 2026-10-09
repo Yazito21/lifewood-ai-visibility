@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase";
 type Prompt = { id: string; prompt_number: number; prompt: string; topic: string; language: string; active: boolean };
 type SampleResult = {
   prompt_id: string; prompt_number: number; prompt: string; topic: string; language: string;
-  provider: string; status: string; response_text?: string; error_message?: string;
+  provider: string; status: string; response_text?: string; raw_response?: unknown; error_message?: string;
   brand_mentioned: boolean; citations: { url: string; page_name: string; brand_name: string; is_brand_related: boolean; topic: string; prompt: string; provider: string }[];
   competitor_hosts: string[]; model?: string; usage?: unknown;
 };
@@ -125,17 +125,32 @@ export default function SamplesPage() {
     const rows = payload.results.map((r) => ({
       Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Topic: r.topic, Language: r.language,
       Engine: r.provider, Status: r.status, "Brand Mentioned": r.brand_mentioned ? "Yes" : "No",
-      "Response Text": r.response_text ?? "", "Error": r.error_message ?? "", Model: r.model ?? "",
+      "Response Text (Full)": r.response_text ?? "", "Raw API Response JSON": r.raw_response ? JSON.stringify(r.raw_response) : "",
+      "Error": r.error_message ?? "", Model: r.model ?? "",
       "Token Usage": r.usage ? JSON.stringify(r.usage) : "",
-      "Citation URLs": r.citations.map((c) => c.url).join("\n"),
-      "Brand Citation URLs": r.citations.filter((c) => c.is_brand_related).map((c) => c.url).join("\n"),
+      "Pages Cited (URL)": r.citations.map((c) => c.url).join("\n"),
+      "Pages Cited (Title + URL)": r.citations.map((c) => (c.page_name ? c.page_name + " — " : "") + c.url).join("\n"),
+      "Brand Page URLs": r.citations.filter((c) => c.is_brand_related).map((c) => c.url).join("\n"),
       "Competitor Domains": r.competitor_hosts.join(", "),
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Prompt Results");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.citations.map((c) => ({
-      Engine: c.provider, Topic: c.topic, Prompt: c.prompt, URL: c.url, "Page Name": c.page_name,
+      Engine: c.provider, Topic: c.topic, Prompt: c.prompt, URL: c.url, "Page Title": c.page_name,
+      Domain: c.domain ?? "", "Citation Source": c.citation_source ?? "",
       "Brand / Site": c.brand_name, "Tracked Brand Page": c.is_brand_related ? "Yes" : "No",
-    }))), "Citations");
+    }))), "Pages by Prompt");
+    const pageFrequency = new Map<string, { url: string; title: string; domain: string; frequency: number; prompts: Set<string>; engines: Set<string>; brandRelated: boolean }>();
+    for (const c of payload.citations) {
+      const item = pageFrequency.get(c.url) ?? { url: c.url, title: c.page_name || "", domain: c.domain || "", frequency: 0, prompts: new Set<string>(), engines: new Set<string>(), brandRelated: false };
+      item.frequency += 1; item.prompts.add(c.prompt); item.engines.add(c.provider); item.brandRelated ||= c.is_brand_related;
+      if (!item.title && c.page_name) item.title = c.page_name;
+      if (!item.domain && c.domain) item.domain = c.domain;
+      pageFrequency.set(c.url, item);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([...pageFrequency.values()].sort((a,b)=>b.frequency-a.frequency).map((p) => ({
+      Frequency: p.frequency, "Distinct Prompts": p.prompts.size, "Page Title": p.title, Domain: p.domain, URL: p.url,
+      Engines: [...p.engines].join(", "), "Tracked Brand Page": p.brandRelated ? "Yes" : "No",
+    }))), "Page Frequency");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.competitors), "Competitors");
     XLSX.writeFile(wb, `lifewood-sample-run-${runNumber}-${new Date().toISOString().slice(0,10)}.xlsx`);
   }
@@ -234,11 +249,23 @@ export default function SamplesPage() {
             </tbody></table></div>
           </div>
           <div className="ops-card overflow-hidden">
-            <div className="p-5"><h3 className="font-semibold">Brand pages cited</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">URLs extracted from responses that match the configured brand domains or terms.</p></div>
-            <div className="overflow-x-auto"><table className="platform-table min-w-[700px]"><thead><tr><th>Prompt</th><th>Page URL</th><th>Page / site</th><th>Engine</th></tr></thead><tbody>
-              {payload.citations.filter((c) => c.is_brand_related).map((c, i) => <tr key={c.url + c.prompt + i}><td className="max-w-[240px]">{c.prompt}</td><td className="max-w-[360px]"><a className="inline-flex items-center gap-1 break-all font-semibold text-[var(--primary)] hover:underline" href={c.url} target="_blank" rel="noreferrer">{c.url}<ExternalLink size={12}/></a></td><td>{c.page_name || c.brand_name || "—"}</td><td>{c.provider}</td></tr>)}
-              {!payload.citations.some((c) => c.is_brand_related) && <tr><td colSpan={4} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No matching brand page URLs were found in these responses.</td></tr>}
-            </tbody></table></div>
+            <div className="p-5"><h3 className="font-semibold">All pages cited</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Every distinct source page identified in the AI response's web-search citations, ranked by frequency across selected prompts. This includes brand and non-brand pages.</p></div>
+            {(() => {
+              const pages = new Map<string, { url: string; title: string; domain: string; frequency: number; prompts: Set<string>; brandRelated: boolean }>();
+              for (const c of payload.citations) {
+                let host = "";
+                try { host = new URL(c.url).hostname.replace(/^www\\./, ""); } catch { /* ignore invalid URL */ }
+                const item = pages.get(c.url) ?? { url: c.url, title: c.page_name || "", domain: c.domain || host, frequency: 0, prompts: new Set<string>(), brandRelated: false };
+                item.frequency += 1; item.prompts.add(c.prompt); item.brandRelated ||= c.is_brand_related;
+                if (!item.title && c.page_name) item.title = c.page_name;
+                pages.set(c.url, item);
+              }
+              const sorted = [...pages.values()].sort((a,b) => b.frequency - a.frequency || a.title.localeCompare(b.title));
+              return <div className="overflow-x-auto"><table className="platform-table min-w-[850px]"><thead><tr><th>Frequency</th><th>Page title</th><th>Domain</th><th>URL</th><th>Prompts</th><th>Brand page</th></tr></thead><tbody>
+                {sorted.map((p) => <tr key={p.url}><td><span className="font-semibold">{p.frequency}</span></td><td className="max-w-[260px] whitespace-normal">{p.title || "Untitled page"}</td><td>{p.domain}</td><td className="max-w-[360px]"><a className="inline-flex items-center gap-1 break-all font-semibold text-[var(--primary)] hover:underline" href={p.url} target="_blank" rel="noreferrer">{p.url}<ExternalLink size={12}/></a></td><td>{p.prompts.size}</td><td>{p.brandRelated ? "Yes" : "No"}</td></tr>)}
+                {!sorted.length && <tr><td colSpan={6} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No source pages were returned. The run may have had no usable web-search citations, or the API response may not include source metadata.</td></tr>}
+              </tbody></table></div>;
+            })()}
           </div>
           <div className="ops-card overflow-hidden">
             <div className="p-5"><h3 className="font-semibold">Observed competitor domains</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Non-brand domains found in response URLs; these are heuristic observations.</p></div>
