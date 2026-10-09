@@ -84,23 +84,13 @@ export default function DashboardPage() {
       });
       if (error) {
         let message = error.message;
-        let payload: Record<string, unknown> | null = null;
         if (error.context instanceof Response) {
-          try {
-            payload = await error.context.clone().json();
-            message = String(payload?.message || payload?.error || message);
-          } catch { /* use SDK message */ }
-        }
-        if (payload?.error === "DAILY_TRACKING_LIMIT_REACHED") {
-          setDailyRunClaimed(true);
-          setTrackingMessage(message);
-          return;
+          try { message = (await error.context.clone().json())?.error || message; } catch { /* use SDK message */ }
         }
         throw new Error(message);
       }
-      if (data?.error) throw new Error(data.message || data.error);
-      setDailyRunClaimed(true);
-      setTrackingMessage(`Today's full run finished: ${data.completed_prompts} of ${data.total_prompts} prompts completed (${data.status}). Another full run is available after midnight MYT.`);
+      if (data?.error) throw new Error(data.error);
+      setTrackingMessage(`Tracking ${data.status}: ${data.completed_prompts} of ${data.total_prompts} prompts completed.`);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
