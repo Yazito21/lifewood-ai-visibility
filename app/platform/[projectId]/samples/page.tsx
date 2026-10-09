@@ -294,7 +294,7 @@ export default function SamplesPage() {
                 {visiblePages.map((p) => <tr key={p.url}><td><span className="font-semibold">{p.frequency}</span></td><td className="max-w-[260px] whitespace-normal">{p.title || "Untitled page"}</td><td>{p.domain}</td><td className="max-w-[360px]"><a className="inline-flex items-center gap-1 break-all font-semibold text-[var(--primary)] hover:underline" href={p.url} target="_blank" rel="noreferrer">{p.url}<ExternalLink size={12}/></a></td><td>{p.prompts.size}</td><td>{p.brandRelated ? "Yes" : "No"}</td></tr>)}
                 {!filteredPages.length && <tr><td colSpan={6} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No source pages were returned. The run may have had no usable web-search citations, or the API response may not include source metadata.</td></tr>}
               </tbody></table></div>
-                {filteredPages.length > 10 && <div className="sample-table-footer"><button type="button" onClick={() => setPagesExpanded((value) => !value)} className="ops-filter-btn">{pagesExpanded ? "Show first 10" : "Show all " + filteredPages.length + " rows"}</button></div>
+                {filteredPages.length > 10 && <div className="sample-table-footer"><button type="button" onClick={() => setPagesExpanded((value) => !value)} className="ops-filter-btn">{pagesExpanded ? "Show first 10" : "Show all " + filteredPages.length + " rows"}</button></div>}
               </>;
             })()}
           </div>
