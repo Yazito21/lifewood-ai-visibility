@@ -11,7 +11,7 @@ type Prompt = { id: string; prompt_number: number; prompt: string; topic: string
 type SampleResult = {
   prompt_id: string; prompt_number: number; prompt: string; topic: string; language: string;
   provider: string; status: string; response_text?: string; raw_response?: unknown; error_message?: string;
-  brand_mentioned: boolean; citations: { url: string; page_name: string; brand_name: string; is_brand_related: boolean; topic: string; prompt: string; provider: string }[];
+  brand_mentioned: boolean; citations: { url: string; page_name: string; brand_name: string; is_brand_related: boolean; topic: string; prompt: string; provider: string; domain?: string; citation_source?: string }[];
   competitor_hosts: string[]; model?: string; usage?: unknown;
 };
 type SamplePayload = {
