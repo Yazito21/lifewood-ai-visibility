@@ -43,6 +43,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tracking, setTracking] = useState(false);
+  const [canRunTracking, setCanRunTracking] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState("");
 
   async function load() {
@@ -81,6 +82,24 @@ export default function DashboardPage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally { setTracking(false); }
   }
+
+  useEffect(() => {
+    let alive = true;
+    async function loadPermissions() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const [{ data: profile }, { data: member }] = await Promise.all([
+        supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
+        supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle(),
+      ]);
+      if (alive) setCanRunTracking(
+        profile?.role === "superadmin" || profile?.role === "admin" ||
+        member?.role === "superadmin" || member?.role === "admin"
+      );
+    }
+    void loadPermissions();
+    return () => { alive = false; };
+  }, [projectId]);
 
   useEffect(() => { void load(); }, [projectId, period, customStart, customEnd]);
 
@@ -127,7 +146,7 @@ export default function DashboardPage() {
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest ranking, score and movement for every tracked topic.</p></div>
-            <div className="flex flex-wrap gap-2"><button onClick={runTracking} disabled={tracking} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button><button onClick={() => void load()} disabled={tracking} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
+            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={() => void load()} disabled={tracking} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
