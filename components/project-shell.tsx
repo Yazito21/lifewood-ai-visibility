@@ -21,7 +21,7 @@ export type ProjectContext = {
 export type UserRole = "superadmin" | "admin" | "viewer";
 
 const baseNav = [
-  ["Dashboard", "/dashboard", LayoutDashboard],
+  ["Dashboard", "", LayoutDashboard],
   ["Analytics", "/analytics", BarChart3],
   ["Citations", "/citations", BookOpen],
   ["Competitors", "/competitors", Users],
