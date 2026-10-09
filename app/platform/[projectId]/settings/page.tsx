@@ -19,7 +19,7 @@ export default function SettingsPage(){
  }
  async function saveKey(provider:string){const key=keys[provider]?.trim();if(!key)return;setBusy(true);setMessage("");setError("");const {error}=await supabase.functions.invoke("llm-key-management",{body:{action:"set",project_id:projectId,provider,api_key:key}});if(error)setError(await functionErrorMessage(error));else{setKeys(v=>({...v,[provider]:""}));setMessage(provider+" API key updated. Only the last four characters are shown.");await load()}setBusy(false)}
  async function removeKey(provider:string){if(!confirm("Remove this API key configuration?"))return;setBusy(true);setMessage("");setError("");const {error}=await supabase.functions.invoke("llm-key-management",{body:{action:"remove",project_id:projectId,provider}});if(error)setError(await functionErrorMessage(error));else{setMessage("API key removed.");await load()}setBusy(false)}
- async function savePreferences(){const {data:{user}}=await supabase.auth.getUser();if(!user)return;const {error}=await supabase.from("profiles").update({ui_preferences:preferences}).eq("id",user.id);if(error)setError(error.message);else setMessage("Platform preferences saved.");}
+ async function savePreferences(){setBusy(true);setMessage("");setError("");const {data:{user}}=await supabase.auth.getUser();if(!user){setError("Please sign in again to save your preferences.");setBusy(false);return;}const {error}=await supabase.rpc("save_my_ui_preferences",{p_preferences:preferences});if(error)setError(error.message);else setMessage("Platform preferences saved.");setBusy(false);}
  async function changePassword(){if(password.length<8){setError("Password must be at least 8 characters.");return}setBusy(true);const {error}=await supabase.auth.updateUser({password});if(error)setError(error.message);else{setPassword("");setMessage("Password updated.");}setBusy(false)}
  return (
   <ProjectShell>
@@ -192,7 +192,7 @@ export default function SettingsPage(){
                   </select>
                 </label>
               </div>
-              <button onClick={savePreferences} className="mt-6 inline-flex items-center gap-2 platform-btn">
+              <button onClick={savePreferences} disabled={busy} className="mt-6 inline-flex items-center gap-2 platform-btn disabled:opacity-50">
                 <Save size={16}/> Save platform settings
               </button>
             </div>
