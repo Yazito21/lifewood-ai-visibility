@@ -144,7 +144,7 @@ export default function PromptsPage() {
       <div><p className="page-eyebrow">Prompts</p><h2 className="page-title mt-1">Prompt library</h2><p className="page-description mt-2">Manage the 100 prompts used for daily AI visibility collection.</p></div>
       {canEdit && <div className="flex flex-wrap gap-2">
         <button onClick={template} className="inline-flex items-center gap-2 platform-btn px-4 py-3 text-sm font-semibold"><Download size={16}/> Template</button>
-        <label className={`inline-flex items-center gap-2 platform-btn px-4 py-3 text-sm font-semibold ${busy ? "pointer-events-none opacity-50" : "cursor-pointer"}"><Upload size={16}/> Bulk upload<input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={busy} onChange={upload}/></label>
+        <label className={"inline-flex items-center gap-2 platform-btn px-4 py-3 text-sm font-semibold " + (busy ? "pointer-events-none opacity-50" : "cursor-pointer")}><Upload size={16}/> Bulk upload<input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={busy} onChange={upload}/></label>
         <button disabled={prompts.length >= 100 || busy} onClick={() => { setForm({ prompt: "", topic: topics[0] || "", language: "English" }); setOpen(true); }} className="inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-40"><Plus size={16}/> Add prompt</button>
       </div>}
     </div>
