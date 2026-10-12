@@ -1,6 +1,6 @@
 "use client";
 import { useEffect,useState } from "react";
-import { Check,Eye,EyeOff,Plus,Save,Trash2,ShieldCheck,Settings2,Upload,Image as ImageIcon,X,LogOut,Mail,UserRound } from "lucide-react";
+import { Check,Eye,EyeOff,Plus,Save,Trash2,Settings2,Upload,Image as ImageIcon,X,LogOut,Mail,UserRound } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { ProjectShell,UserRole } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
@@ -257,23 +257,5 @@ export default function SettingsPage(){
       </div>
     </div>
   </ProjectShell>
- );
-}
-function AccountField({label}:{label:string}){
- const [value,setValue]=useState("Loading…");
- useEffect(()=>{
-   supabase.auth.getUser().then(async({data:{user}})=>{
-     if(label==="Registered email") setValue(user?.email||"—");
-     else if(user){
-       const {data}=await supabase.from("profiles").select("full_name").eq("id",user.id).single();
-       setValue(data?.full_name||"—");
-     }
-   });
- },[label]);
- return (
-   <label className="text-sm font-semibold">
-     {label}
-     <input readOnly value={value} className="mt-2 w-full rounded-xl border border-[var(--line)] bg-[var(--paper)] px-4 py-3"/>
-   </label>
  );
 }
