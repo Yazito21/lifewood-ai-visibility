@@ -84,12 +84,13 @@ export default function SettingsPage(){
           <div className="platform-card overflow-hidden">
             <div className="platform-card-header"><div className="flex items-start gap-3"><div className="platform-icon"><Settings2 size={17}/></div><div><h3 className="text-lg font-semibold">Project details &amp; branding</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Keep the client identity and visual branding together in one workspace.</p></div></div></div>
             <div className="p-5 sm:p-6">
-              <div className="grid gap-5 lg:grid-cols-2">
-                <label className="text-sm font-semibold">
+              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"><div className="space-y-5"><label className="text-sm font-semibold">
                   Brand name
                   <input disabled={!canEdit} value={brand.brand_name} onChange={e=>setBrand({...brand,brand_name:e.target.value})} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]"/>
-                </label>
-                <div className="text-sm font-semibold">
+                </label><label className="text-sm font-semibold">
+                  Description
+                  <textarea disabled={!canEdit} rows={4} value={brand.brand_description} onChange={e=>setBrand({...brand,brand_description:e.target.value})} className="mt-2 w-full resize-none platform-input disabled:bg-[var(--paper)]"/>
+                </label></div><div className="text-sm font-semibold">
                   Brand logo
                   <p className="mt-1 text-xs font-normal text-[var(--muted-foreground)]">Upload an image file for the workspace header. PNG, JPEG, WebP, GIF, SVG or AVIF · Max 5 MB.</p>
                   <div className="mt-3 flex flex-wrap items-center gap-4 rounded-xl border border-[var(--line)] p-3">
@@ -109,20 +110,14 @@ export default function SettingsPage(){
                     </div>
                   </div>
                 </div>
-                <label className="text-sm font-semibold lg:col-span-2">
-                  Description
-                  <textarea disabled={!canEdit} rows={4} value={brand.brand_description} onChange={e=>setBrand({...brand,brand_description:e.target.value})} className="mt-2 w-full resize-none platform-input disabled:bg-[var(--paper)]"/>
-                </label>
-                <label className="text-sm font-semibold">
+                </div>
+              <div className="mt-5 grid gap-5 lg:grid-cols-2"><label className="text-sm font-semibold">
                   Brand domains <span className="ml-1 font-normal text-[#66736c]">(one per line)</span>
                   <textarea disabled={!canEdit} rows={4} value={brand.brand_domains} onChange={e=>setBrand({...brand,brand_domains:e.target.value})} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]"/>
-                </label>
-                <label className="text-sm font-semibold">
+                </label><label className="text-sm font-semibold">
                   Brand mention terms <span className="ml-1 font-normal text-[#66736c]">(one per line)</span>
                   <textarea disabled={!canEdit} rows={4} value={brand.brand_terms} onChange={e=>setBrand({...brand,brand_terms:e.target.value})} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]"/>
-                </label>
-              </div>
-
+                </label></div>
               <div className="mt-5">
                 <div className="text-sm font-semibold">Topics</div>
                 <div className="mt-2 flex flex-wrap gap-2">
