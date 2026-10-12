@@ -1,13 +1,13 @@
 "use client";
 import { useEffect,useState } from "react";
-import { Check,Eye,EyeOff,Plus,Save,Trash2,ShieldCheck,Settings2,Upload,Image as ImageIcon,X } from "lucide-react";
-import { useParams } from "next/navigation";
+import { Check,Eye,EyeOff,Plus,Save,Trash2,ShieldCheck,Settings2,Upload,Image as ImageIcon,X,LogOut,Mail,UserRound } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
 import { ProjectShell,UserRole } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 const providers=[["chatgpt","ChatGPT"],["gemini","Gemini"],["perplexity","Perplexity"],["google_ai_overview","Google AI Overview"],["claude","Claude"]] as const;
 export default function SettingsPage(){
- const {projectId}=useParams<{projectId:string}>();const [role,setRole]=useState<UserRole>("viewer"),[brand,setBrand]=useState({brand_name:"",brand_description:"",brand_domains:"",brand_terms:"",brand_logo_url:""}),[topics,setTopics]=useState<string[]>([]),[newTopic,setNewTopic]=useState(""),[llms,setLlms]=useState<Record<string,{enabled:boolean;last4:string|null;key_updated_at:string|null}>>({}),[keys,setKeys]=useState<Record<string,string>>({}),[show,setShow]=useState<Record<string,boolean>>({}),[password,setPassword]=useState(""),[preferences,setPreferences]=useState({theme:"light",text_size:100,scale:100}),[message,setMessage]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false),[logoUploading,setLogoUploading]=useState(false),[logoPreviewError,setLogoPreviewError]=useState("");
- async function load(){const {data:{user}}=await supabase.auth.getUser();if(!user)return;const [{data:p},{data:profile},{data:m},{data:configs}]=await Promise.all([supabase.from("projects").select("brand_name,brand_description,brand_domains,brand_terms,brand_logo_url,topics").eq("id",projectId).single(),supabase.from("profiles").select("role").eq("id",user.id).single(),supabase.from("project_members").select("role").eq("project_id",projectId).eq("user_id",user.id).maybeSingle(),supabase.from("llm_configs").select("provider,enabled,api_key_last4,key_updated_at").eq("project_id",projectId)]);setRole(profile?.role==="superadmin"?"superadmin":m?.role??profile?.role??"viewer");if(p){setBrand({brand_name:p.brand_name,brand_description:p.brand_description||"",brand_domains:(p.brand_domains||[]).join("\n"),brand_terms:(p.brand_terms||[]).join("\n"),brand_logo_url:p.brand_logo_url||""});setTopics(p.topics||[])}const map:Record<string,{enabled:boolean;last4:string|null;key_updated_at:string|null}>={};for(const c of configs??[])map[c.provider]={enabled:c.enabled,last4:c.api_key_last4,key_updated_at:c.key_updated_at};setLlms(map)}
+ const {projectId}=useParams<{projectId:string}>();const router=useRouter();const [role,setRole]=useState<UserRole>("viewer"),[brand,setBrand]=useState({brand_name:"",brand_description:"",brand_domains:"",brand_terms:"",brand_logo_url:""}),[topics,setTopics]=useState<string[]>([]),[newTopic,setNewTopic]=useState(""),[llms,setLlms]=useState<Record<string,{enabled:boolean;last4:string|null;key_updated_at:string|null}>>({}),[keys,setKeys]=useState<Record<string,string>>({}),[show,setShow]=useState<Record<string,boolean>>({}),[password,setPassword]=useState(""),[confirmPassword,setConfirmPassword]=useState(""),[accountName,setAccountName]=useState(""),[accountEmail,setAccountEmail]=useState(""),[accountSaving,setAccountSaving]=useState(false),[accountMessage,setAccountMessage]=useState(""),[accountError,setAccountError]=useState(""),[loggingOut,setLoggingOut]=useState(false),[logoutError,setLogoutError]=useState(""),[preferences,setPreferences]=useState({theme:"light",text_size:100,scale:100}),[message,setMessage]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false),[logoUploading,setLogoUploading]=useState(false),[logoPreviewError,setLogoPreviewError]=useState("");
+ async function load(){const {data:{user}}=await supabase.auth.getUser();if(!user)return;const [{data:p},{data:profile},{data:m},{data:configs}]=await Promise.all([supabase.from("projects").select("brand_name,brand_description,brand_domains,brand_terms,brand_logo_url,topics").eq("id",projectId).single(),supabase.from("profiles").select("*").eq("id",user.id).single(),supabase.from("project_members").select("role").eq("project_id",projectId).eq("user_id",user.id).maybeSingle(),supabase.from("llm_configs").select("provider,enabled,api_key_last4,key_updated_at").eq("project_id",projectId)]);setRole(profile?.role==="superadmin"?"superadmin":m?.role??profile?.role??"viewer");setAccountEmail(user.email||"");setAccountName(profile?.display_name||profile?.full_name||user.user_metadata?.display_name||user.user_metadata?.full_name||"");if(p){setBrand({brand_name:p.brand_name,brand_description:p.brand_description||"",brand_domains:(p.brand_domains||[]).join("\n"),brand_terms:(p.brand_terms||[]).join("\n"),brand_logo_url:p.brand_logo_url||""});setTopics(p.topics||[])}const map:Record<string,{enabled:boolean;last4:string|null;key_updated_at:string|null}>={};for(const c of configs??[])map[c.provider]={enabled:c.enabled,last4:c.api_key_last4,key_updated_at:c.key_updated_at};setLlms(map)}
  useEffect(()=>{load()},[projectId]);
  const canEdit=role==="admin"||role==="superadmin";
  useEffect(()=>{supabase.auth.getUser().then(async({data:{user}})=>{if(!user)return;const {data}=await supabase.from("profiles").select("ui_preferences").eq("id",user.id).single();if(data?.ui_preferences)setPreferences({...preferences,...data.ui_preferences});})},[]);
@@ -49,7 +49,8 @@ export default function SettingsPage(){
  async function saveKey(provider:string){const key=keys[provider]?.trim();if(!key)return;setBusy(true);setMessage("");setError("");const {error}=await supabase.functions.invoke("llm-key-management",{body:{action:"set",project_id:projectId,provider,api_key:key}});if(error)setError(await functionErrorMessage(error));else{setKeys(v=>({...v,[provider]:""}));setMessage(provider+" API key updated. Only the last four characters are shown.");await load()}setBusy(false)}
  async function removeKey(provider:string){if(!confirm("Remove this API key configuration?"))return;setBusy(true);setMessage("");setError("");const {error}=await supabase.functions.invoke("llm-key-management",{body:{action:"remove",project_id:projectId,provider}});if(error)setError(await functionErrorMessage(error));else{setMessage("API key removed.");await load()}setBusy(false)}
  async function savePreferences(){setBusy(true);setMessage("");setError("");const {data:{user}}=await supabase.auth.getUser();if(!user){setError("Please sign in again to save your preferences.");setBusy(false);return;}const {error}=await supabase.rpc("save_my_ui_preferences",{p_preferences:preferences});if(error)setError(error.message);else setMessage("Platform preferences saved.");setBusy(false);}
- async function changePassword(){if(password.length<8){setError("Password must be at least 8 characters.");return}setBusy(true);const {error}=await supabase.auth.updateUser({password});if(error)setError(error.message);else{setPassword("");setMessage("Password updated.");}setBusy(false)}
+ async function saveAccount(){setAccountSaving(true);setAccountError("");setAccountMessage("");const {data:{user},error:userError}=await supabase.auth.getUser();if(userError||!user){setAccountError(userError?.message||"Unable to load your account.");setAccountSaving(false);return;}const name=accountName.trim(),email=accountEmail.trim().toLowerCase();if(!name){setAccountError("Name is required.");setAccountSaving(false);return;}if(!email.includes("@")){setAccountError("Enter a valid email address.");setAccountSaving(false);return;}if(password&&password.length<8){setAccountError("Password must be at least 8 characters.");setAccountSaving(false);return;}if(password&&password!==confirmPassword){setAccountError("Passwords do not match.");setAccountSaving(false);return;}const emailChanged=email!==(user.email||"").toLowerCase();const authUpdate:{email?:string;password?:string;data:Record<string,string>}={data:{display_name:name,full_name:name}};if(emailChanged)authUpdate.email=email;if(password)authUpdate.password=password;const {error:authError}=await supabase.auth.updateUser(authUpdate);if(authError){setAccountError(authError.message);setAccountSaving(false);return;}const {error:profileError}=await supabase.from("profiles").upsert({id:user.id,display_name:name,full_name:name},{onConflict:"id"});if(profileError){setAccountError(profileError.message);setAccountSaving(false);return;}setPassword("");setConfirmPassword("");setAccountMessage(emailChanged?"Account details saved. Check your email to confirm the new email address.":"Account details saved.");setAccountSaving(false);}
+ async function logOut(){setLoggingOut(true);setLogoutError("");const {error}=await supabase.auth.signOut();if(error){setLogoutError(error.message);setLoggingOut(false);return;}router.push("/login");}
  return (
   <ProjectShell>
     <div className="ops-page">
@@ -76,15 +77,12 @@ export default function SettingsPage(){
             <div className="platform-icon"><Settings2 size={17}/></div>
             <div>
               <h2 className="text-xl font-semibold">Project Settings</h2>
-              <p className="mt-1 text-sm text-[var(--muted-foreground)]">Client information, visibility configuration and answer-engine connections.</p>
+              <p className="mt-1 text-sm text-[var(--muted-foreground)]">Client information and branding for this project.</p>
             </div>
           </div>
 
           <div className="platform-card overflow-hidden">
-            <div className="platform-card-header">
-              <h3 className="text-lg font-semibold">Brand details &amp; visibility configuration</h3>
-              <p className="mt-1 text-sm text-[var(--muted-foreground)]">Keep the client identity and AI tracking inputs together in one workspace.</p>
-            </div>
+            <div className="platform-card-header"><div className="flex items-start gap-3"><div className="platform-icon"><Settings2 size={17}/></div><div><h3 className="text-lg font-semibold">Project details &amp; branding</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Keep the client identity and visual branding together in one workspace.</p></div></div></div>
             <div className="p-5 sm:p-6">
               <div className="grid gap-5 lg:grid-cols-2">
                 <label className="text-sm font-semibold">
@@ -245,33 +243,21 @@ export default function SettingsPage(){
         </section>
 
         <section>
-          <div className="mb-4 flex items-end gap-3 border-b border-[var(--line)] pb-3">
-            <div className="platform-icon"><ShieldCheck size={17}/></div>
-            <div>
-              <h2 className="text-xl font-semibold">Account Settings</h2>
-              <p className="mt-1 text-sm text-[var(--muted-foreground)]">Your account credentials and access to this project.</p>
-            </div>
-          </div>
-
+          <div className="mb-4 flex items-end gap-3 border-b border-[var(--line)] pb-3"><div className="platform-icon"><UserRound size={17}/></div><div><h2 className="text-xl font-semibold">Account Settings</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Your personal account details and sign-in credentials.</p></div></div>
           <div className="platform-card overflow-hidden">
-            <div className="platform-card-header">
-              <h3 className="text-lg font-semibold">Account</h3>
-              <p className="mt-1 text-sm text-[var(--muted-foreground)]">Update your password and review your registered account.</p>
-            </div>
-            <div className="p-5 sm:p-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                <AccountField label="Registered name"/>
-                <AccountField label="Registered email"/>
-              </div>
-              <div className="mt-5 max-w-xl">
-                <label className="text-sm font-semibold">
-                  New password
-                  <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Minimum 8 characters" className="mt-2 w-full platform-input"/>
-                </label>
-                <button onClick={changePassword} disabled={busy||!password} className="mt-3 platform-btn">Change password</button>
-              </div>
+            <div className="platform-card-header"><div className="flex items-start gap-3"><div className="platform-icon"><UserRound size={17}/></div><div><h3 className="text-lg font-semibold">Account</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Update your name, email address and password.</p></div></div></div>
+            <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-2">
+              <div><label className="text-sm font-semibold" htmlFor="account-name">Name</label><p className="mt-1 text-xs text-[var(--muted-foreground)]">The name shown across your workspace.</p><input id="account-name" value={accountName} onChange={e=>setAccountName(e.target.value)} disabled={accountSaving} className="mt-2 w-full platform-input" placeholder="Your Name"/></div>
+              <div><label className="text-sm font-semibold" htmlFor="account-email">Email</label><p className="mt-1 text-xs text-[var(--muted-foreground)]">Changing your email may require confirmation.</p><div className="relative mt-2"><Mail size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"/><input id="account-email" type="email" value={accountEmail} onChange={e=>setAccountEmail(e.target.value)} disabled={accountSaving} className="w-full platform-input pl-10" placeholder="you@company.com"/></div></div>
+              <div><label className="text-sm font-semibold" htmlFor="account-password">New Password</label><p className="mt-1 text-xs text-[var(--muted-foreground)]">Leave blank to keep your current password. Minimum 8 characters.</p><input id="account-password" type="password" minLength={8} value={password} onChange={e=>setPassword(e.target.value)} disabled={accountSaving} className="mt-2 w-full platform-input" placeholder="New Password"/></div>
+              <div><label className="text-sm font-semibold" htmlFor="account-password-confirm">Confirm New Password</label><p className="mt-1 text-xs text-[var(--muted-foreground)]">Re-enter the new password when changing it.</p><input id="account-password-confirm" type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} disabled={accountSaving} className="mt-2 w-full platform-input" placeholder="Confirm New Password"/></div>
+              <div className="flex flex-wrap items-center gap-3 lg:col-span-2"><button type="button" onClick={()=>void saveAccount()} disabled={accountSaving} className="inline-flex items-center gap-2 platform-btn platform-btn-primary"><Check size={15}/>{accountSaving?"Saving…":"Save Account Details"}</button>{accountMessage&&<span className="text-xs text-[var(--muted-foreground)]">{accountMessage}</span>}{accountError&&<span className="text-xs text-red-600">{accountError}</span>}</div>
             </div>
           </div>
+        </section>
+        <section>
+          <div className="mb-4 flex items-end gap-3 border-b border-[var(--line)] pb-3"><div className="platform-icon"><LogOut size={17}/></div><div><h2 className="text-xl font-semibold">Log Out</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Sign out of this account on the current device.</p></div></div>
+          <div className="platform-card"><div className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6"><div><p className="text-sm font-semibold">Log Out</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">You can sign in again from the login page.</p></div><button type="button" onClick={()=>void logOut()} disabled={loggingOut} className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm font-semibold hover:bg-[var(--soft)] disabled:opacity-50"><LogOut size={15}/>{loggingOut?"Logging Out…":"Log Out"}</button>{logoutError&&<p className="w-full text-xs text-red-600">{logoutError}</p>}</div></div>
         </section>
       </div>
     </div>
