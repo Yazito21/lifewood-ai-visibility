@@ -6,6 +6,7 @@ const manrope = Manrope({ subsets: ["latin"] });
 export const metadata = {
   title: "Lifewood AI Visibility",
   description: "AI visibility monitoring and analytics platform",
+  icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
