@@ -12,7 +12,9 @@ export default function SettingsPage(){
  const canEdit=role==="admin"||role==="superadmin";
  useEffect(()=>{supabase.auth.getUser().then(async({data:{user}})=>{if(!user)return;const {data}=await supabase.from("profiles").select("ui_preferences").eq("id",user.id).single();if(data?.ui_preferences)setPreferences({...preferences,...data.ui_preferences});})},[]);
  useEffect(()=>{document.documentElement.style.fontSize=preferences.text_size+"%";document.body.style.zoom=String(preferences.scale/100);document.documentElement.classList.toggle("dark",preferences.theme==="dark");document.documentElement.dataset.theme=preferences.theme},[preferences]);
- async function saveBrand(){setBusy(true);setMessage("");setError("");const {error}=await supabase.from("projects").update({brand_name:brand.brand_name.trim(),brand_description:brand.brand_description.trim()||null,brand_domains:brand.brand_domains.split("\n").map(x=>x.trim()).filter(Boolean),brand_terms:brand.brand_terms.split("\n").map(x=>x.trim()).filter(Boolean),topics}).eq("id",projectId);if(error)setError(error.message);else setMessage("Brand settings saved.");setBusy(false)}
+ async function saveProjectDetails(){setBusy(true);setMessage("");setError("");const {error}=await supabase.from("projects").update({brand_name:brand.brand_name.trim(),brand_description:brand.brand_description.trim()||null}).eq("id",projectId);if(error)setError(error.message);else setMessage("Project details saved.");setBusy(false)}
+ async function saveBrand(){setBusy(true);setMessage("");setError("");const {error}=await supabase.from("projects").update({brand_domains:brand.brand_domains.split("\\n").map(x=>x.trim()).filter(Boolean),brand_terms:brand.brand_terms.split("\\n").map(x=>x.trim()).filter(Boolean),topics}).eq("id",projectId);if(error)setError(error.message);else setMessage("Visibility configuration saved.");setBusy(false)}
+ async function saveBranding(){setBusy(true);setMessage("");setError("");const {error}=await supabase.from("projects").update({brand_logo_url:brand.brand_logo_url||null}).eq("id",projectId);if(error)setError(error.message);else setMessage("Branding saved.");setBusy(false)}
  const allowedLogoTypes=["image/png","image/jpeg","image/webp","image/gif","image/svg+xml","image/avif"];
  async function uploadLogo(file?:File){
   if(!file)return;
@@ -75,74 +77,37 @@ export default function SettingsPage(){
         <section>
           <div className="mb-4 flex items-end gap-3 border-b border-[var(--line)] pb-3">
             <div className="platform-icon"><Settings2 size={17}/></div>
-            <div>
-              <h2 className="text-xl font-semibold">Project Settings</h2>
-              <p className="mt-1 text-sm text-[var(--muted-foreground)]">Client information and branding for this project.</p>
-            </div>
+            <div><h2 className="text-xl font-semibold">Project Settings</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Client information and branding for this project.</p></div>
           </div>
-
           <div className="platform-card overflow-hidden">
-            <div className="platform-card-header"><div className="flex items-start gap-3"><div className="platform-icon"><Settings2 size={17}/></div><div><h3 className="text-lg font-semibold">Project details &amp; branding</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Keep the client identity and visual branding together in one workspace.</p></div></div></div>
-            <div className="p-5 sm:p-6">
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"><div className="space-y-5"><label className="text-sm font-semibold">
-                  Brand name
-                  <input disabled={!canEdit} value={brand.brand_name} onChange={e=>setBrand({...brand,brand_name:e.target.value})} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]"/>
-                </label><label className="text-sm font-semibold">
-                  Description
-                  <textarea disabled={!canEdit} rows={4} value={brand.brand_description} onChange={e=>setBrand({...brand,brand_description:e.target.value})} className="mt-2 w-full resize-none platform-input disabled:bg-[var(--paper)]"/>
-                </label></div><div className="text-sm font-semibold">
-                  Brand logo
-                  <p className="mt-1 text-xs font-normal text-[var(--muted-foreground)]">Upload an image file for the workspace header. PNG, JPEG, WebP, GIF, SVG or AVIF · Max 5 MB.</p>
-                  <div className="mt-3 flex flex-wrap items-center gap-4 rounded-xl border border-[var(--line)] p-3">
-                    <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--line)] bg-white">
-                      {brand.brand_logo_url ? <img src={brand.brand_logo_url} alt="Brand logo preview" onError={()=>setLogoPreviewError("The saved logo preview could not be loaded.")} onLoad={()=>setLogoPreviewError("")} className="h-full w-full object-contain p-1.5"/> : <ImageIcon size={22} className="text-slate-400"/>}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      {brand.brand_logo_url ? <p className="break-all text-xs font-normal text-[var(--muted-foreground)]">Logo uploaded</p> : <p className="text-xs font-normal text-[var(--muted-foreground)]">No logo uploaded. The header will show the default AI mark.</p>}
-                      {logoPreviewError&&<p className="mt-1 text-xs font-normal text-red-600">{logoPreviewError}</p>}
-                      {canEdit&&<div className="mt-2 flex flex-wrap gap-2">
-                        <label className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-semibold ${logoUploading?"pointer-events-none opacity-50":"hover:bg-[var(--soft)]"}`}>
-                          <Upload size={14}/>{logoUploading?"Uploading…":brand.brand_logo_url?"Replace logo":"Upload logo"}
-                          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/avif" disabled={logoUploading||busy} onChange={e=>{const file=e.target.files?.[0];void uploadLogo(file);e.currentTarget.value="";}} className="sr-only"/>
-                        </label>
-                        {brand.brand_logo_url&&<button type="button" disabled={busy||logoUploading} onClick={()=>void removeLogo()} className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50"><X size={14}/>Remove logo</button>}
-                      </div>}
-                    </div>
-                  </div>
-                </div>
-                </div>
-              <div className="mt-5 grid gap-5 lg:grid-cols-2"><label className="text-sm font-semibold">
-                  Brand domains <span className="ml-1 font-normal text-[#66736c]">(one per line)</span>
-                  <textarea disabled={!canEdit} rows={4} value={brand.brand_domains} onChange={e=>setBrand({...brand,brand_domains:e.target.value})} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]"/>
-                </label><label className="text-sm font-semibold">
-                  Brand mention terms <span className="ml-1 font-normal text-[#66736c]">(one per line)</span>
-                  <textarea disabled={!canEdit} rows={4} value={brand.brand_terms} onChange={e=>setBrand({...brand,brand_terms:e.target.value})} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]"/>
-                </label></div>
-              <div className="mt-5">
-                <div className="text-sm font-semibold">Topics</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {topics.map(t=>(
-                    <span key={t} className="inline-flex items-center gap-1 rounded-full bg-[var(--soft)] px-3 py-1.5 text-xs font-semibold text-[var(--green)]">
-                      {t}
-                      {canEdit && <button onClick={()=>setTopics(v=>v.filter(x=>x!==t))}>×</button>}
-                    </span>
-                  ))}
-                </div>
-                {canEdit && (
-                  <div className="mt-3 flex gap-2">
-                    <input value={newTopic} onChange={e=>setNewTopic(e.target.value)} placeholder="Add topic" className="platform-input text-sm"/>
-                    <button onClick={()=>{if(newTopic.trim()&&!topics.includes(newTopic.trim())){setTopics([...topics,newTopic.trim()]);setNewTopic("")}}} className="inline-flex items-center gap-2 platform-btn text-sm font-semibold">
-                      <Plus size={15}/> Add
-                    </button>
-                  </div>
-                )}
+            <div className="platform-card-header"><div className="flex items-start gap-3"><div className="platform-icon"><Settings2 size={17}/></div><div><h3 className="text-lg font-semibold">Project Details &amp; Branding</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Keep the client identity and visual branding together in one compact workspace.</p></div></div></div>
+            <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-2">
+              <div className="space-y-5">
+                <label className="block text-sm font-semibold">Client Company Name<input disabled={!canEdit} value={brand.brand_name} onChange={e=>setBrand({...brand,brand_name:e.target.value})} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]"/></label>
+                <label className="block text-sm font-semibold">Client Company Summary <span className="font-normal text-[var(--muted-foreground)]">(optional)</span><span className="mt-1 block text-xs font-normal text-[var(--muted-foreground)]">Describe the client and the services relevant to this workspace.</span><textarea disabled={!canEdit} rows={4} value={brand.brand_description} onChange={e=>setBrand({...brand,brand_description:e.target.value})} className="mt-2 w-full resize-y platform-input disabled:bg-[var(--paper)]"/></label>
+                {canEdit&&<button disabled={busy} onClick={()=>void saveProjectDetails()} className="inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-50"><Check size={15}/>Save Project Details</button>}
               </div>
-
-              {canEdit && (
-                <button disabled={busy} onClick={saveBrand} className="mt-6 inline-flex items-center gap-2 platform-btn platform-btn-primary">
-                  <Save size={16}/> Save brand settings
-                </button>
-              )}
+              <div className="rounded-2xl border border-[var(--line)] bg-[var(--soft)] p-4 sm:p-5">
+                <div className="flex items-start justify-between gap-3"><div><h3 className="text-sm font-semibold">Client Company Logo</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">Shown across this project.</p></div><ImageIcon size={18} className="shrink-0 text-[var(--green)]"/></div>
+                <div className="mt-4 flex min-h-[160px] flex-col items-center justify-center rounded-xl border border-dashed border-[var(--green)] bg-[var(--paper)] p-5 text-center">
+                  {brand.brand_logo_url?<img src={brand.brand_logo_url} alt="Client company logo preview" onError={()=>setLogoPreviewError("The saved logo preview could not be loaded.")} onLoad={()=>setLogoPreviewError("")} className="max-h-20 max-w-full object-contain"/>:<Upload size={24} className="text-[var(--muted-foreground)]"/>}
+                  <p className="mt-2 text-sm font-medium">{brand.brand_logo_url?"Logo uploaded":"Upload Logo"}</p>
+                  <p className="mt-1 text-[10px] text-[var(--muted-foreground)]">PNG, JPG, WEBP, GIF, SVG or AVIF · Max 5 MB</p>
+                  {logoPreviewError&&<p className="mt-2 text-xs text-red-600">{logoPreviewError}</p>}
+                  {canEdit&&<label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--paper)] px-3 py-2 text-xs font-semibold hover:bg-[var(--soft)]"><Upload size={14}/>{logoUploading?"Uploading…":brand.brand_logo_url?"Replace Logo":"Choose Logo"}<input type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,image/avif" disabled={logoUploading||busy} onChange={e=>{const file=e.target.files?.[0];void uploadLogo(file);e.currentTarget.value="";}} className="sr-only"/></label>}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">{canEdit&&<button disabled={busy||logoUploading} onClick={()=>void saveBranding()} className="inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-50"><Check size={15}/>Save Branding</button>}{canEdit&&brand.brand_logo_url&&<button disabled={busy||logoUploading} onClick={()=>void removeLogo()} className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 disabled:opacity-50"><X size={14}/>Remove Logo</button>}</div>
+              </div>
+            </div>
+            <div className="border-t border-[var(--line)] p-5 sm:p-6">
+              <div className="mb-4"><h3 className="text-sm font-semibold">AI Visibility Configuration</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">Manage the domains, brand mentions and topics used to track visibility.</p></div>
+              <div className="grid gap-5 lg:grid-cols-2">
+                <label className="block text-sm font-semibold">Brand domains <span className="font-normal text-[var(--muted-foreground)]">(one per line)</span><textarea disabled={!canEdit} rows={4} value={brand.brand_domains} onChange={e=>setBrand({...brand,brand_domains:e.target.value})} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]"/></label>
+                <label className="block text-sm font-semibold">Brand mention terms <span className="font-normal text-[var(--muted-foreground)]">(one per line)</span><textarea disabled={!canEdit} rows={4} value={brand.brand_terms} onChange={e=>setBrand({...brand,brand_terms:e.target.value})} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]"/></label>
+              </div>
+              <div className="mt-5"><div className="text-sm font-semibold">Topics</div><div className="mt-2 flex flex-wrap gap-2">{topics.map(t=><span key={t} className="inline-flex items-center gap-1 rounded-full bg-[var(--soft)] px-3 py-1.5 text-xs font-semibold text-[var(--green)]">{t}{canEdit&&<button aria-label={\`Remove \${t}\`} onClick={()=>setTopics(v=>v.filter(x=>x!==t))}>×</button>}</span>)}</div>{canEdit&&<div className="mt-3 flex gap-2"><input value={newTopic} onChange={e=>setNewTopic(e.target.value)} placeholder="Add topic" className="platform-input text-sm"/><button onClick={()=>{if(newTopic.trim()&&!topics.includes(newTopic.trim())){setTopics([...topics,newTopic.trim()]);setNewTopic("")}}} className="inline-flex items-center gap-2 platform-btn text-sm font-semibold"><Plus size={15}/>Add</button></div>}</div>
+              {canEdit&&<button disabled={busy} onClick={()=>void saveBrand()} className="mt-5 inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-50"><Save size={16}/>Save Visibility Configuration</button>}
+              {message&&<p className="mt-3 text-xs text-[var(--muted-foreground)]">{message}</p>}{error&&<p className="mt-3 text-xs text-red-600">{error}</p>}
             </div>
           </div>
         </section>
