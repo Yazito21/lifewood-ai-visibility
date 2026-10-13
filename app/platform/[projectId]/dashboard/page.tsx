@@ -9,7 +9,7 @@ import { supabase } from "@/lib/supabase";
 
 type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null };
 type Citation = { metric_date: string; topic: string | null; url: string; page_name: string | null; brand_name: string | null; is_brand_related: boolean; frequency: number };
-type Competitor = { metric_date: string; topic: string; brand_name: string };
+type CompetitorCount = { topic: string; metric_date: string; competitor_count: number };
 type RankSnapshot = Metric & { previousRank: number | null };
 
 const periods = ["Today", "Last 2 days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"];
@@ -59,17 +59,14 @@ export default function DashboardPage() {
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").gte("metric_date", start).lte("metric_date", end).order("metric_date"),
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").order("metric_date", { ascending: false }).limit(500),
       supabase.from("citations").select("metric_date,topic,url,page_name,brand_name,is_brand_related,frequency").eq("project_id", projectId).gte("metric_date", start).lte("metric_date", end),
-      supabase.from("competitors").select("metric_date,topic,brand_name").eq("project_id", projectId).order("metric_date", { ascending: false }).limit(10000),
+      supabase.rpc("get_latest_competitor_counts", { p_project_id: projectId }),
     ]);
     const firstError = projectError || metricsError || latestError || citationsError || competitorError;
     if (firstError) setError(firstError.message || "Unable to load dashboard data.");
     setMetrics(chartRows ?? []); setLatestMetrics(latestRows ?? []); setCitations(citationRows ?? []);
-    const latestByTopicDate = new Map<string, string>();
-    for (const row of latestRows ?? []) if (!latestByTopicDate.has(row.topic)) latestByTopicDate.set(row.topic, row.metric_date);
     const counts: Record<string, number> = {};
-    for (const row of (competitorRows ?? []) as Competitor[]) {
-      if (latestByTopicDate.get(row.topic) !== row.metric_date) continue;
-      counts[row.topic] = (counts[row.topic] ?? 0) + 1;
+    for (const row of (competitorRows ?? []) as CompetitorCount[]) {
+      counts[row.topic] = Number(row.competitor_count) || 0;
     }
     setCompetitorCounts(counts);
     setLoading(false);
@@ -168,7 +165,7 @@ export default function DashboardPage() {
                 const change = currentRank !== null && previousRank !== null ? previousRank - currentRank : null;
                 return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (topic === "Overall" ? "platform-card-overall" : "")}>
                   <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (topic === "Overall" ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>Latest</span></div>
-                  <div className="mt-4 flex items-end justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Rank</p><p className={"mt-1 text-4xl font-semibold tracking-tight " + (topic === "Overall" ? "platform-overall-value" : "")}>{currentRank ?? "—"}{currentRank !== null && competitorCounts[topic] ? "/" + competitorCounts[topic] : ""}</p></div><div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Score</p><p className={"mt-1 text-lg font-semibold " + (topic === "Overall" ? "platform-overall-value" : "")}>{snapshot?.visibility_score != null ? snapshot.visibility_score.toFixed(1) + "%" : "—"}</p></div></div>
+                  <div className="mt-4 flex items-end justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Rank</p><p className={"mt-1 text-4xl font-semibold tracking-tight " + (topic === "Overall" ? "platform-overall-value" : "")}>{currentRank ?? "—"}{currentRank !== null ? "/" + (competitorCounts[topic] ?? "—") : ""}</p></div><div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Score</p><p className={"mt-1 text-lg font-semibold " + (topic === "Overall" ? "platform-overall-value" : "")}>{snapshot?.visibility_score != null ? snapshot.visibility_score.toFixed(1) + "%" : "—"}</p></div></div>
                   <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[color-mix(in_srgb,var(--border)_35%,transparent)] pt-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Previous Rank</p><p className="mt-1 text-sm font-semibold">{previousRank ?? "—"}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Rank Change</p><p className={"mt-1 text-sm font-semibold " + (change === null ? "text-[var(--muted-foreground)]" : change > 0 ? "text-[var(--primary)]" : change < 0 ? "text-[var(--danger)]" : "text-[var(--muted-foreground)]")}>{change === null ? "—" : change > 0 ? "↑ " + change : change < 0 ? "↓ " + Math.abs(change) : "No change"}</p></div></div>
                 </article>;
               })}
