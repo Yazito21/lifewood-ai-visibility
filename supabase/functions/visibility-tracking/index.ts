@@ -221,8 +221,9 @@ Deno.serve(async (req: Request) => {
       } }, 500);
     }
     if (!project) return json({ error: "PROJECT_NOT_FOUND" }, 404);
-    const isAdmin = profile?.role === "superadmin" || profile?.role === "admin" || member?.role === "superadmin" || member?.role === "admin";
-    const canAccessProject = profile?.role === "superadmin" || Boolean(member);
+    const isSuperadmin = profile?.role === "superadmin";
+    const isAdmin = isSuperadmin || profile?.role === "admin" || member?.role === "superadmin" || member?.role === "admin";
+    const canAccessProject = isSuperadmin || Boolean(member);
     if (mode === "sample" && !canAccessProject) return json({ error: "NOT_AUTHORIZED_FOR_PROJECT" }, 403);
     if (mode !== "sample" && !isAdmin) return json({ error: "NOT_AUTHORIZED_TO_RUN_TRACKING" }, 403);
 
@@ -250,32 +251,77 @@ Deno.serve(async (req: Request) => {
     if (!secret?.ciphertext) return json({ error: "CHATGPT_API_KEY_NOT_CONFIGURED" }, 400);
     const apiKey = await decrypt(secret.ciphertext, projectId + ":chatgpt");
     let runId: string | null = null;
+    let isSuperadminRerun = false;
     if (mode !== "sample") {
       runId = crypto.randomUUID();
-      const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
-        p_project_id: projectId,
-        p_started_by: userId,
-        p_run_id: runId,
-        p_total_prompts: prompts.length,
-      });
-      if (claimError) {
-        console.error("DAILY_TRACKING_CLAIM_FAILED", claimError.message);
-        return json({ error: "DAILY_TRACKING_CLAIM_FAILED", message: "Could not reserve today's tracking run. Please contact an administrator." }, 500);
-      }
-      const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
-      if (!claim?.claimed) {
-        const nextDate = claim?.run_date
-          ? new Date(new Date(String(claim.run_date) + "T00:00:00+08:00").getTime() + 24 * 60 * 60 * 1000).toISOString()
-          : null;
-        return json({
-          error: "DAILY_TRACKING_LIMIT_REACHED",
-          message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
-          run_id: claim?.run_id ?? null,
-          status: claim?.status ?? "unknown",
-          started_at: claim?.started_at ?? null,
-          run_date: claim?.run_date ?? null,
-          next_available_at: nextDate,
-        }, 409);
+      if (isSuperadmin) {
+        // Superadmins may rerun tracking on the same Malaysia-time day.
+        // The daily claim is advanced to the newest run, while previous run history is retained.
+        isSuperadminRerun = true;
+        const todayMYT = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
+        }).format(new Date());
+        const { data: existingClaim, error: existingClaimError } = await admin
+          .from("tracking_run_daily_claims")
+          .select("run_id")
+          .eq("project_id", projectId)
+          .eq("run_date", todayMYT)
+          .maybeSingle();
+        if (existingClaimError) {
+          console.error("DAILY_TRACKING_CLAIM_LOOKUP_FAILED", existingClaimError.message);
+          return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
+        }
+        const { error: runInsertError } = await admin.from("tracking_runs").insert({
+          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running",
+          total_prompts: prompts.length, completed_prompts: 0, failed_prompts: 0,
+        });
+        if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
+        const now = new Date().toISOString();
+        if (existingClaim?.run_id) {
+          const { error: claimUpdateError } = await admin.from("tracking_run_daily_claims")
+            .update({ run_id: runId, started_by: userId, created_at: now })
+            .eq("project_id", projectId).eq("run_date", todayMYT);
+          if (claimUpdateError) {
+            await admin.from("tracking_runs").delete().eq("id", runId);
+            return json({ error: "DAILY_TRACKING_CLAIM_UPDATE_FAILED", message: claimUpdateError.message }, 500);
+          }
+          await admin.from("tracking_runs").update({ error_message: "Superseded by a Superadmin rerun." })
+            .eq("id", existingClaim.run_id).neq("status", "running");
+        } else {
+          const { error: claimInsertError } = await admin.from("tracking_run_daily_claims").insert({
+            project_id: projectId, run_date: todayMYT, run_id: runId, started_by: userId, created_at: now,
+          });
+          if (claimInsertError) {
+            await admin.from("tracking_runs").delete().eq("id", runId);
+            return json({ error: "DAILY_TRACKING_CLAIM_CREATE_FAILED", message: claimInsertError.message }, 500);
+          }
+        }
+      } else {
+        const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
+          p_project_id: projectId,
+          p_started_by: userId,
+          p_run_id: runId,
+          p_total_prompts: prompts.length,
+        });
+        if (claimError) {
+          console.error("DAILY_TRACKING_CLAIM_FAILED", claimError.message);
+          return json({ error: "DAILY_TRACKING_CLAIM_FAILED", message: "Could not reserve today's tracking run. Please contact an administrator." }, 500);
+        }
+        const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
+        if (!claim?.claimed) {
+          const nextDate = claim?.run_date
+            ? new Date(new Date(String(claim.run_date) + "T00:00:00+08:00").getTime() + 24 * 60 * 60 * 1000).toISOString()
+            : null;
+          return json({
+            error: "DAILY_TRACKING_LIMIT_REACHED",
+            message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
+            run_id: claim?.run_id ?? null,
+            status: claim?.status ?? "unknown",
+            started_at: claim?.started_at ?? null,
+            run_date: claim?.run_date ?? null,
+            next_available_at: nextDate,
+          }, 409);
+        }
       }
       activeRunId = runId;
     }
@@ -300,6 +346,40 @@ Deno.serve(async (req: Request) => {
     }
 
     const capturedAt = new Date().toISOString();
+    // On a Superadmin rerun, remove this project's current-day data before writing
+    // the replacement result set, so partial failures or stale citations do not linger.
+    if (isSuperadminRerun) {
+      const dayStart = new Date(day + "T00:00:00+08:00").toISOString();
+      const dayEnd = new Date(new Date(day + "T00:00:00+08:00").getTime() + 86400000).toISOString();
+      const { error: responseDeleteError } = await admin.from("ai_responses")
+        .delete().eq("project_id", projectId)
+        .gte("captured_at", dayStart).lt("captured_at", dayEnd);
+      if (responseDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: responseDeleteError.message }, 500);
+      const { error: citationDeleteError } = await admin.from("citations")
+        .delete().eq("project_id", projectId).eq("metric_date", day);
+      if (citationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: citationDeleteError.message }, 500);
+      const { error: competitorDeleteError } = await admin.from("competitors")
+        .delete().eq("project_id", projectId).eq("metric_date", day);
+      if (competitorDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorDeleteError.message }, 500);
+    }
+    if (isSuperadminRerun) {
+      // Discard earlier prompt responses and derived rows for the same Malaysia-time day.
+      const datePartsForCleanup = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
+      }).formatToParts(new Date());
+      const rerunDay = `${datePartsForCleanup.find((p) => p.type === "year")?.value}-${datePartsForCleanup.find((p) => p.type === "month")?.value}-${datePartsForCleanup.find((p) => p.type === "day")?.value}`;
+      const dayStart = new Date(rerunDay + "T00:00:00+08:00").toISOString();
+      const dayEnd = new Date(new Date(rerunDay + "T00:00:00+08:00").getTime() + 86400000).toISOString();
+      const { error: responseDeleteError } = await admin.from("ai_responses")
+        .delete().eq("project_id", projectId).gte("captured_at", dayStart).lt("captured_at", dayEnd);
+      if (responseDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: responseDeleteError.message }, 500);
+      const { error: citationsDeleteError } = await admin.from("citations").delete().eq("project_id", projectId).eq("metric_date", rerunDay);
+      if (citationsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: citationsDeleteError.message }, 500);
+      const { error: competitorsDeleteError } = await admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", rerunDay);
+      if (competitorsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorsDeleteError.message }, 500);
+      const { error: metricsDeleteError } = await admin.from("visibility_daily").delete().eq("project_id", projectId).eq("metric_date", rerunDay);
+      if (metricsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsDeleteError.message }, 500);
+    }
     const rawRows = results.map((r) => ({
       project_id: projectId, prompt_id: r.prompt_id, llm_provider: "chatgpt", captured_at: r.completed_at,
       prompt_snapshot: r.prompt, raw_response: r.raw_response ?? { error: r.error_message }, response_text: r.response_text ?? null,
@@ -317,6 +397,12 @@ Deno.serve(async (req: Request) => {
       timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
     }).formatToParts(new Date());
     const day = `${dateParts.find((p) => p.type === "year")?.value}-${dateParts.find((p) => p.type === "month")?.value}-${dateParts.find((p) => p.type === "day")?.value}`;
+    if (isSuperadminRerun) {
+      // Remove today's old summary rows so metrics for disappeared topics are not retained.
+      const { error: metricsCleanupError } = await admin.from("visibility_daily")
+        .delete().eq("project_id", projectId).eq("metric_date", day);
+      if (metricsCleanupError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsCleanupError.message }, 500);
+    }
     const topicNames = [...new Set(prompts.map((p) => String(p.topic ?? "General")))];
     const citationsMap = new Map<string, Record<string,unknown>>();
     const competitorMap = new Map<string, number>();
