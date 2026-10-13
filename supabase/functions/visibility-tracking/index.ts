@@ -378,6 +378,12 @@ Deno.serve(async (req: Request) => {
       timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
     }).formatToParts(new Date());
     const day = `${dateParts.find((p) => p.type === "year")?.value}-${dateParts.find((p) => p.type === "month")?.value}-${dateParts.find((p) => p.type === "day")?.value}`;
+    if (isSuperadminRerun) {
+      // Remove today's old summary rows so metrics for disappeared topics are not retained.
+      const { error: metricsCleanupError } = await admin.from("visibility_daily")
+        .delete().eq("project_id", projectId).eq("metric_date", day);
+      if (metricsCleanupError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsCleanupError.message }, 500);
+    }
     const topicNames = [...new Set(prompts.map((p) => String(p.topic ?? "General")))];
     const citationsMap = new Map<string, Record<string,unknown>>();
     const competitorMap = new Map<string, number>();
