@@ -346,6 +346,21 @@ Deno.serve(async (req: Request) => {
     }
 
     const capturedAt = new Date().toISOString();
+    // On a Superadmin rerun, remove this project's current-day data before writing
+    // the replacement result set, so partial failures or stale citations do not linger.
+    if (isSuperadminRerun) {
+      const { error: responseDeleteError } = await admin.from("ai_responses")
+        .delete().eq("project_id", projectId)
+        .gte("captured_at", day + "T00:00:00+08:00")
+        .lt("captured_at", new Date(new Date(day + "T00:00:00+08:00").getTime() + 86400000).toISOString());
+      if (responseDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: responseDeleteError.message }, 500);
+      const { error: citationDeleteError } = await admin.from("citations")
+        .delete().eq("project_id", projectId).eq("metric_date", day);
+      if (citationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: citationDeleteError.message }, 500);
+      const { error: competitorDeleteError } = await admin.from("competitors")
+        .delete().eq("project_id", projectId).eq("metric_date", day);
+      if (competitorDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorDeleteError.message }, 500);
+    }
     const rawRows = results.map((r) => ({
       project_id: projectId, prompt_id: r.prompt_id, llm_provider: "chatgpt", captured_at: r.completed_at,
       prompt_snapshot: r.prompt, raw_response: r.raw_response ?? { error: r.error_message }, response_text: r.response_text ?? null,
