@@ -5,14 +5,13 @@ import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 
-type Row = { metric_date: string; topic: string | null; llm_provider: string | null; brand_name: string; website: string | null; visibility_score: number | null; citation_count: number };
 type CompetitorRow = { brand_name: string; website: string | null; visibility_score: number | null; citations: number };
 const LLMS = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "claude"];
 const labels: Record<string, string> = { chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", google_ai_overview: "Google AI Overview", claude: "Claude" };
 
 export default function CompetitorsPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const [rows, setRows] = useState<Row[]>([]);
+  const [aggregated, setAggregated] = useState<CompetitorRow[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
   const [llms, setLlms] = useState<string[]>([]);
@@ -35,41 +34,28 @@ export default function CompetitorsPage() {
   const end = period === "Custom" ? customEnd : new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    async function load() {
       setLoading(true);
       setError("");
-      const { data: project } = await supabase.from("projects").select("topics").eq("id", projectId).single();
+      const [{ data: project, error: projectError }, { data, error: fetchError }] = await Promise.all([
+        supabase.from("projects").select("topics").eq("id", projectId).single(),
+        supabase.rpc("get_cumulative_competitors", {
+          p_project_id: projectId, p_start_date: start, p_end_date: end,
+          p_topic: topic === "All" ? null : topic, p_engines: llms,
+        }),
+      ]);
+      if (cancelled) return;
       setTopics(project?.topics ?? []);
-      const allRows: Row[] = [];
-      let offset = 0;
-      while (true) {
-        const { data, error: fetchError } = await supabase.from("competitors").select("metric_date,topic,llm_provider,brand_name,website,visibility_score,citation_count").eq("project_id", projectId).gte("metric_date", start).lte("metric_date", end).order("metric_date", { ascending: false }).range(offset, offset + 999);
-        if (fetchError) { setError(fetchError.message); break; }
-        allRows.push(...((data ?? []) as Row[]));
-        if (!data || data.length < 1000) break;
-        offset += 1000;
-      }
-      setRows(allRows);
+      if (projectError || fetchError) setError((projectError || fetchError)?.message ?? "Unable to load competitor data.");
+      setAggregated((data ?? []) as CompetitorRow[]);
       setLoading(false);
-    })();
-  }, [projectId, start, end]);
-
-  const filtered = rows.filter((row) => (topic === "All" || row.topic === topic) && (llms.length === 0 || llms.includes(row.llm_provider || "")));
-  const aggregated = useMemo<CompetitorRow[]>(() => {
-    const map = new Map<string, { brand_name: string; website: string | null; scores: number[]; citations: number }>();
-    for (const row of filtered) {
-      const existing = map.get(row.brand_name) || { brand_name: row.brand_name, website: row.website, scores: [], citations: 0 };
-      if (row.visibility_score != null) existing.scores.push(row.visibility_score);
-      existing.citations += row.citation_count;
-      map.set(row.brand_name, existing);
     }
-    return [...map.values()].map((item) => ({
-      brand_name: item.brand_name,
-      website: item.website,
-      visibility_score: item.scores.length ? item.scores.reduce((sum, value) => sum + value, 0) / item.scores.length : null,
-      citations: item.citations,
-    })).sort((a, b) => (b.visibility_score ?? -1) - (a.visibility_score ?? -1));
-  }, [rows, topic, llms]);
+    void load();
+    return () => { cancelled = true; };
+  }, [projectId, start, end, topic, llms]);
+
+
 
   const searchTerm = search.trim().toLocaleLowerCase();
   const searchResults = aggregated.filter((row) => [row.brand_name, row.website ?? ""].some((value) => value.toLocaleLowerCase().includes(searchTerm)));
