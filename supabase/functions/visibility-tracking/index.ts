@@ -221,8 +221,9 @@ Deno.serve(async (req: Request) => {
       } }, 500);
     }
     if (!project) return json({ error: "PROJECT_NOT_FOUND" }, 404);
-    const isAdmin = profile?.role === "superadmin" || profile?.role === "admin" || member?.role === "superadmin" || member?.role === "admin";
-    const canAccessProject = profile?.role === "superadmin" || Boolean(member);
+    const isSuperadmin = profile?.role === "superadmin";
+    const isAdmin = isSuperadmin || profile?.role === "admin" || member?.role === "superadmin" || member?.role === "admin";
+    const canAccessProject = isSuperadmin || Boolean(member);
     if (mode === "sample" && !canAccessProject) return json({ error: "NOT_AUTHORIZED_FOR_PROJECT" }, 403);
     if (mode !== "sample" && !isAdmin) return json({ error: "NOT_AUTHORIZED_TO_RUN_TRACKING" }, 403);
 
@@ -250,32 +251,77 @@ Deno.serve(async (req: Request) => {
     if (!secret?.ciphertext) return json({ error: "CHATGPT_API_KEY_NOT_CONFIGURED" }, 400);
     const apiKey = await decrypt(secret.ciphertext, projectId + ":chatgpt");
     let runId: string | null = null;
+    let isSuperadminRerun = false;
     if (mode !== "sample") {
       runId = crypto.randomUUID();
-      const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
-        p_project_id: projectId,
-        p_started_by: userId,
-        p_run_id: runId,
-        p_total_prompts: prompts.length,
-      });
-      if (claimError) {
-        console.error("DAILY_TRACKING_CLAIM_FAILED", claimError.message);
-        return json({ error: "DAILY_TRACKING_CLAIM_FAILED", message: "Could not reserve today's tracking run. Please contact an administrator." }, 500);
-      }
-      const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
-      if (!claim?.claimed) {
-        const nextDate = claim?.run_date
-          ? new Date(new Date(String(claim.run_date) + "T00:00:00+08:00").getTime() + 24 * 60 * 60 * 1000).toISOString()
-          : null;
-        return json({
-          error: "DAILY_TRACKING_LIMIT_REACHED",
-          message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
-          run_id: claim?.run_id ?? null,
-          status: claim?.status ?? "unknown",
-          started_at: claim?.started_at ?? null,
-          run_date: claim?.run_date ?? null,
-          next_available_at: nextDate,
-        }, 409);
+      if (isSuperadmin) {
+        // Superadmins may rerun tracking on the same Malaysia-time day.
+        // The daily claim is advanced to the newest run, while previous run history is retained.
+        isSuperadminRerun = true;
+        const todayMYT = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
+        }).format(new Date());
+        const { data: existingClaim, error: existingClaimError } = await admin
+          .from("tracking_run_daily_claims")
+          .select("run_id")
+          .eq("project_id", projectId)
+          .eq("run_date", todayMYT)
+          .maybeSingle();
+        if (existingClaimError) {
+          console.error("DAILY_TRACKING_CLAIM_LOOKUP_FAILED", existingClaimError.message);
+          return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
+        }
+        const { error: runInsertError } = await admin.from("tracking_runs").insert({
+          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running",
+          total_prompts: prompts.length, completed_prompts: 0, failed_prompts: 0,
+        });
+        if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
+        const now = new Date().toISOString();
+        if (existingClaim?.run_id) {
+          const { error: claimUpdateError } = await admin.from("tracking_run_daily_claims")
+            .update({ run_id: runId, started_by: userId, created_at: now })
+            .eq("project_id", projectId).eq("run_date", todayMYT);
+          if (claimUpdateError) {
+            await admin.from("tracking_runs").delete().eq("id", runId);
+            return json({ error: "DAILY_TRACKING_CLAIM_UPDATE_FAILED", message: claimUpdateError.message }, 500);
+          }
+          await admin.from("tracking_runs").update({ error_message: "Superseded by a Superadmin rerun." })
+            .eq("id", existingClaim.run_id).neq("status", "running");
+        } else {
+          const { error: claimInsertError } = await admin.from("tracking_run_daily_claims").insert({
+            project_id: projectId, run_date: todayMYT, run_id: runId, started_by: userId, created_at: now,
+          });
+          if (claimInsertError) {
+            await admin.from("tracking_runs").delete().eq("id", runId);
+            return json({ error: "DAILY_TRACKING_CLAIM_CREATE_FAILED", message: claimInsertError.message }, 500);
+          }
+        }
+      } else {
+        const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
+          p_project_id: projectId,
+          p_started_by: userId,
+          p_run_id: runId,
+          p_total_prompts: prompts.length,
+        });
+        if (claimError) {
+          console.error("DAILY_TRACKING_CLAIM_FAILED", claimError.message);
+          return json({ error: "DAILY_TRACKING_CLAIM_FAILED", message: "Could not reserve today's tracking run. Please contact an administrator." }, 500);
+        }
+        const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
+        if (!claim?.claimed) {
+          const nextDate = claim?.run_date
+            ? new Date(new Date(String(claim.run_date) + "T00:00:00+08:00").getTime() + 24 * 60 * 60 * 1000).toISOString()
+            : null;
+          return json({
+            error: "DAILY_TRACKING_LIMIT_REACHED",
+            message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
+            run_id: claim?.run_id ?? null,
+            status: claim?.status ?? "unknown",
+            started_at: claim?.started_at ?? null,
+            run_date: claim?.run_date ?? null,
+            next_available_at: nextDate,
+          }, 409);
+        }
       }
       activeRunId = runId;
     }
