@@ -40,9 +40,16 @@ export default function CompetitorsPage() {
       setError("");
       const { data: project } = await supabase.from("projects").select("topics").eq("id", projectId).single();
       setTopics(project?.topics ?? []);
-      const { data, error: fetchError } = await supabase.from("competitors").select("metric_date,topic,llm_provider,brand_name,website,visibility_score,citation_count").eq("project_id", projectId).gte("metric_date", start).lte("metric_date", end).order("metric_date", { ascending: false });
-      if (fetchError) setError(fetchError.message);
-      setRows(data ?? []);
+      const allRows: Row[] = [];
+      let offset = 0;
+      while (true) {
+        const { data, error: fetchError } = await supabase.from("competitors").select("metric_date,topic,llm_provider,brand_name,website,visibility_score,citation_count").eq("project_id", projectId).gte("metric_date", start).lte("metric_date", end).order("metric_date", { ascending: false }).range(offset, offset + 999);
+        if (fetchError) { setError(fetchError.message); break; }
+        allRows.push(...((data ?? []) as Row[]));
+        if (!data || data.length < 1000) break;
+        offset += 1000;
+      }
+      setRows(allRows);
       setLoading(false);
     })();
   }, [projectId, start, end]);
