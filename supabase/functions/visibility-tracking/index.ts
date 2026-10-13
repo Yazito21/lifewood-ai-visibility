@@ -349,10 +349,11 @@ Deno.serve(async (req: Request) => {
     // On a Superadmin rerun, remove this project's current-day data before writing
     // the replacement result set, so partial failures or stale citations do not linger.
     if (isSuperadminRerun) {
+      const dayStart = new Date(day + "T00:00:00+08:00").toISOString();
+      const dayEnd = new Date(new Date(day + "T00:00:00+08:00").getTime() + 86400000).toISOString();
       const { error: responseDeleteError } = await admin.from("ai_responses")
         .delete().eq("project_id", projectId)
-        .gte("captured_at", day + "T00:00:00+08:00")
-        .lt("captured_at", new Date(new Date(day + "T00:00:00+08:00").getTime() + 86400000).toISOString());
+        .gte("captured_at", dayStart).lt("captured_at", dayEnd);
       if (responseDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: responseDeleteError.message }, 500);
       const { error: citationDeleteError } = await admin.from("citations")
         .delete().eq("project_id", projectId).eq("metric_date", day);
