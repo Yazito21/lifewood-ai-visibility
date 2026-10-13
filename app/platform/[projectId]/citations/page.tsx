@@ -6,7 +6,6 @@ import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 
-type Row = { metric_date: string; topic: string | null; llm_provider: string | null; url: string; page_name: string | null; brand_name: string | null; is_brand_related: boolean; frequency: number };
 type AggregatedRow = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
 const LLMS = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "claude"];
 const labels: Record<string, string> = { chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", google_ai_overview: "Google AI Overview", claude: "Claude" };
@@ -71,7 +70,8 @@ function CitationTable({ title, data }: { title: string; data: AggregatedRow[] }
 
 export default function CitationsPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const [rows, setRows] = useState<Row[]>([]);
+  const [brandPages, setBrandPages] = useState<AggregatedRow[]>([]);
+  const [allPages, setAllPages] = useState<AggregatedRow[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
   const [llms, setLlms] = useState<string[]>([]);
@@ -92,37 +92,33 @@ export default function CitationsPage() {
   const end = period === "Custom" ? customEnd : new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    async function load() {
       setLoading(true);
       setError("");
-      const { data: project } = await supabase.from("projects").select("topics").eq("id", projectId).single();
+      const [{ data: project, error: projectError }, { data: brandRows, error: brandError }, { data: pageRows, error: pagesError }] = await Promise.all([
+        supabase.from("projects").select("topics").eq("id", projectId).single(),
+        supabase.rpc("get_cumulative_citations", {
+          p_project_id: projectId, p_start_date: start, p_end_date: end,
+          p_topic: topic === "All" ? null : topic, p_engines: llms, p_brand_related_only: true,
+        }),
+        supabase.rpc("get_cumulative_citations", {
+          p_project_id: projectId, p_start_date: start, p_end_date: end,
+          p_topic: topic === "All" ? null : topic, p_engines: llms, p_brand_related_only: false,
+        }),
+      ]);
+      if (cancelled) return;
       setTopics(project?.topics ?? []);
-      const allRows: Row[] = [];
-      let offset = 0;
-      while (true) {
-        const { data, error: fetchError } = await supabase.from("citations").select("metric_date,topic,llm_provider,url,page_name,brand_name,is_brand_related,frequency").eq("project_id", projectId).gte("metric_date", start).lte("metric_date", end).order("metric_date", { ascending: false }).range(offset, offset + 999);
-        if (fetchError) { setError(fetchError.message); break; }
-        allRows.push(...((data ?? []) as Row[]));
-        if (!data || data.length < 1000) break;
-        offset += 1000;
-      }
-      setRows(allRows);
+      if (projectError || brandError || pagesError) setError((projectError || brandError || pagesError)?.message ?? "Unable to load citation data.");
+      setBrandPages((brandRows ?? []) as AggregatedRow[]);
+      setAllPages((pageRows ?? []) as AggregatedRow[]);
       setLoading(false);
-    })();
-  }, [projectId, start, end]);
-
-  const filtered = rows.filter((row) => (topic === "All" || row.topic === topic) && (llms.length === 0 || llms.includes(row.llm_provider || "")));
-  const aggregate = (brandOnly: boolean): AggregatedRow[] => {
-    const map = new Map<string, AggregatedRow>();
-    for (const row of filtered) {
-      if (brandOnly && !row.is_brand_related) continue;
-      const old = map.get(row.url);
-      map.set(row.url, { url: row.url, page_name: row.page_name, brand_name: row.brand_name, frequency: (old?.frequency ?? 0) + row.frequency });
     }
-    return [...map.values()].sort((a, b) => b.frequency - a.frequency);
-  };
-  const brandPages = aggregate(true);
-  const allPages = aggregate(false);
+    void load();
+    return () => { cancelled = true; };
+  }, [projectId, start, end, topic, llms]);
+
+
 
   return <ProjectShell><div className="ops-page">
     <p className="page-eyebrow">Citations</p>
