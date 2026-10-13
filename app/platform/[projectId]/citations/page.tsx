@@ -76,16 +76,20 @@ export default function CitationsPage() {
   const [topic, setTopic] = useState("All");
   const [llms, setLlms] = useState<string[]>([]);
   const [period, setPeriod] = useState("Last 7 Days");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState(new Date().toISOString().slice(0, 10));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const start = useMemo(() => {
+    if (period === "Custom") return customStart || new Date().toISOString().slice(0, 10);
     const date = new Date();
     date.setHours(0, 0, 0, 0);
-    const days = period === "Today" ? 0 : period === "Last 2 Days" ? 1 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : period === "All Time" ? 3650 : 6;
+    const days = period === "Today" ? 0 : period === "Last 2 Days" ? 1 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : period === "All Time" ? 36500 : 6;
     date.setDate(date.getDate() - days);
     return date.toISOString().slice(0, 10);
-  }, [period]);
+  }, [period, customStart]);
+  const end = period === "Custom" ? customEnd : new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
     (async () => {
@@ -93,12 +97,12 @@ export default function CitationsPage() {
       setError("");
       const { data: project } = await supabase.from("projects").select("topics").eq("id", projectId).single();
       setTopics(project?.topics ?? []);
-      const { data, error: fetchError } = await supabase.from("citations").select("metric_date,topic,llm_provider,url,page_name,brand_name,is_brand_related,frequency").eq("project_id", projectId).gte("metric_date", start).order("metric_date", { ascending: false });
+      const { data, error: fetchError } = await supabase.from("citations").select("metric_date,topic,llm_provider,url,page_name,brand_name,is_brand_related,frequency").eq("project_id", projectId).gte("metric_date", start).lte("metric_date", end).order("metric_date", { ascending: false });
       if (fetchError) setError(fetchError.message);
       setRows(data ?? []);
       setLoading(false);
     })();
-  }, [projectId, start]);
+  }, [projectId, start, end]);
 
   const filtered = rows.filter((row) => (topic === "All" || row.topic === topic) && (llms.length === 0 || llms.includes(row.llm_provider || "")));
   const aggregate = (brandOnly: boolean): AggregatedRow[] => {
@@ -116,9 +120,10 @@ export default function CitationsPage() {
   return <ProjectShell><div className="ops-page">
     <p className="page-eyebrow">Citations</p>
     <h2 className="page-title mt-1">Citation intelligence</h2>
-    <p className="page-description mt-2">Every cited page extracted from the tracked AI responses.</p>
+    <p className="page-description mt-2">Cumulative cited-page frequency across tracked runs within the selected period.</p>
     <div className="mt-8 ops-filter-panel">
-      <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{["Today", "Last 2 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time"].map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}</div>
+      <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{["Today", "Last 2 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"].map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
+      </div>
       <div className="ops-filter-row"><span className="ops-filter-label">Topic</span><button onClick={() => setTopic("All")} className={`ops-filter-pill ${topic === "All" ? "is-active" : ""}`}>All</button>{topics.map((value) => <button key={value} onClick={() => setTopic(value)} className={`ops-filter-pill ${topic === value ? "is-active" : ""}`}>{value}</button>)}</div>
       <div className="ops-filter-row"><span className="ops-filter-label">Engines</span>{LLMS.map((engine) => <button key={engine} onClick={() => setLlms((current) => current.includes(engine) ? current.filter((item) => item !== engine) : [...current, engine])} className={`ops-filter-pill ${llms.includes(engine) ? "is-active" : ""}`}>{labels[engine]}</button>)}</div>
     </div>
