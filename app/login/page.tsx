@@ -17,7 +17,7 @@ export default function LoginPage() {
   useEffect(()=>{
     let mounted=true;
     supabase.auth.getSession().then(({data})=>{
-      if(mounted && data.session) router.replace("/projects");
+      if(mounted && data.session) router.replace("/home");
     });
     return ()=>{mounted=false};
   },[router]);
@@ -28,7 +28,7 @@ export default function LoginPage() {
     setLoading(true);
     const {error}=await supabase.auth.signInWithPassword({email:email.trim(),password});
     if(error){setError(error.message);setLoading(false);return;}
-    router.replace("/projects");
+    router.replace("/home");
     router.refresh();
   }
 

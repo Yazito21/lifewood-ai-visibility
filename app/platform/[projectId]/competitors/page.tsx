@@ -5,60 +5,57 @@ import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 
-type Row = { metric_date: string; topic: string | null; llm_provider: string | null; brand_name: string; website: string | null; visibility_score: number | null; citation_count: number };
 type CompetitorRow = { brand_name: string; website: string | null; visibility_score: number | null; citations: number };
 const LLMS = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "claude"];
 const labels: Record<string, string> = { chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", google_ai_overview: "Google AI Overview", claude: "Claude" };
 
 export default function CompetitorsPage() {
   const { projectId } = useParams<{ projectId: string }>();
-  const [rows, setRows] = useState<Row[]>([]);
+  const [aggregated, setAggregated] = useState<CompetitorRow[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
   const [llms, setLlms] = useState<string[]>([]);
   const [period, setPeriod] = useState("Last 7 Days");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState(new Date().toISOString().slice(0, 10));
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const start = useMemo(() => {
+    if (period === "Custom") return customStart || new Date().toISOString().slice(0, 10);
     const date = new Date();
     date.setHours(0, 0, 0, 0);
-    const days = period === "Today" ? 0 : period === "Last 2 Days" ? 1 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : period === "All Time" ? 3650 : 6;
+    const days = period === "Today" ? 0 : period === "Last 2 Days" ? 1 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : period === "All Time" ? 36500 : 6;
     date.setDate(date.getDate() - days);
     return date.toISOString().slice(0, 10);
-  }, [period]);
+  }, [period, customStart]);
+  const end = period === "Custom" ? customEnd : new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    async function load() {
       setLoading(true);
       setError("");
-      const { data: project } = await supabase.from("projects").select("topics").eq("id", projectId).single();
+      const [{ data: project, error: projectError }, { data, error: fetchError }] = await Promise.all([
+        supabase.from("projects").select("topics").eq("id", projectId).single(),
+        supabase.rpc("get_cumulative_competitors", {
+          p_project_id: projectId, p_start_date: start, p_end_date: end,
+          p_topic: topic === "All" ? null : topic, p_engines: llms,
+        }),
+      ]);
+      if (cancelled) return;
       setTopics(project?.topics ?? []);
-      const { data, error: fetchError } = await supabase.from("competitors").select("metric_date,topic,llm_provider,brand_name,website,visibility_score,citation_count").eq("project_id", projectId).gte("metric_date", start).order("metric_date", { ascending: false });
-      if (fetchError) setError(fetchError.message);
-      setRows(data ?? []);
+      if (projectError || fetchError) setError((projectError || fetchError)?.message ?? "Unable to load competitor data.");
+      setAggregated((data ?? []) as CompetitorRow[]);
       setLoading(false);
-    })();
-  }, [projectId, start]);
-
-  const filtered = rows.filter((row) => (topic === "All" || row.topic === topic) && (llms.length === 0 || llms.includes(row.llm_provider || "")));
-  const aggregated = useMemo<CompetitorRow[]>(() => {
-    const map = new Map<string, { brand_name: string; website: string | null; scores: number[]; citations: number }>();
-    for (const row of filtered) {
-      const existing = map.get(row.brand_name) || { brand_name: row.brand_name, website: row.website, scores: [], citations: 0 };
-      if (row.visibility_score != null) existing.scores.push(row.visibility_score);
-      existing.citations += row.citation_count;
-      map.set(row.brand_name, existing);
     }
-    return [...map.values()].map((item) => ({
-      brand_name: item.brand_name,
-      website: item.website,
-      visibility_score: item.scores.length ? item.scores.reduce((sum, value) => sum + value, 0) / item.scores.length : null,
-      citations: item.citations,
-    })).sort((a, b) => (b.visibility_score ?? -1) - (a.visibility_score ?? -1));
-  }, [rows, topic, llms]);
+    void load();
+    return () => { cancelled = true; };
+  }, [projectId, start, end, topic, llms]);
+
+
 
   const searchTerm = search.trim().toLocaleLowerCase();
   const searchResults = aggregated.filter((row) => [row.brand_name, row.website ?? ""].some((value) => value.toLocaleLowerCase().includes(searchTerm)));
@@ -67,9 +64,10 @@ export default function CompetitorsPage() {
   return <ProjectShell><div className="ops-page">
     <p className="page-eyebrow">Competitors</p>
     <h2 className="page-title mt-1">Competitor landscape</h2>
-    <p className="page-description mt-2">Competitor brands extracted from tracked AI responses and ranked by visibility.</p>
+    <p className="page-description mt-2">Cumulative competitor citations and visibility across tracked runs within the selected period.</p>
     <div className="mt-8 ops-filter-panel">
-      <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{["Today", "Last 2 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time"].map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}</div>
+      <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{["Today", "Last 2 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"].map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
+      </div>
       <div className="ops-filter-row"><span className="ops-filter-label">Topic</span><button onClick={() => setTopic("All")} className={`ops-filter-pill ${topic === "All" ? "is-active" : ""}`}>All</button>{topics.map((value) => <button key={value} onClick={() => setTopic(value)} className={`ops-filter-pill ${topic === value ? "is-active" : ""}`}>{value}</button>)}</div>
       <div className="ops-filter-row"><span className="ops-filter-label">Engines</span>{LLMS.map((engine) => <button key={engine} onClick={() => setLlms((current) => current.includes(engine) ? current.filter((item) => item !== engine) : [...current, engine])} className={`ops-filter-pill ${llms.includes(engine) ? "is-active" : ""}`}>{labels[engine]}</button>)}</div>
     </div>

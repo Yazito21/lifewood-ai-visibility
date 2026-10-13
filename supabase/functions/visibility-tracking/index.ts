@@ -71,6 +71,20 @@ function normalizedHostLabel(value: string) {
   return value.toLowerCase().replace("https://", "").replace("http://", "").replace(/^www[.]/, "").split("/")[0].split(":")[0];
 }
 
+// General search engines, social platforms, and directory/publisher sites are
+// useful citation sources, but they are not direct competitors for Lifewood.
+const nonCompetitorDomains = new Set([
+  "google.com", "google.co.uk", "google.ca", "google.com.au", "google.co.in",
+  "googleusercontent.com", "gstatic.com", "googleapis.com",
+  "bing.com", "search.yahoo.com", "yahoo.com", "duckduckgo.com",
+  "wikipedia.org", "facebook.com", "instagram.com", "youtube.com", "tiktok.com",
+  "x.com", "twitter.com", "linkedin.com", "reddit.com", "goodfirms.co", "clutch.co",
+]);
+function isGenericCitationDomain(value: string) {
+  const host = normalizedHostLabel(value);
+  return [...nonCompetitorDomains].some((domain) => host === domain || host.endsWith("." + domain));
+}
+
 function urlsIn(text: string) {
   const matches = text.match(/https?:\/\/[^\s<>"')\]]+/gi) ?? [];
   return [...new Set(matches.map((u) => u.replace(/[.,;:!?]+$/, "")))].slice(0, 40);
@@ -159,7 +173,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
           const related = domains.some((d) => d && (host === d || host.endsWith("." + d))) || containsTerm(url, terms);
           return { url, page_name: String(source.title || titleFromUrl(url)), brand_name: related ? brandName : titleFromUrl(url), is_brand_related: related, domain: host, citation_source: source.source ?? "web_search" };
         });
-        const competitorHosts = [...new Set(citations.filter((c) => !c.is_brand_related).map((c) => hostOf(c.url)).filter(Boolean))];
+        const competitorHosts = [...new Set(citations.filter((c) => !c.is_brand_related).map((c) => hostOf(c.url)).filter((host) => Boolean(host) && !isGenericCitationDomain(host)))];
         results[index] = {
           prompt_id: prompt.id, prompt_number: prompt.prompt_number, prompt: String(prompt.prompt ?? ""),
           topic: String(prompt.topic ?? "General"), language: String(prompt.language ?? "English"),
@@ -445,6 +459,7 @@ Deno.serve(async (req: Request) => {
         if (citation.is_brand_related) continue;
         const label = String(citation.brand_name ?? "").trim();
         const domain = normalizedHostLabel(String(citation.domain ?? citation.url ?? ""));
+        if (isGenericCitationDomain(domain)) continue;
         const stem = domain.split(".")[0]?.replace(/[-_]+/g, " ") ?? "";
         const key = (label || stem || domain).toLocaleLowerCase();
         if (!key) continue;

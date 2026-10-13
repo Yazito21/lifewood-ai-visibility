@@ -79,7 +79,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
     return <main className="min-h-screen bg-[var(--background)] p-6">
       <div className="mx-auto max-w-xl rounded-2xl border border-[var(--line)] bg-[var(--card)] p-7 shadow-sm">
         <p className="text-sm text-red-700">{error}</p>
-        <Link href="/projects" className="platform-btn platform-btn-primary mt-5">Back to projects</Link>
+        <Link href="/home" className="platform-btn platform-btn-primary mt-5">Back to projects</Link>
       </div>
     </main>;
   }
@@ -93,7 +93,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
       <div className="relative mx-auto w-full max-w-[1500px] px-4 sm:px-7 lg:px-8">
         <div className="flex min-h-[82px] items-center justify-between gap-4 py-3.5">
           <div className="min-w-0">
-            <Link href="/projects" className="mb-1.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-white/60 transition hover:text-white">
+            <Link href="/home" className="mb-1.5 inline-flex items-center gap-1.5 text-[11px] font-medium text-white/60 transition hover:text-white">
               <ArrowLeft size={13} /> All projects
             </Link>
             <div className="flex min-w-0 items-center gap-3">
