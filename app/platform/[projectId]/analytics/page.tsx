@@ -1,6 +1,5 @@
 "use client";
 import { useEffect,useMemo,useState } from "react";
-import { Filter } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { MetricChart } from "@/components/metric-chart";
