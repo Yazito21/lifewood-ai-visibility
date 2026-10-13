@@ -362,6 +362,24 @@ Deno.serve(async (req: Request) => {
         .delete().eq("project_id", projectId).eq("metric_date", day);
       if (competitorDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorDeleteError.message }, 500);
     }
+    if (isSuperadminRerun) {
+      // Discard earlier prompt responses and derived rows for the same Malaysia-time day.
+      const datePartsForCleanup = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
+      }).formatToParts(new Date());
+      const rerunDay = `${datePartsForCleanup.find((p) => p.type === "year")?.value}-${datePartsForCleanup.find((p) => p.type === "month")?.value}-${datePartsForCleanup.find((p) => p.type === "day")?.value}`;
+      const dayStart = new Date(rerunDay + "T00:00:00+08:00").toISOString();
+      const dayEnd = new Date(new Date(rerunDay + "T00:00:00+08:00").getTime() + 86400000).toISOString();
+      const { error: responseDeleteError } = await admin.from("ai_responses")
+        .delete().eq("project_id", projectId).gte("captured_at", dayStart).lt("captured_at", dayEnd);
+      if (responseDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: responseDeleteError.message }, 500);
+      const { error: citationsDeleteError } = await admin.from("citations").delete().eq("project_id", projectId).eq("metric_date", rerunDay);
+      if (citationsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: citationsDeleteError.message }, 500);
+      const { error: competitorsDeleteError } = await admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", rerunDay);
+      if (competitorsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorsDeleteError.message }, 500);
+      const { error: metricsDeleteError } = await admin.from("visibility_daily").delete().eq("project_id", projectId).eq("metric_date", rerunDay);
+      if (metricsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsDeleteError.message }, 500);
+    }
     const rawRows = results.map((r) => ({
       project_id: projectId, prompt_id: r.prompt_id, llm_provider: "chatgpt", captured_at: r.completed_at,
       prompt_snapshot: r.prompt, raw_response: r.raw_response ?? { error: r.error_message }, response_text: r.response_text ?? null,
