@@ -97,9 +97,16 @@ export default function CitationsPage() {
       setError("");
       const { data: project } = await supabase.from("projects").select("topics").eq("id", projectId).single();
       setTopics(project?.topics ?? []);
-      const { data, error: fetchError } = await supabase.from("citations").select("metric_date,topic,llm_provider,url,page_name,brand_name,is_brand_related,frequency").eq("project_id", projectId).gte("metric_date", start).lte("metric_date", end).order("metric_date", { ascending: false });
-      if (fetchError) setError(fetchError.message);
-      setRows(data ?? []);
+      const allRows: Row[] = [];
+      let offset = 0;
+      while (true) {
+        const { data, error: fetchError } = await supabase.from("citations").select("metric_date,topic,llm_provider,url,page_name,brand_name,is_brand_related,frequency").eq("project_id", projectId).gte("metric_date", start).lte("metric_date", end).order("metric_date", { ascending: false }).range(offset, offset + 999);
+        if (fetchError) { setError(fetchError.message); break; }
+        allRows.push(...((data ?? []) as Row[]));
+        if (!data || data.length < 1000) break;
+        offset += 1000;
+      }
+      setRows(allRows);
       setLoading(false);
     })();
   }, [projectId, start, end]);
