@@ -227,7 +227,7 @@ Deno.serve(async (req: Request) => {
     if (mode === "sample" && !canAccessProject) return json({ error: "NOT_AUTHORIZED_FOR_PROJECT" }, 403);
     if (mode !== "sample" && !isAdmin) return json({ error: "NOT_AUTHORIZED_TO_RUN_TRACKING" }, 403);
 
-    const providerIds = Array.isArray(body?.providers) ? [...new Set(body.providers.map(String))] : ["chatgpt"];
+    const providerIds: string[] = Array.isArray(body?.providers) ? [...new Set((body.providers as unknown[]).map((provider) => String(provider)))] : ["chatgpt"];
     const validProviders = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "claude"];
     if (!providerIds.length || providerIds.some((p) => !validProviders.includes(p))) return json({ error: "INVALID_PROVIDERS" }, 400);
     if (providerIds.some((p) => p !== "chatgpt")) return json({ error: "CHATGPT_ONLY_IN_INITIAL_RELEASE", supported_providers: ["chatgpt"] }, 400);
@@ -348,20 +348,6 @@ Deno.serve(async (req: Request) => {
     const capturedAt = new Date().toISOString();
     // On a Superadmin rerun, remove this project's current-day data before writing
     // the replacement result set, so partial failures or stale citations do not linger.
-    if (isSuperadminRerun) {
-      const dayStart = new Date(day + "T00:00:00+08:00").toISOString();
-      const dayEnd = new Date(new Date(day + "T00:00:00+08:00").getTime() + 86400000).toISOString();
-      const { error: responseDeleteError } = await admin.from("ai_responses")
-        .delete().eq("project_id", projectId)
-        .gte("captured_at", dayStart).lt("captured_at", dayEnd);
-      if (responseDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: responseDeleteError.message }, 500);
-      const { error: citationDeleteError } = await admin.from("citations")
-        .delete().eq("project_id", projectId).eq("metric_date", day);
-      if (citationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: citationDeleteError.message }, 500);
-      const { error: competitorDeleteError } = await admin.from("competitors")
-        .delete().eq("project_id", projectId).eq("metric_date", day);
-      if (competitorDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorDeleteError.message }, 500);
-    }
     if (isSuperadminRerun) {
       // Discard earlier prompt responses and derived rows for the same Malaysia-time day.
       const datePartsForCleanup = new Intl.DateTimeFormat("en-CA", {
