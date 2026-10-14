@@ -21,13 +21,13 @@ export function MetricChart({ data, title, description, format = "number", inver
   const points = valid.map((point, index) => {
     const x = left + (index / Math.max(valid.length - 1, 1)) * plotW;
     const normalized = (point.value - min) / (max - min);
-    const y = invert ? top + normalized * plotH : top + (1 - normalized) * plotH;
+    const y = invert ? top + (1 - normalized) * plotH : top + normalized * plotH;
     return { x, y, ...point };
   });
   const path = points.map((point, index) => (index ? "L" : "M") + point.x.toFixed(1) + " " + point.y.toFixed(1)).join(" ");
   const active = activeIndex === null ? null : points[activeIndex];
   const yAxisTitle = format === "percent" ? "Visibility (%)" : /rank/i.test(title) ? "Rank (1 = best)" : /position/i.test(title) ? "Average position" : "Value";
-  const tickValues = Array.from({ length: 5 }, (_, i) => max - ((max - min) * i) / 4);
+  const tickValues = Array.from({ length: 5 }, (_, i) => invert ? min + ((max - min) * i) / 4 : max - ((max - min) * i) / 4);
   const xTickIndexes = Array.from(new Set(Array.from({ length: Math.min(5, points.length) }, (_, i) => Math.round(i * (points.length - 1) / Math.max(Math.min(5, points.length) - 1, 1)))));
   const tooltipX = active ? Math.max(left + 54, Math.min(w - right - 54, active.x)) : 0;
   const tooltipY = active ? Math.max(top + 23, active.y - 34) : 0;
