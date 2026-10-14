@@ -12,7 +12,12 @@ export default function AnalyticsPage(){
  const start=useMemo(()=>{if(period==="Custom")return customStart||localDateString();const now=new Date();const d=new Date(now.getFullYear(),now.getMonth(),now.getDate());const days=period==="Today"?0:period==="Last 2 days"?1:period==="Last 14 Days"?13:period==="Last 30 Days"?29:period==="Last 90 Days"?89:period==="All Time"?36500:6;d.setDate(d.getDate()-days);return localDateString(d)},[period,customStart]);
  const end=period==="Custom"?customEnd:localDateString();
  useEffect(()=>{(async()=>{setLoading(true);const {data:p}=await supabase.from("projects").select("topics").eq("id",projectId).single();const t=p?.topics??[];setTopics(t);setSelectedTopics(v=>v.length?v:t);const {data,error}=await supabase.from("visibility_daily").select("metric_date,topic,llm_provider,visibility_score,visibility_rank,share_of_voice_score,share_of_voice_rank,average_position,average_position_rank").eq("project_id",projectId).neq("llm_provider","Overall").gte("metric_date",start).lte("metric_date",end).order("metric_date");if(error)setError(error.message);setRows(data??[]);setLoading(false)})()},[projectId,start,end]);
- const chartDateRange={start:period==="All Time"?(rows.map(r=>r.metric_date).sort()[0]??start):start,end};
+ const chartDateRange=useMemo(()=>{
+  const trackedDates=rows.map(r=>r.metric_date).sort();
+  const firstTrackedDate=trackedDates[0];
+  const requestedStart=period==="All Time"?(firstTrackedDate??start):start;
+  return {start:firstTrackedDate&&firstTrackedDate>requestedStart?firstTrackedDate:requestedStart,end};
+ },[rows,period,start,end]);
  const filtered=rows.filter(r=>(selectedTopics.length===0||selectedTopics.includes(r.topic))&&(selectedLlms.length===0||selectedLlms.includes(r.llm_provider)));
  function aggregate(key:keyof Row){const map=new Map<string,number[]>();for(const r of filtered){const v=r[key];if(typeof v==="number"){const a=map.get(r.metric_date)||[];a.push(v);map.set(r.metric_date,a)}}return [...map.entries()].sort().map(([date,vals])=>({label:date,value:vals.reduce((a,b)=>a+b,0)/vals.length}))}
  return <ProjectShell>

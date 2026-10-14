@@ -52,7 +52,7 @@ export function MetricChart({
   const rawMax = Math.max(0, ...valid.map((point) => point.value));
   // Score metrics start at zero at the bottom. Rank/position metrics start at zero at the top.
   const max = rawMax > 0 ? rawMax * 1.08 : 1;
-  const w = 900, h = 370, left = 94, right = 30, top = 38, bottom = 78;
+  const w = 900, h = 390, left = 94, right = 30, top = 38, bottom = 98;
   const plotW = w - left - right, plotH = h - top - bottom;
   const points = allPoints.map((point, index) => {
     const x = left + (index / Math.max(allPoints.length - 1, 1)) * plotW;
@@ -60,20 +60,19 @@ export function MetricChart({
     const y = invert ? top + normalized * plotH : top + (1 - normalized) * plotH;
     return { x, y, ...point };
   });
-  let path = "";
-  let previousWasValid = false;
-  for (const point of points) {
-    if (point.value === null || !Number.isFinite(point.value)) {
-      previousWasValid = false;
-      continue;
-    }
-    path += (previousWasValid ? " L" : " M") + point.x.toFixed(1) + " " + point.y.toFixed(1);
-    previousWasValid = true;
-  }
+  // Draw one continuous trend through observed values. A missing database row has no marker,
+  // but it should not make the rest of the recorded data look like disconnected chart segments.
+  const observedPoints = points.filter((point) => point.value !== null && Number.isFinite(point.value));
+  const path = observedPoints.map((point, index) =>
+    (index === 0 ? "M" : "L") + point.x.toFixed(1) + " " + point.y.toFixed(1)
+  ).join(" ");
   const active = activeDate === null ? null : points.find((point) => point.label === activeDate && point.value !== null) ?? null;
   const yAxisTitle = format === "percent" ? (title.toLowerCase().includes("share of voice") ? "Share of voice (%)" : "Visibility (%)") : /position/i.test(title) ? "Average position" : /rank/i.test(title) ? "Rank" : "Value";
   const tickValues = Array.from({ length: 5 }, (_, i) => invert ? (max * i) / 4 : max - (max * i) / 4);
-  const tickIndexes = Array.from(new Set(Array.from({ length: Math.min(5, axisDates.length) }, (_, i) => Math.round(i * (axisDates.length - 1) / Math.max(Math.min(5, axisDates.length) - 1, 1)))));
+  const tickStep = axisDates.length <= 14 ? 1 : axisDates.length <= 31 ? 2 : axisDates.length <= 90 ? 7 : Math.ceil(axisDates.length / 10);
+  const tickIndexes = axisDates.map((_, index) => index).filter((index) =>
+    index === 0 || index === axisDates.length - 1 || index % tickStep === 0
+  );
   const tooltipX = active ? Math.max(left + 54, Math.min(w - right - 54, active.x)) : 0;
   const tooltipY = active ? Math.max(top + 23, active.y - 34) : 0;
 
@@ -92,7 +91,15 @@ export function MetricChart({
         const x = left + (index / Math.max(axisDates.length - 1, 1)) * plotW;
         return <g key={date}>
           <line x1={x} y1={top} x2={x} y2={top + plotH} stroke="var(--muted-foreground)" strokeOpacity="0.10" strokeDasharray="3 6" />
-          <text x={x} y={top + plotH + 26} textAnchor={index === 0 ? "start" : index === axisDates.length - 1 ? "end" : "middle"} fontSize="13" fontWeight="600" fill="var(--muted-foreground)">{dateLabel(date)}</text>
+          <text
+            x={x}
+            y={top + plotH + (axisDates.length <= 14 ? 38 : 26)}
+            transform={axisDates.length <= 14 ? "rotate(-35 " + x + " " + (top + plotH + 38) + ")" : undefined}
+            textAnchor={axisDates.length <= 14 ? "end" : index === 0 ? "start" : index === axisDates.length - 1 ? "end" : "middle"}
+            fontSize="13"
+            fontWeight="600"
+            fill="var(--muted-foreground)"
+          >{dateLabel(date)}</text>
         </g>;
       })}
       <line x1={left} y1={top} x2={left} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="1.8" />
