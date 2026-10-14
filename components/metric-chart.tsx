@@ -4,31 +4,76 @@ import { useState } from "react";
 
 export type ChartPoint = { label: string; value: number | null };
 
-export function MetricChart({ data, title, description, format = "number", invert = false, tone = "default" }: { data: ChartPoint[]; title: string; description?: string; format?: "number" | "percent"; invert?: boolean; tone?: "default" | "overall" }) {
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const valid = data.filter((point) => point.value !== null) as { label: string; value: number }[];
+function dateLabel(date: string) {
+  return new Date(date + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function datesBetween(start: string, end: string) {
+  const dates: string[] = [];
+  const from = new Date(start + "T00:00:00Z");
+  const to = new Date(end + "T00:00:00Z");
+  if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to) return dates;
+  for (const current = new Date(from); current <= to; current.setUTCDate(current.getUTCDate() + 1)) {
+    dates.push(current.toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
+export function MetricChart({
+  data,
+  title,
+  description,
+  format = "number",
+  invert = false,
+  tone = "default",
+  dateRange,
+}: {
+  data: ChartPoint[];
+  title: string;
+  description?: string;
+  format?: "number" | "percent";
+  /** True for rank/position metrics: zero is at the top and values increase downward. */
+  invert?: boolean;
+  tone?: "default" | "overall";
+  dateRange?: { start: string; end: string };
+}) {
+  const [activeDate, setActiveDate] = useState<string | null>(null);
+  const valueByDate = new Map(data.map((point) => [point.label, point.value]));
+  const observedDates = data.map((point) => point.label).filter((label) => /^\d{4}-\d{2}-\d{2}$/.test(label)).sort();
+  const start = dateRange?.start || observedDates[0];
+  const end = dateRange?.end || observedDates[observedDates.length - 1];
+  const axisDates = start && end ? datesBetween(start, end) : observedDates;
+  const allPoints = axisDates.map((date) => ({ label: date, value: valueByDate.get(date) ?? null }));
+  const valid = allPoints.filter((point): point is { label: string; value: number } => point.value !== null && Number.isFinite(point.value));
   const display = (value: number) => format === "percent" ? value.toFixed(1) + "%" : Number.isInteger(value) ? String(value) : value.toFixed(1);
   const cardClass = "platform-card min-w-0 p-5 sm:p-6 " + (tone === "overall" ? "platform-card-overall" : "");
   if (!valid.length) return <div className={cardClass + " min-h-[19rem]"}><h4 className="text-base font-semibold">{title}</h4>{description && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{description}</p>}<div className="flex min-h-[13rem] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">No recorded values for this period. A new tracking run may be needed to populate this metric.</div></div>;
 
-  const values = valid.map((point) => point.value);
-  const rawMin = Math.min(...values), rawMax = Math.max(...values);
-  const range = rawMax - rawMin || Math.max(Math.abs(rawMax) * 0.1, 1);
-  const min = rawMin === rawMax ? rawMin - range * 0.5 : rawMin - range * 0.08;
-  const max = rawMin === rawMax ? rawMax + range * 0.5 : rawMax + range * 0.08;
+  const rawMax = Math.max(0, ...valid.map((point) => point.value));
+  // Score metrics start at zero at the bottom. Rank/position metrics start at zero at the top.
+  const max = rawMax > 0 ? rawMax * 1.08 : 1;
   const w = 900, h = 370, left = 94, right = 30, top = 38, bottom = 78;
   const plotW = w - left - right, plotH = h - top - bottom;
-  const points = valid.map((point, index) => {
-    const x = left + (index / Math.max(valid.length - 1, 1)) * plotW;
-    const normalized = (point.value - min) / (max - min);
-    const y = invert ? top + (1 - normalized) * plotH : top + normalized * plotH;
+  const points = allPoints.map((point, index) => {
+    const x = left + (index / Math.max(allPoints.length - 1, 1)) * plotW;
+    const normalized = Math.max(0, point.value ?? 0) / max;
+    const y = invert ? top + normalized * plotH : top + (1 - normalized) * plotH;
     return { x, y, ...point };
   });
-  const path = points.map((point, index) => (index ? "L" : "M") + point.x.toFixed(1) + " " + point.y.toFixed(1)).join(" ");
-  const active = activeIndex === null ? null : points[activeIndex];
-  const yAxisTitle = format === "percent" ? "Visibility (%)" : /rank/i.test(title) ? "Rank (1 = best)" : /position/i.test(title) ? "Average position" : "Value";
-  const tickValues = Array.from({ length: 5 }, (_, i) => invert ? min + ((max - min) * i) / 4 : max - ((max - min) * i) / 4);
-  const xTickIndexes = Array.from(new Set(Array.from({ length: Math.min(5, points.length) }, (_, i) => Math.round(i * (points.length - 1) / Math.max(Math.min(5, points.length) - 1, 1)))));
+  let path = "";
+  let previousWasValid = false;
+  for (const point of points) {
+    if (point.value === null || !Number.isFinite(point.value)) {
+      previousWasValid = false;
+      continue;
+    }
+    path += (previousWasValid ? " L" : " M") + point.x.toFixed(1) + " " + point.y.toFixed(1);
+    previousWasValid = true;
+  }
+  const active = activeDate === null ? null : points.find((point) => point.label === activeDate && point.value !== null) ?? null;
+  const yAxisTitle = format === "percent" ? (title.toLowerCase().includes("share of voice") ? "Share of voice (%)" : "Visibility (%)") : /position/i.test(title) ? "Average position" : /rank/i.test(title) ? "Rank" : "Value";
+  const tickValues = Array.from({ length: 5 }, (_, i) => invert ? (max * i) / 4 : max - (max * i) / 4);
+  const tickIndexes = Array.from(new Set(Array.from({ length: Math.min(5, axisDates.length) }, (_, i) => Math.round(i * (axisDates.length - 1) / Math.max(Math.min(5, axisDates.length) - 1, 1)))));
   const tooltipX = active ? Math.max(left + 54, Math.min(w - right - 54, active.x)) : 0;
   const tooltipY = active ? Math.max(top + 23, active.y - 34) : 0;
 
@@ -42,11 +87,12 @@ export function MetricChart({ data, title, description, format = "number", inver
           <text x={left - 14} y={y + 5} textAnchor="end" fontSize="14" fontWeight="600" fill="var(--muted-foreground)">{display(value)}</text>
         </g>;
       })}
-      {xTickIndexes.map((index) => {
-        const point = points[index];
-        return <g key={point.label + index}>
-          <line x1={point.x} y1={top} x2={point.x} y2={top + plotH} stroke="var(--muted-foreground)" strokeOpacity="0.10" strokeDasharray="3 6" />
-          <text x={point.x} y={top + plotH + 26} textAnchor={index === 0 ? "start" : index === points.length - 1 ? "end" : "middle"} fontSize="13" fontWeight="600" fill="var(--muted-foreground)">{point.label}</text>
+      {tickIndexes.map((index) => {
+        const date = axisDates[index];
+        const x = left + (index / Math.max(axisDates.length - 1, 1)) * plotW;
+        return <g key={date}>
+          <line x1={x} y1={top} x2={x} y2={top + plotH} stroke="var(--muted-foreground)" strokeOpacity="0.10" strokeDasharray="3 6" />
+          <text x={x} y={top + plotH + 26} textAnchor={index === 0 ? "start" : index === axisDates.length - 1 ? "end" : "middle"} fontSize="13" fontWeight="600" fill="var(--muted-foreground)">{dateLabel(date)}</text>
         </g>;
       })}
       <line x1={left} y1={top} x2={left} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="1.8" />
@@ -54,8 +100,8 @@ export function MetricChart({ data, title, description, format = "number", inver
       <text x={22} y={top + plotH / 2} transform={"rotate(-90 22 " + (top + plotH / 2) + ")"} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--foreground)">{yAxisTitle}</text>
       <text x={left + plotW / 2} y={h - 12} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--foreground)">Tracking date</text>
       <path d={path} fill="none" stroke={tone === "overall" ? "var(--orange)" : "var(--primary)"} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-      {points.map((point, index) => <circle key={point.label + index} cx={point.x} cy={point.y} r={activeIndex === index ? 7 : 5} fill={tone === "overall" ? "var(--orange)" : "var(--primary)"} stroke="var(--card)" strokeWidth="2.5" tabIndex={0} role="button" aria-label={point.label + ": " + display(point.value)} onMouseEnter={() => setActiveIndex(index)} onMouseLeave={() => setActiveIndex(null)} onFocus={() => setActiveIndex(index)} onBlur={() => setActiveIndex(null)}><title>{point.label}: {display(point.value)}</title></circle>)}
-      {active && <g pointerEvents="none">
+      {points.map((point) => point.value === null || !Number.isFinite(point.value) ? null : <circle key={point.label} cx={point.x} cy={point.y} r={activeDate === point.label ? 7 : 5} fill={tone === "overall" ? "var(--orange)" : "var(--primary)"} stroke="var(--card)" strokeWidth="2.5" tabIndex={0} role="button" aria-label={dateLabel(point.label) + ": " + display(point.value)} onMouseEnter={() => setActiveDate(point.label)} onMouseLeave={() => setActiveDate(null)} onFocus={() => setActiveDate(point.label)} onBlur={() => setActiveDate(null)}><title>{dateLabel(point.label)}: {display(point.value)}</title></circle>)}
+      {active && active.value !== null && <g pointerEvents="none">
         <line x1={active.x} y1={active.y} x2={active.x} y2={top + plotH} stroke="var(--primary)" strokeOpacity="0.38" strokeDasharray="4 4" />
         <rect x={tooltipX - 54} y={tooltipY - 22} width="108" height="30" rx="8" fill="var(--foreground)" />
         <text x={tooltipX} y={tooltipY - 2} textAnchor="middle" fontSize="14" fontWeight="700" fill="var(--background)">{display(active.value)}</text>
