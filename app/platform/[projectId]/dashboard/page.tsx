@@ -117,10 +117,15 @@ export default function DashboardPage() {
   useEffect(() => { void load(); }, [projectId, period, customStart, customEnd]);
 
   const cardTopics = useMemo(() => ["Overall", ...topics.filter((topic) => topic !== "Overall")], [topics]);
-  const chartDateRange = useMemo(() => ({
-    start: period === "All Time" ? (metrics.map((row) => row.metric_date).sort()[0] ?? dateStart(period, customStart)) : dateStart(period, customStart),
-    end: period === "Custom" ? customEnd : localDateString(),
-  }), [period, customStart, customEnd, metrics]);
+  const chartDateRange = useMemo(() => {
+    const trackedDates = metrics.map((row) => row.metric_date).sort();
+    const firstTrackedDate = trackedDates[0];
+    const requestedStart = period === "All Time" ? (firstTrackedDate ?? dateStart(period, customStart)) : dateStart(period, customStart);
+    return {
+      start: firstTrackedDate && firstTrackedDate > requestedStart ? firstTrackedDate : requestedStart,
+      end: period === "Custom" ? customEnd : localDateString(),
+    };
+  }, [period, customStart, customEnd, metrics]);
   const latestByTopic = useMemo(() => {
     const grouped = new Map<string, Metric[]>();
     for (const row of latestMetrics) grouped.set(row.topic, [...(grouped.get(row.topic) ?? []), row]);
