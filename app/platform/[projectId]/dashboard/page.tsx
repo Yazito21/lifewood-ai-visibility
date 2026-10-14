@@ -13,14 +13,17 @@ type CompetitorCount = { topic: string; metric_date: string; competitor_count: n
 type RankSnapshot = Metric & { previousRank: number | null };
 
 const periods = ["Today", "Last 2 days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"];
+function localDateString(date = new Date()) {
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+}
 
 
 function dateStart(period: string, customStart: string) {
-  if (period === "Custom") return customStart || new Date().toISOString().slice(0, 10);
-  const d = new Date(); d.setHours(0, 0, 0, 0);
+  if (period === "Custom") return customStart || localDateString();
+  const now = new Date(); const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const days = period === "Today" ? 0 : period === "Last 2 days" ? 1 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : 3650;
   d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
+  return localDateString(d);
 }
 
 function aggregateCitations(rows: Citation[], topic: string) {
@@ -42,7 +45,7 @@ export default function DashboardPage() {
   const [topics, setTopics] = useState<string[]>([]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState(new Date().toISOString().slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(localDateString());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tracking, setTracking] = useState(false);
@@ -54,7 +57,7 @@ export default function DashboardPage() {
     const { data: project, error: projectError } = await supabase.from("projects").select("topics").eq("id", projectId).single();
     const topicList = project?.topics ?? []; setTopics(topicList);
     const start = dateStart(period, customStart);
-    const end = period === "Custom" ? customEnd : new Date().toISOString().slice(0, 10);
+    const end = period === "Custom" ? customEnd : localDateString();
     const [{ data: chartRows, error: metricsError }, { data: latestRows, error: latestError }, { data: citationRows, error: citationsError }, { data: competitorRows, error: competitorError }] = await Promise.all([
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").gte("metric_date", start).lte("metric_date", end).order("metric_date"),
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").order("metric_date", { ascending: false }).limit(500),
@@ -114,6 +117,10 @@ export default function DashboardPage() {
   useEffect(() => { void load(); }, [projectId, period, customStart, customEnd]);
 
   const cardTopics = useMemo(() => ["Overall", ...topics.filter((topic) => topic !== "Overall")], [topics]);
+  const chartDateRange = useMemo(() => ({
+    start: period === "All Time" ? (metrics.map((row) => row.metric_date).sort()[0] ?? dateStart(period, customStart)) : dateStart(period, customStart),
+    end: period === "Custom" ? customEnd : localDateString(),
+  }), [period, customStart, customEnd, metrics]);
   const latestByTopic = useMemo(() => {
     const grouped = new Map<string, Metric[]>();
     for (const row of latestMetrics) grouped.set(row.topic, [...(grouped.get(row.topic) ?? []), row]);
@@ -128,7 +135,7 @@ export default function DashboardPage() {
 
   function chart(topic: string, key: "visibility_score" | "visibility_rank") {
     return metrics.filter((row) => row.topic === topic).map((row) => ({
-      label: new Date(row.metric_date + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      label: row.metric_date,
       value: row[key],
     }));
   }
@@ -175,7 +182,7 @@ export default function DashboardPage() {
         <section className="space-y-4">
           <div><p className="page-eyebrow">Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Daily Trends</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Daily visibility score and ranking across the selected period.</p></div>
           <div className="space-y-5">
-            {cardTopics.map((topic) => <div key={topic} className="grid min-w-0 gap-5 xl:grid-cols-2"><MetricChart data={chart(topic, "visibility_score")} title={topic + " — Daily Visibility Score"} format="percent" tone={topic === "Overall" ? "overall" : "default"} /><MetricChart data={chart(topic, "visibility_rank")} title={topic + " — Daily Visibility Rank"} invert tone={topic === "Overall" ? "overall" : "default"} /></div>)}
+            {cardTopics.map((topic) => <div key={topic} className="grid min-w-0 gap-5 xl:grid-cols-2"><MetricChart data={chart(topic, "visibility_score")} title={topic + " — Daily Visibility Score"} format="percent" dateRange={chartDateRange} tone={topic === "Overall" ? "overall" : "default"} /><MetricChart data={chart(topic, "visibility_rank")} title={topic + " — Daily Visibility Rank"} invert dateRange={chartDateRange} tone={topic === "Overall" ? "overall" : "default"} /></div>)}
           </div>
         </section>
 
