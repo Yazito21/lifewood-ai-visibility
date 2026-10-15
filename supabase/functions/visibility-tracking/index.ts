@@ -95,6 +95,31 @@ function hostOf(url: string) {
 function titleFromUrl(url: string) {
   try { return new URL(url).hostname.replace(/^www\./, "").split(".").slice(0, -1).join(".").replace(/[-_]/g, " "); } catch { return url; }
 }
+type SearchMarket = { type: "approximate"; country: string; timezone?: string };
+
+function searchMarketFor(countryCode: string): SearchMarket | null {
+  if (countryCode === "GLOBAL") return null;
+  const country = countryCode.toUpperCase();
+  const timezoneByCountry: Record<string, string> = {
+    MY: "Asia/Kuala_Lumpur", SG: "Asia/Singapore", US: "America/New_York",
+    GB: "Europe/London", AU: "Australia/Sydney", CA: "America/Toronto",
+    IN: "Asia/Kolkata", ID: "Asia/Jakarta", TH: "Asia/Bangkok",
+    PH: "Asia/Manila", VN: "Asia/Ho_Chi_Minh", BN: "Asia/Brunei",
+    MM: "Asia/Yangon", KH: "Asia/Phnom_Penh", LA: "Asia/Vientiane",
+    TL: "Asia/Dili", CN: "Asia/Shanghai", JP: "Asia/Tokyo",
+    KR: "Asia/Seoul", NZ: "Pacific/Auckland", DE: "Europe/Berlin",
+    FR: "Europe/Paris", ES: "Europe/Madrid", IT: "Europe/Rome",
+    NL: "Europe/Amsterdam", AE: "Asia/Dubai", SA: "Asia/Riyadh",
+    ZA: "Africa/Johannesburg", BR: "America/Sao_Paulo", MX: "America/Mexico_City",
+    TR: "Europe/Istanbul", PK: "Asia/Karachi", BD: "Asia/Dhaka",
+    NG: "Africa/Lagos", EG: "Africa/Cairo", IE: "Europe/Dublin",
+    CH: "Europe/Zurich", SE: "Europe/Stockholm", NO: "Europe/Oslo",
+    DK: "Europe/Copenhagen", PL: "Europe/Warsaw", PT: "Europe/Lisbon",
+    AR: "America/Argentina/Buenos_Aires", CL: "America/Santiago",
+  };
+  return { type: "approximate", country, ...(timezoneByCountry[country] ? { timezone: timezoneByCountry[country] } : {}) };
+}
+
 async function callChatGPT(apiKey: string, prompt: string, project: Record<string, unknown>) {
   const brand = String(project.brand_name ?? "");
   const description = String(project.brand_description ?? "");
@@ -109,7 +134,7 @@ async function callChatGPT(apiKey: string, prompt: string, project: Record<strin
       signal: controller.signal,
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        tools: [{ type: "web_search" }],
+        tools: [{ type: "web_search", ...(searchMarketFor(String(project.tracking_market ?? "MY")) ? { user_location: searchMarketFor(String(project.tracking_market ?? "MY")) } : {}) }],
         include: ["web_search_call.action.sources"],
         temperature: 0.2,
         input: [
@@ -220,7 +245,7 @@ Deno.serve(async (req: Request) => {
     const [{ data: profile, error: profileError }, { data: member, error: memberError }, { data: project, error: projectError }] = await Promise.all([
       admin.from("profiles").select("role").eq("id", userId).maybeSingle(),
       admin.from("project_members").select("role").eq("project_id", projectId).eq("user_id", userId).maybeSingle(),
-      admin.from("projects").select("id,brand_name,brand_description,brand_domains,brand_terms,topics").eq("id", projectId).maybeSingle(),
+      admin.from("projects").select("id,brand_name,brand_description,brand_domains,brand_terms,topics,tracking_market").eq("id", projectId).maybeSingle(),
     ]);
     if (profileError || memberError || projectError) {
       console.error("PROJECT_ACCESS_LOOKUP_FAILED", JSON.stringify({
