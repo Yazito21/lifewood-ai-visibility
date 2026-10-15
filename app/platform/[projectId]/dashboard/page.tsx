@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ExternalLink, RefreshCw, Play } from "lucide-react";
+import { CalendarDays, ExternalLink, RefreshCw, Play, Download } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { MetricChart } from "@/components/metric-chart";
@@ -12,7 +12,7 @@ type AggregatedCitation = { url: string; page_name: string | null; brand_name: s
 type CompetitorCount = { topic: string; metric_date: string; competitor_count: number };
 type RankSnapshot = Metric & { previousRank: number | null };
 
-const periods = ["Today", "Last 2 days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"];
+const periods = ["Today", "Last 2 days", "Last 3 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"];
 function localDateString(date = new Date()) {
   return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
 }
@@ -21,7 +21,7 @@ function localDateString(date = new Date()) {
 function dateStart(period: string, customStart: string) {
   if (period === "Custom") return customStart || localDateString();
   const now = new Date(); const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const days = period === "Today" ? 0 : period === "Last 2 days" ? 1 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : 3650;
+  const days = period === "Today" ? 0 : period === "Last 2 days" ? 1 : period === "Last 3 Days" ? 2 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : 3650;
   d.setDate(d.getDate() - days);
   return localDateString(d);
 }
@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tracking, setTracking] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [canRunTracking, setCanRunTracking] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState("");
 
@@ -108,11 +109,59 @@ export default function DashboardPage() {
         throw new Error(message);
       }
       if (data?.error) throw new Error(data.error);
-      setTrackingMessage(`Tracking ${data.status}: ${data.completed_prompts} of ${data.total_prompts} prompts completed.`);
+      setTrackingMessage("Tracking " + data.status + ": " + data.completed_prompts + " of " + data.total_prompts + " prompts completed.");
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally { setTracking(false); }
+  }
+
+  async function exportRawResponses() {
+    setExporting(true); setError(""); setTrackingMessage("");
+    try {
+      const startDate = period === "All Time" ? "1900-01-01" : dateStart(period, customStart);
+      const endDate = period === "Custom" ? customEnd : localDateString();
+      if (!startDate || !endDate || startDate > endDate) throw new Error("Select a valid date range before exporting.");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Your session has expired. Please sign in again.");
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+      if (!supabaseUrl || !publishableKey) throw new Error("Supabase export configuration is missing.");
+
+      const response = await fetch(supabaseUrl.replace(/\/$/, "") + "/functions/v1/export-raw-responses", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + session.access_token,
+          apikey: publishableKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ project_id: projectId, start_date: startDate, end_date: endDate }),
+      });
+      if (!response.ok) {
+        let message = "Unable to export raw AI responses.";
+        try {
+          const body = await response.json();
+          message = body?.error || body?.message || message;
+        } catch { /* response may not be JSON */ }
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const disposition = response.headers.get("content-disposition");
+      const filename = disposition?.match(/filename="?([^";]+)"?/i)?.[1] || ("lifewood-raw-responses-" + startDate + "-to-" + endDate + ".xlsx");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setTrackingMessage("Excel export prepared for " + startDate + " to " + endDate + ".");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
   }
 
   useEffect(() => {
@@ -187,7 +236,7 @@ export default function DashboardPage() {
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest ranking, score and movement for every tracked topic.</p></div>
-            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={() => void load()} disabled={tracking} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
+            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking || exporting} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
