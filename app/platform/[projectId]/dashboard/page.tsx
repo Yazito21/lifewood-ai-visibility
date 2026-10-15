@@ -8,7 +8,7 @@ import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
 
 type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null };
-type Citation = { metric_date: string; topic: string | null; url: string; page_name: string | null; brand_name: string | null; is_brand_related: boolean; frequency: number };
+type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
 type CompetitorCount = { topic: string; metric_date: string; competitor_count: number };
 type RankSnapshot = Metric & { previousRank: number | null };
 
@@ -26,21 +26,13 @@ function dateStart(period: string, customStart: string) {
   return localDateString(d);
 }
 
-function aggregateCitations(rows: Citation[], topic: string) {
-  const map = new Map<string, { url: string; page_name: string | null; brand_name: string | null; frequency: number }>();
-  for (const row of rows) {
-    if (!row.is_brand_related || (row.topic ?? "Overall") !== topic) continue;
-    const old = map.get(row.url);
-    map.set(row.url, { url: row.url, page_name: row.page_name, brand_name: row.brand_name, frequency: (old?.frequency ?? 0) + row.frequency });
-  }
-  return [...map.values()].sort((a, b) => b.frequency - a.frequency).slice(0, 5);
-}
+
 
 export default function DashboardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [latestMetrics, setLatestMetrics] = useState<Metric[]>([]);
-  const [citations, setCitations] = useState<Citation[]>([]);
+  const [citationsByTopic, setCitationsByTopic] = useState<Record<string, AggregatedCitation[]>>({});
   const [competitorCounts, setCompetitorCounts] = useState<Record<string, number>>({});
   const [topics, setTopics] = useState<string[]>([]);
   const [period, setPeriod] = useState("Last 7 Days");
@@ -58,15 +50,39 @@ export default function DashboardPage() {
     const topicList = project?.topics ?? []; setTopics(topicList);
     const start = dateStart(period, customStart);
     const end = period === "Custom" ? customEnd : localDateString();
-    const [{ data: chartRows, error: metricsError }, { data: latestRows, error: latestError }, { data: citationRows, error: citationsError }, { data: competitorRows, error: competitorError }] = await Promise.all([
+    const [{ data: chartRows, error: metricsError }, { data: latestRows, error: latestError }, { data: competitorRows, error: competitorError }] = await Promise.all([
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").gte("metric_date", start).lte("metric_date", end).order("metric_date"),
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").order("metric_date", { ascending: false }).limit(500),
-      supabase.from("citations").select("metric_date,topic,url,page_name,brand_name,is_brand_related,frequency").eq("project_id", projectId).gte("metric_date", start).lte("metric_date", end),
       supabase.rpc("get_latest_competitor_counts", { p_project_id: projectId }),
     ]);
-    const firstError = projectError || metricsError || latestError || citationsError || competitorError;
+
+    // Aggregate citations in Postgres, using the same RPC and brand-related filter as the Citations page.
+    // Fetching raw citation rows can silently truncate at the API row limit, leaving later topics blank.
+    const citationResults = await Promise.all(
+      topicList.filter((topic) => topic !== "Overall").map(async (topic) => {
+        const { data, error } = await supabase.rpc("get_cumulative_citations", {
+          p_project_id: projectId,
+          p_start_date: start,
+          p_end_date: end,
+          p_topic: topic,
+          p_engines: [],
+          p_brand_related_only: true,
+        });
+        return { topic, data, error };
+      })
+    );
+    const citations: Record<string, AggregatedCitation[]> = {};
+    for (const result of citationResults) {
+      if (result.error) {
+        setError(result.error.message || "Unable to load cited pages for " + result.topic + ".");
+      } else {
+        citations[result.topic] = ((result.data ?? []) as AggregatedCitation[]).slice(0, 5);
+      }
+    }
+
+    const firstError = projectError || metricsError || latestError || competitorError;
     if (firstError) setError(firstError.message || "Unable to load dashboard data.");
-    setMetrics(chartRows ?? []); setLatestMetrics(latestRows ?? []); setCitations(citationRows ?? []);
+    setMetrics(chartRows ?? []); setLatestMetrics(latestRows ?? []); setCitationsByTopic(citations);
     const counts: Record<string, number> = {};
     for (const row of (competitorRows ?? []) as CompetitorCount[]) {
       counts[row.topic] = Number(row.competitor_count) || 0;
@@ -194,7 +210,7 @@ export default function DashboardPage() {
         <section className="space-y-5">
           <div><p className="page-eyebrow">Citations</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Top Cited Brand Pages</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">The five most frequently cited tracked-brand pages for each topic in the selected period.</p></div>
           {cardTopics.filter((topic) => topic !== "Overall").map((topic) => {
-            const rows = aggregateCitations(citations, topic);
+            const rows = citationsByTopic[topic] ?? [];
             return <div key={topic} className="platform-card p-5 sm:p-6">
               <div className="flex items-center gap-2"><span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--soft)] text-[var(--primary)]"><CalendarDays size={16} /></span><h4 className="text-base font-semibold">{topic}</h4></div>
               <div className="mt-4 overflow-x-auto"><table className="platform-table min-w-[760px]"><thead><tr><th>No.</th><th>Page</th><th>Page Name</th><th>Brand Name</th><th>Frequency</th></tr></thead><tbody>
