@@ -47,7 +47,10 @@ export default function DashboardPage() {
   async function load() {
     setLoading(true); setError("");
     const { data: project, error: projectError } = await supabase.from("projects").select("topics").eq("id", projectId).single();
-    const topicList = project?.topics ?? []; setTopics(topicList);
+    const topicList: string[] = Array.isArray(project?.topics)
+      ? project.topics.filter((topic: unknown): topic is string => typeof topic === "string")
+      : [];
+    setTopics(topicList);
     const start = dateStart(period, customStart);
     const end = period === "Custom" ? customEnd : localDateString();
     const [{ data: chartRows, error: metricsError }, { data: latestRows, error: latestError }, { data: competitorRows, error: competitorError }] = await Promise.all([
