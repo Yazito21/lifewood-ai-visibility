@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import * as XLSX from "npm:xlsx@0.18.5";
+import { zipSync, strToU8 } from "npm:fflate@0.8.2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -64,6 +64,96 @@ function extractCitationLinks(raw: unknown, responseText: string) {
     }
   }
   return [...unique.values()];
+}
+
+
+function xmlEscape(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
+function columnName(index: number) {
+  let result = "";
+  let n = index + 1;
+  while (n > 0) {
+    const remainder = (n - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    n = Math.floor((n - 1) / 26);
+  }
+  return result;
+}
+
+function makeSheet(rows: unknown[][]) {
+  const hyperlinks: Array<{ ref: string; id: string; target: string }> = [];
+  const xmlRows = rows.map((row, rowIndex) => {
+    const cells = row.map((value, columnIndex) => {
+      const ref = columnName(columnIndex) + (rowIndex + 1);
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return '<c r="' + ref + '" t="n"><v>' + value + '</v></c>';
+      }
+      const text = String(value ?? "");
+      if (rowIndex > 0 && rows[0]?.[columnIndex] === "Citation_URL" && /^https?:\/\/\S+$/i.test(text)) {
+        const id = "rId" + (hyperlinks.length + 1);
+        hyperlinks.push({ ref, id, target: text });
+      }
+      return '<c r="' + ref + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEscape(text) + '</t></is></c>';
+    }).join("");
+    return '<row r="' + (rowIndex + 1) + '">' + cells + '</row>';
+  }).join("");
+  const linksXml = hyperlinks.length
+    ? '<hyperlinks>' + hyperlinks.map((link) => '<hyperlink ref="' + link.ref + '" r:id="' + link.id + '"/>').join("") + '</hyperlinks>'
+    : "";
+  const xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData>' +
+    xmlRows + '</sheetData>' + linksXml + '</worksheet>';
+  const rels = hyperlinks.length
+    ? '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      hyperlinks.map((link) => '<Relationship Id="' + link.id + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="' + xmlEscape(link.target) + '" TargetMode="External"/>').join("") +
+      '</Relationships>'
+    : null;
+  return { xml, rels };
+}
+
+function buildXlsx(sheets: Array<{ name: string; rows: unknown[][] }>) {
+  const files: Record<string, Uint8Array> = {};
+  const contentOverrides = sheets.map((_, index) =>
+    '<Override PartName="/xl/worksheets/sheet' + (index + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+  ).join("");
+  files["[Content_Types].xml"] = strToU8(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    contentOverrides + '</Types>'
+  );
+  files["_rels/.rels"] = strToU8(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+    '</Relationships>'
+  );
+  files["xl/workbook.xml"] = strToU8(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+    sheets.map((sheet, index) => '<sheet name="' + xmlEscape(sheet.name) + '" sheetId="' + (index + 1) + '" r:id="rId' + (index + 1) + '"/>').join("") +
+    '</sheets></workbook>'
+  );
+  files["xl/_rels/workbook.xml.rels"] = strToU8(
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    sheets.map((_, index) => '<Relationship Id="rId' + (index + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (index + 1) + '.xml"/>').join("") +
+    '</Relationships>'
+  );
+  sheets.forEach((sheet, index) => {
+    const sheetNumber = index + 1;
+    const output = makeSheet(sheet.rows);
+    files["xl/worksheets/sheet" + sheetNumber + ".xml"] = strToU8(output.xml);
+    if (output.rels) files["xl/worksheets/_rels/sheet" + sheetNumber + ".xml.rels"] = strToU8(output.rels);
+  });
+  return zipSync(files, { level: 1 });
 }
 
 function safeSheetText(value: string) {
@@ -213,23 +303,25 @@ Deno.serve(async (req: Request) => {
       ["Notes", "Raw Responses includes response text and raw JSON. Values exceeding Excel's cell character limit are complete in the corresponding chunk sheets; reassemble chunks in ascending Chunk_No by Response_ID."],
     ];
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(summary), "Summary");
     const responseHeaders = Object.keys(responseRows[0] ?? {
       Response_ID: "", Captured_At: "", Run_ID: "", Prompt_No: "", Prompt_ID: "", Prompt: "",
       Topic: "", Language: "", Engine: "", Status: "", Error: "", "Response Text (full if <= 30,000 chars)": "",
       "Raw Response JSON (full if <= 30,000 chars)": "", Response_Text_Characters: 0, Raw_JSON_Characters: 0,
       Citation_Count: 0, Citation_URLs: "", "Complete Text In Chunks Sheet": "", "Complete JSON In Chunks Sheet": "",
     });
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([responseHeaders, ...responseRows.map((row) => responseHeaders.map((key) => (row as Record<string, unknown>)[key] ?? ""))]), "Raw Responses");
     const citationHeaders = ["Response_ID", "Captured_At", "Run_ID", "Prompt_No", "Prompt_ID", "Prompt", "Topic", "Language", "Engine", "Citation_Title", "Citation_URL", "Domain", "Citation_Source"];
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([citationHeaders, ...citationRows.map((row) => citationHeaders.map((key) => (row as Record<string, unknown>)[key] ?? ""))]), "Citation Links");
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(textChunks), "Response Text Chunks");
-    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(jsonChunks), "Raw JSON Chunks");
-
+    const sheets = [
+      { name: "Summary", rows: summary },
+      { name: "Raw Responses", rows: [responseHeaders, ...responseRows.map((row) => responseHeaders.map((key) => (row as Record<string, unknown>)[key] ?? ""))] },
+      { name: "Citation Links", rows: [citationHeaders, ...citationRows.map((row) => citationHeaders.map((key) => (row as Record<string, unknown>)[key] ?? ""))] },
+      { name: "Response Text Chunks", rows: textChunks },
+      { name: "Raw JSON Chunks", rows: jsonChunks },
+    ];
+    // Build a compact OpenXML workbook directly. Avoid SheetJS's duplicated object model,
+    // which can exceed the Edge Function worker's resource limits on larger date ranges.
+    const bytes = buildXlsx(sheets);
     const filenameBrand = String(project.brand_name ?? "project").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "project";
     const filename = filenameBrand + "-raw-responses-" + startDate + "-to-" + endDate + ".xlsx";
-    const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array", compression: true }) as Uint8Array;
     return new Response(bytes, {
       status: 200,
       headers: {
