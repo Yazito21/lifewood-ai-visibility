@@ -1,23 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" fill="none">
   <defs>
     <linearGradient id="base" x1="0" y1="0" x2="1920" y2="1080" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#071521"/><stop offset=".48" stop-color="#102a39"/><stop offset="1" stop-color="#071922"/>
+      <stop stop-color="#071b14"/><stop offset=".48" stop-color="#0d3829"/><stop offset="1" stop-color="#061710"/>
     </linearGradient>
     <radialGradient id="cyanGlow" cx="0" cy="0" r="1" gradientTransform="matrix(640 420 -370 565 1470 330)" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#087c83" stop-opacity=".42"/><stop offset="1" stop-color="#087c83" stop-opacity="0"/>
+      <stop stop-color="#0b8052" stop-opacity=".42"/><stop offset="1" stop-color="#0b8052" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="violetGlow" cx="0" cy="0" r="1" gradientTransform="matrix(490 390 -370 465 360 790)" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#4855a8" stop-opacity=".28"/><stop offset="1" stop-color="#4855a8" stop-opacity="0"/>
+      <stop stop-color="#064b34" stop-opacity=".28"/><stop offset="1" stop-color="#064b34" stop-opacity="0"/>
     </radialGradient>
     <pattern id="grid" width="56" height="56" patternUnits="userSpaceOnUse">
-      <path d="M56 0H0V56" stroke="#b9e9f1" stroke-opacity=".075"/>
-      <circle cx="0" cy="0" r="1.4" fill="#8ad9e4" fill-opacity=".2"/>
+      <path d="M56 0H0V56" stroke="#a7dfbd" stroke-opacity=".075"/>
+      <circle cx="0" cy="0" r="1.4" fill="#7ad9a8" fill-opacity=".2"/>
     </pattern>
     <linearGradient id="wire" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#55d8db" stop-opacity=".08"/><stop offset=".5" stop-color="#66d7e7" stop-opacity=".65"/><stop offset="1" stop-color="#ffc36b" stop-opacity=".48"/>
+      <stop stop-color="#3cc78a" stop-opacity=".08"/><stop offset=".5" stop-color="#8be4b0" stop-opacity=".65"/><stop offset="1" stop-color="#ffc36b" stop-opacity=".48"/>
     </linearGradient>
     <linearGradient id="robot" x1="1000" y1="180" x2="1370" y2="840" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#a4f4f4" stop-opacity=".36"/><stop offset="1" stop-color="#3c92a6" stop-opacity=".04"/>
+      <stop stop-color="#a5e9c5" stop-opacity=".36"/><stop offset="1" stop-color="#277d58" stop-opacity=".04"/>
     </linearGradient>
     <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
       <feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
@@ -36,20 +36,20 @@
     <path d="M1104 678v-33m128 33v-33M1112 700h112"/>
   </g>
   <g filter="url(#glow)">
-    <circle cx="1097" cy="450" r="7" fill="#5fe6e5"/>
-    <circle cx="1273" cy="450" r="7" fill="#5fe6e5"/>
+    <circle cx="1097" cy="450" r="7" fill="#67e6a5"/>
+    <circle cx="1273" cy="450" r="7" fill="#67e6a5"/>
     <circle cx="1178" cy="520" r="4" fill="#ffc36b"/>
   </g>
 
   <!-- Connected knowledge graph -->
-  <g stroke="#5ed9e1" stroke-opacity=".4" stroke-width="1.6">
+  <g stroke="#4fc78e" stroke-opacity=".4" stroke-width="1.6">
     <path d="M145 245 270 190 390 245 490 170 620 220 720 145"/>
     <path d="M150 805 255 740 370 800 470 710 590 760 680 690"/>
     <path d="M1420 190 1510 245 1600 170 1710 225 1810 160"/>
     <path d="M1390 815 1490 750 1600 795 1695 720 1805 770"/>
     <path d="M270 190 255 740M490 170 470 710M620 220 590 760M1510 245 1490 750M1600 170 1600 795M1710 225 1695 720"/>
   </g>
-  <g fill="#63dce4">
+  <g fill="#67dca0">
     <circle cx="145" cy="245" r="5"/><circle cx="270" cy="190" r="6"/><circle cx="390" cy="245" r="4"/><circle cx="490" cy="170" r="6"/><circle cx="620" cy="220" r="5"/><circle cx="720" cy="145" r="4"/>
     <circle cx="150" cy="805" r="4"/><circle cx="255" cy="740" r="5"/><circle cx="370" cy="800" r="6"/><circle cx="470" cy="710" r="4"/><circle cx="590" cy="760" r="5"/><circle cx="680" cy="690" r="4"/>
     <circle cx="1420" cy="190" r="4"/><circle cx="1510" cy="245" r="5"/><circle cx="1600" cy="170" r="6"/><circle cx="1710" cy="225" r="4"/><circle cx="1810" cy="160" r="5"/>
@@ -57,12 +57,12 @@
   </g>
 
   <!-- Analytics panels -->
-  <g stroke="#83dce3" stroke-opacity=".28" fill="#071a27" fill-opacity=".52">
+  <g stroke="#75cfa0" stroke-opacity=".28" fill="#08271b" fill-opacity=".52">
     <rect x="96" y="390" width="300" height="190" rx="18"/>
     <rect x="1500" y="360" width="320" height="205" rx="18"/>
     <rect x="1450" y="620" width="350" height="180" rx="18"/>
   </g>
-  <g stroke="#55d8db" stroke-width="2" stroke-opacity=".8">
+  <g stroke="#3cc78a" stroke-width="2" stroke-opacity=".8">
     <path d="M128 530V480m28 50v-70m28 70v-40m28 40v-88m28 88v-60m28 60v-102m28 102v-78m28 78v-120m28 120v-90"/>
     <path d="M1530 510 1580 470 1625 490 1670 435 1715 455 1760 405 1790 420" stroke="#ffc36b" stroke-width="3"/>
     <path d="M1490 760h270M1490 730h210M1490 700h235" stroke-opacity=".35"/>
@@ -70,7 +70,7 @@
   <g fill="#ffc36b"><circle cx="1760" cy="405" r="5"/><circle cx="1625" cy="490" r="4"/><circle cx="1178" cy="520" r="4"/></g>
 
   <!-- Orbital rings and directional search signals -->
-  <g stroke="#6cdde4" stroke-opacity=".2" stroke-width="2">
+  <g stroke="#67dca0" stroke-opacity=".2" stroke-width="2">
     <circle cx="870" cy="540" r="260"/><circle cx="870" cy="540" r="300" stroke-dasharray="3 16"/>
     <ellipse cx="870" cy="540" rx="400" ry="135" transform="rotate(-28 870 540)"/>
     <ellipse cx="870" cy="540" rx="400" ry="135" transform="rotate(34 870 540)"/>

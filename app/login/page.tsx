@@ -42,21 +42,21 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-[#071521] px-6 py-12">
+    <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-[#071b14] px-6 py-12">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 bg-cover bg-center"
         style={{ backgroundImage: "url('/tracking-login-bg.svg')" }}
       />
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#071521]/15 via-[#071521]/20 to-[#071521]/65" />
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-gradient-to-b from-[#071b14]/10 via-[#071b14]/15 to-[#061710]/60" />
 
       <div className="relative z-10 w-full max-w-md">
         <div className="mb-8 text-center">
           <div className="mx-auto mb-7 inline-flex max-w-full items-center justify-center rounded-2xl bg-white px-5 py-3.5 shadow-[0_10px_35px_rgba(0,0,0,0.28)] sm:px-6 sm:py-4">
             <img
-              src="/transparent_lw.png"
+              src="/lifewood-logo.svg"
               alt="Lifewood"
-              className="h-auto w-[300px] max-w-[72vw] object-contain"
+              className="h-auto w-[260px] max-w-[72vw] object-contain"
             />
           </div>
           <p className="mb-2 text-[0.65rem] font-bold uppercase tracking-[0.32em] text-[#ffc36b]">AI Search Intelligence</p>
