@@ -40,13 +40,16 @@ function formatDate(value: string) {
   });
 }
 function responseText(row: ResponseRow) {
-  if (row.response_text) return row.response_text;
-  if (row.raw_response && typeof row.raw_response === "object") {
+  let text = "";
+  if (row.response_text) text = row.response_text;
+  else if (row.raw_response && typeof row.raw_response === "object") {
     const raw = row.raw_response as Record<string, unknown>;
-    if (typeof raw.output_text === "string") return raw.output_text;
-    if (typeof raw.text === "string") return raw.text;
+    if (typeof raw.output_text === "string") text = raw.output_text;
+    else if (typeof raw.text === "string") text = raw.text;
   }
-  return "";
+  return text.replace(/\\\\([*_[\]()])/g, "$1")
+    .replace(/\[([^\]]+)\]\s+\((https?:\/\/[^)]+)\)/g, "[$1]($2)")
+    .replace(/\*\*\s+([^*\n]+?)\s+\*\*/g, "**$1**");
 }
 
 export default function ResponsesPage() {
@@ -194,40 +197,73 @@ export default function ResponsesPage() {
             </div> :
             <div className="divide-y divide-[var(--border)]">
               {visible.map((group) => {
-                const row = group.responses[0];
                 const isOpen = expanded.includes(group.key);
-                const text = responseText(row);
-                return <article key={row.id} className="min-w-0">
-                  <button type="button" onClick={() => setExpanded(isOpen ? expanded.filter((x) => x !== group.key) : [...expanded, group.key])} className="flex w-full min-w-0 items-start gap-3 p-4 text-left transition hover:bg-[var(--accent)]/50 sm:items-center sm:px-5">
-                    <span className="mt-0.5 shrink-0 text-[var(--muted-foreground)]">{isOpen ? <ChevronDown size={17}/> : <ChevronRight size={17}/>}</span>
+                const byDate = new Map<string, ResponseRow[]>();
+                for (const response of group.responses) {
+                  const dateKey = response.captured_at.slice(0, 10);
+                  byDate.set(dateKey, [...(byDate.get(dateKey) || []), response]);
+                }
+                return <article key={group.key} className="min-w-0">
+                  <button type="button" onClick={() => setExpanded(isOpen ? expanded.filter((x) => x !== group.key && !x.startsWith(group.key + "::")) : [...expanded, group.key])} className="flex w-full min-w-0 items-center gap-3 p-4 text-left transition hover:bg-[var(--accent)]/50 sm:px-5">
+                    <span className="shrink-0 text-[var(--muted-foreground)]">{isOpen ? <ChevronDown size={17}/> : <ChevronRight size={17}/>}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
-                        <span className="font-semibold text-[var(--primary)]">{providerLabels[row.llm_provider] ?? row.llm_provider}</span>
-                        <span>·</span><span>{formatDate(row.captured_at)}</span>
-                        {row.tracking_location && <><span>·</span><span>{row.tracking_location}</span></>}
-                        <span className={row.response_status === "completed" ? "rounded-full bg-emerald-500/10 px-2 py-0.5 font-semibold text-emerald-700 dark:text-emerald-300" : "rounded-full bg-red-500/10 px-2 py-0.5 font-semibold text-red-700 dark:text-red-300"}>{row.response_status}</span>
-                      </span>
-                      <span className="mt-1.5 block text-sm font-semibold text-[var(--foreground)]">{group.prompt}</span>
-                      <span className="mt-1 block line-clamp-2 whitespace-pre-wrap text-xs leading-5 text-[var(--muted-foreground)]">{row.error_message || text || "No text response available. Expand to inspect the raw payload."}</span>
+                      <span className="block text-sm font-semibold text-[var(--foreground)]">{group.prompt}</span>
+                      <span className="mt-1 block text-xs text-[var(--muted-foreground)]">{group.responses.length} engine response{group.responses.length === 1 ? "" : "s"} across {byDate.size} date{byDate.size === 1 ? "" : "s"}</span>
                     </span>
-                    <span className="hidden shrink-0 text-xs text-[var(--muted-foreground)] lg:block">{row.run_id ? `Run ${row.run_id.slice(0, 8)}` : "No run ID"}</span>
+                    <span className="shrink-0 text-xs text-[var(--muted-foreground)]">{isOpen ? "Collapse prompt" : "Expand prompt"}</span>
                   </button>
-                  {isOpen && <div className="space-y-4 border-t border-[var(--border)] bg-[var(--soft)]/40 p-4 sm:p-5">
-                    {group.responses.map((response) => {
-                      const answer = responseText(response);
-                      const links = [...new Set((answer.match(/https?:\/\/[^\s<>"')\]]+/g) || []).map((url) => url.replace(/[.,;:!?]+$/, "")))];
-                      return <section key={response.id} className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-5">
-                        <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-[var(--border)] pb-3 text-xs"><span className="rounded-full border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 font-semibold">{providerLabels[response.llm_provider] || response.llm_provider}</span><span className="text-[var(--muted-foreground)]">{formatDate(response.captured_at)}</span>{response.tracking_location && <span className="text-[var(--muted-foreground)]">· {response.tracking_location}</span>}</div>
-                        {response.error_message && <p className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm">{response.error_message}</p>}
-                        <div className="whitespace-pre-wrap break-words text-sm leading-7 text-[var(--foreground)]">{answer.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^\s)]+\))/g).map((part, i) => { const link = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/); return link ? <a key={i} href={link[2]} target="_blank" rel="noreferrer" className="text-emerald-700 underline underline-offset-2 dark:text-emerald-300">{link[1]}</a> : part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong> : part; })}</div>
-                        {links.length > 0 && <div className="mt-6 border-t border-[var(--border)] pt-4"><div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Citations</h4><span className="text-xs text-[var(--muted-foreground)]">{links.length} sources</span></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{links.map((url, i) => { let domain = url; try { domain = new URL(url).hostname.replace(/^www\./, ""); } catch {} return <a key={url} href={url} target="_blank" rel="noreferrer" className="group min-w-0 rounded-xl border border-[var(--border)] bg-[var(--background)] p-3 transition hover:border-emerald-600/50"><div className="flex items-center gap-2"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--soft)] text-[10px] font-bold text-[var(--muted-foreground)]">{i + 1}</span><span className="truncate text-[11px] font-medium text-[var(--muted-foreground)]">{domain}</span><ExternalLink size={12} className="ml-auto shrink-0"/></div><p className="mt-2 break-words text-sm font-semibold text-[var(--foreground)]">{url}</p></a>})}</div></div>}
-                        <details className="mt-5 rounded-lg border border-[var(--border)]"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-[var(--muted-foreground)]">Raw response payload</summary><pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words border-t border-[var(--border)] p-3 text-xs">{JSON.stringify(response.raw_response, null, 2) ?? "null"}</pre></details>
+                  {isOpen && <div className="space-y-3 border-t border-[var(--border)] bg-[var(--soft)]/30 p-3 sm:p-4">
+                    {[...byDate.entries()].sort(([a], [b]) => b.localeCompare(a)).map(([dateKey, dateResponses]) => {
+                      const dateId = group.key + "::date::" + dateKey;
+                      const dateOpen = expanded.includes(dateId);
+                      return <section key={dateId} className="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--card)]">
+                        <button type="button" onClick={() => setExpanded(dateOpen ? expanded.filter((x) => x !== dateId && !x.startsWith(dateId + "::")) : [...expanded, dateId])} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[var(--accent)]/40">
+                          <span className="text-[var(--muted-foreground)]">{dateOpen ? <ChevronDown size={16}/> : <ChevronRight size={16}/>}</span>
+                          <CalendarDays size={15} className="text-[var(--primary)]"/>
+                          <span className="flex-1 text-sm font-semibold">{new Date(dateKey + "T12:00:00").toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}</span>
+                          <span className="text-xs text-[var(--muted-foreground)]">{dateResponses.length} engine{dateResponses.length === 1 ? "" : "s"}</span>
+                        </button>
+                        {dateOpen && <div className="space-y-2 border-t border-[var(--border)] p-3 sm:p-4">
+                          {dateResponses.slice().sort((a, b) => a.llm_provider.localeCompare(b.llm_provider) || a.captured_at.localeCompare(b.captured_at)).map((response) => {
+                            const engineId = dateId + "::engine::" + response.id;
+                            const engineOpen = expanded.includes(engineId);
+                            const answer = responseText(response);
+                            const links = [...new Set((answer.match(/https?:\/\/[^\s<>"')\]]+/g) || []).map((url) => url.replace(/[.,;:!?]+$/, "")))];
+                            const rawJson = JSON.stringify(response.raw_response, null, 2) ?? "null";
+                            return <section key={response.id} className="overflow-hidden rounded-lg border border-[var(--border)]">
+                              <button type="button" onClick={() => setExpanded(engineOpen ? expanded.filter((x) => x !== engineId && !x.startsWith(engineId + "::")) : [...expanded, engineId])} className="flex w-full items-center gap-3 px-3 py-3 text-left hover:bg-[var(--accent)]/40 sm:px-4">
+                                <span className="text-[var(--muted-foreground)]">{engineOpen ? <ChevronDown size={15}/> : <ChevronRight size={15}/>}</span>
+                                <span className="flex-1">
+                                  <span className="block text-sm font-semibold">{providerLabels[response.llm_provider] || response.llm_provider}</span>
+                                  <span className="mt-0.5 block text-xs text-[var(--muted-foreground)]">{formatDate(response.captured_at)}{response.tracking_location ? " · " + response.tracking_location : ""}</span>
+                                </span>
+                                <span className={response.response_status === "completed" ? "rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300" : "rounded-full bg-red-500/10 px-2 py-1 text-[10px] font-semibold text-red-700 dark:text-red-300"}>{response.response_status}</span>
+                              </button>
+                              {engineOpen && <div className="space-y-4 border-t border-[var(--border)] bg-[var(--background)] p-4 sm:p-5">
+                                {response.error_message && <p className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm">{response.error_message}</p>}
+                                {answer ? <div className="whitespace-pre-wrap break-words text-sm leading-7 text-[var(--foreground)]">{answer.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^\s)]+\))/g).map((part, i) => { const link = part.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/); if (link) return <a key={i} href={link[2]} target="_blank" rel="noreferrer" className="text-emerald-700 underline underline-offset-2 dark:text-emerald-300">{link[1]}</a>; return part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2).trim()}</strong> : part; })}</div> : <p className="text-sm italic text-[var(--muted-foreground)]">No readable response text is available for this engine.</p>}
+                                <details className="overflow-hidden rounded-lg border border-[var(--border)]">
+                                  <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-3 text-xs font-semibold hover:bg-[var(--accent)]/40"><ChevronRight size={14}/> Cited pages <span className="ml-auto text-[var(--muted-foreground)]">{links.length} sources</span></summary>
+                                  <div className="border-t border-[var(--border)] p-3">
+                                    {links.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{links.map((url, i) => { let domain = url; try { domain = new URL(url).hostname.replace(/^www\./, ""); } catch {} return <a key={url} href={url} target="_blank" rel="noreferrer" className="group min-w-0 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 transition hover:border-emerald-600/50"><div className="flex items-center gap-2"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--soft)] text-[10px] font-bold text-[var(--muted-foreground)]">{i + 1}</span><span className="truncate text-[11px] font-medium text-[var(--muted-foreground)]">{domain}</span><ExternalLink size={12} className="ml-auto shrink-0"/></div><p className="mt-2 break-words text-sm font-semibold text-[var(--foreground)]">{url}</p></a>})}</div> : <p className="text-xs text-[var(--muted-foreground)]">No cited page URLs were found in this response.</p>}
+                                  </div>
+                                </details>
+                                <details className="overflow-hidden rounded-lg border border-[var(--border)]">
+                                  <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-3 text-xs font-semibold hover:bg-[var(--accent)]/40"><ChevronRight size={14}/> Raw JSON <span className="ml-auto text-[var(--muted-foreground)]">Provider payload</span></summary>
+                                  <div className="border-t border-[var(--border)]">
+                                    <div className="flex items-center justify-between gap-3 px-3 py-2"><span className="text-xs text-[var(--muted-foreground)]">Original response payload in JSON format</span><a href={"data:application/json;charset=utf-8," + encodeURIComponent(rawJson)} download={"response-" + response.id + ".json"} className="platform-btn h-8 gap-2 px-3 text-xs"><Download size={13}/> Download JSON</a></div>
+                                    <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words border-t border-[var(--border)] bg-[var(--soft)]/40 p-3 text-xs leading-5">{rawJson}</pre>
+                                  </div>
+                                </details>
+                              </div>}
+                            </section>;
+                          })}
+                        </div>}
                       </section>;
                     })}
                   </div>}
                 </article>;
               })}
-            </div>}
           {!loading && grouped.length > PAGE_SIZE && <div className="flex items-center justify-between border-t border-[var(--border)] p-4">
             <span className="text-xs text-[var(--muted-foreground)]">Page {page} of {pageCount}</span>
             <div className="flex gap-2">
