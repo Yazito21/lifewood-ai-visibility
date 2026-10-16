@@ -102,17 +102,24 @@ export default function CitationsPage() {
       const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
       const location = project?.tracking_market ?? "MY";
       const dataLocation = scope === "legacy" ? "LEGACY" : location;
+      async function loadAllCitationRows(brandRelatedOnly: boolean) {
+        const allRows: AggregatedRow[] = [];
+        for (let offset = 0; ; offset += 1000) {
+          const { data: batch, error } = await supabase.rpc("get_cumulative_citations", {
+            p_project_id: projectId, p_start_date: start, p_end_date: end,
+            p_topic: topic === "All" ? null : topic, p_engines: llms,
+            p_brand_related_only: brandRelatedOnly, p_tracking_location: dataLocation,
+          }).range(offset, offset + 999);
+          if (error) return { data: null as AggregatedRow[] | null, error };
+          const rows = (batch ?? []) as AggregatedRow[];
+          allRows.push(...rows);
+          if (rows.length < 1000) break;
+        }
+        return { data: allRows, error: null };
+      }
       const [{ data: brandRows, error: brandError }, { data: pageRows, error: pagesError }] = await Promise.all([
-        supabase.rpc("get_cumulative_citations", {
-          p_project_id: projectId, p_start_date: start, p_end_date: end,
-          p_topic: topic === "All" ? null : topic, p_engines: llms, p_brand_related_only: true,
-          p_tracking_location: dataLocation,
-        }),
-        supabase.rpc("get_cumulative_citations", {
-          p_project_id: projectId, p_start_date: start, p_end_date: end,
-          p_topic: topic === "All" ? null : topic, p_engines: llms, p_brand_related_only: false,
-          p_tracking_location: dataLocation,
-        }),
+        loadAllCitationRows(true),
+        loadAllCitationRows(false),
       ]);
       if (cancelled) return;
       setTopics(project?.topics ?? []);
