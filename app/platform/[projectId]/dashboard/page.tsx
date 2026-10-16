@@ -142,7 +142,7 @@ export default function DashboardPage() {
           apikey: publishableKey,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ project_id: projectId, start_date: startDate, end_date: endDate }),
+        body: JSON.stringify({ project_id: projectId, start_date: startDate, end_date: endDate, tracking_location: scope === "legacy" ? "LEGACY" : trackingLocation }),
       });
       if (!response.ok) {
         let message = "Unable to export raw AI responses.";
