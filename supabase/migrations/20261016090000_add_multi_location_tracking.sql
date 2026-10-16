@@ -1,8 +1,10 @@
 ALTER TABLE public.projects
-  ADD COLUMN IF NOT EXISTS tracking_locations text[] NOT NULL DEFAULT ARRAY['MY']::text[];
+  ADD COLUMN IF NOT EXISTS tracking_locations text[];
 UPDATE public.projects
 SET tracking_locations = ARRAY[COALESCE(NULLIF(tracking_market, ''), 'MY')]
 WHERE tracking_locations IS NULL OR cardinality(tracking_locations) = 0;
+ALTER TABLE public.projects ALTER COLUMN tracking_locations SET DEFAULT ARRAY['MY']::text[];
+ALTER TABLE public.projects ALTER COLUMN tracking_locations SET NOT NULL;
 ALTER TABLE public.projects DROP CONSTRAINT IF EXISTS projects_tracking_locations_check;
 ALTER TABLE public.projects ADD CONSTRAINT projects_tracking_locations_check
   CHECK (cardinality(tracking_locations) BETWEEN 1 AND 50 AND (
