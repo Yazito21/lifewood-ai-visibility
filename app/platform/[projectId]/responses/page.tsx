@@ -187,11 +187,11 @@ export default function ResponsesPage() {
             </div> :
             <div className="divide-y divide-[var(--border)]">
               {visible.map((group) => {
-                const isOpen = expanded.includes(row.key);
                 const row = group.responses[0];
+                const isOpen = expanded.includes(group.key);
                 const text = responseText(row);
                 return <article key={row.id} className="min-w-0">
-                  <button type="button" onClick={() => setExpanded(isOpen ? expanded.filter((x) => x !== row.key) : [...expanded, row.key])} className="flex w-full min-w-0 items-start gap-3 p-4 text-left transition hover:bg-[var(--accent)]/50 sm:items-center sm:px-5">
+                  <button type="button" onClick={() => setExpanded(isOpen ? expanded.filter((x) => x !== group.key) : [...expanded, group.key])} className="flex w-full min-w-0 items-start gap-3 p-4 text-left transition hover:bg-[var(--accent)]/50 sm:items-center sm:px-5">
                     <span className="mt-0.5 shrink-0 text-[var(--muted-foreground)]">{isOpen ? <ChevronDown size={17}/> : <ChevronRight size={17}/>}</span>
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
@@ -205,22 +205,18 @@ export default function ResponsesPage() {
                     </span>
                     <span className="hidden shrink-0 text-xs text-[var(--muted-foreground)] lg:block">{row.run_id ? `Run ${row.run_id.slice(0, 8)}` : "No run ID"}</span>
                   </button>
-                  {isOpen && <div className="space-y-4 border-t border-[var(--border)] bg-[var(--soft)]/40 p-4 sm:p-5">{group.responses.map((row) => { const text = responseText(row); const links = [...new Set((text.match(/https?:\/\/[^\s<>"\)]+/g) || []).map((u) => u.replace(/[.,;:!?]+$/, "")))]; return <div key={row.id} className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4"><div className="mb-3 flex items-center gap-2 text-xs"><strong>{providerLabels[row.llm_provider] || row.llm_provider}</strong><span className="text-[var(--muted-foreground)]">{formatDate(row.captured_at)}</span></div><div className="whitespace-pre-wrap break-words text-sm leading-7 text-[var(--foreground)]">{text.split(/(\\*\\*[^*]+\\*\\*)/g).map((part,i) => part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2,-2)}</strong> : part)}</div>{links.length > 0 && <div className="mt-5 border-t border-[var(--border)] pt-3"><h4 className="mb-3 text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Citations</h4><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{links.map((url,i) => { let domain=url; try {domain=new URL(url).hostname.replace(/^www\\./,"")} catch {} return <a key={url} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 hover:border-emerald-600/50"><span className="text-xs text-[var(--muted-foreground)]">{domain}</span><p className="mt-1 break-all text-sm font-medium">{url}</p></a>})}</div></div>}<details className="mt-4"><summary className="cursor-pointer text-xs text-[var(--muted-foreground)]">Raw response JSON</summary><pre className="mt-2 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(row.raw_response,null,2)}</pre></details></div> })}
-                    <div>
-                      <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Full response</h3>
-                      {text ? <pre className="mt-2 whitespace-pre-wrap break-words rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 text-sm leading-6 text-[var(--foreground)]">{text}</pre> : <p className="mt-2 text-sm text-[var(--muted-foreground)]">No extracted response text was stored.</p>}
-                    </div>
-                    {row.error_message && <div><h3 className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Error</h3><p className="mt-2 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm">{row.error_message}</p></div>}
-                    <details className="rounded-xl border border-[var(--border)] bg-[var(--card)]">
-                      <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Raw provider response JSON</summary>
-                      <pre className="max-h-[560px] overflow-auto border-t border-[var(--border)] p-4 text-xs leading-5 text-[var(--foreground)]">{JSON.stringify(row.raw_response, null, 2) ?? "null"}</pre>
-                    </details>
-                    <div className="grid gap-3 text-xs text-[var(--muted-foreground)] sm:grid-cols-2">
-                      <p><strong className="text-[var(--foreground)]">Response ID:</strong> {row.id}</p>
-                      <p><strong className="text-[var(--foreground)]">Run ID:</strong> {row.run_id ?? "—"}</p>
-                      <p><strong className="text-[var(--foreground)]">Brand snapshot:</strong> {row.brand_name_snapshot ?? "—"}</p>
-                      <p><strong className="text-[var(--foreground)]">Captured at:</strong> {formatDate(row.captured_at)}</p>
-                    </div>
+                  {isOpen && <div className="space-y-4 border-t border-[var(--border)] bg-[var(--soft)]/40 p-4 sm:p-5">
+                    {group.responses.map((response) => {
+                      const answer = responseText(response);
+                      const links = [...new Set((answer.match(/https?:\\/\\/[^\\s<>"\\)]+/g) || []).map((url) => url.replace(/[.,;:!?]+$/, "")))];
+                      return <section key={response.id} className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-5">
+                        <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-[var(--border)] pb-3 text-xs"><span className="rounded-full border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 font-semibold">{providerLabels[response.llm_provider] || response.llm_provider}</span><span className="text-[var(--muted-foreground)]">{formatDate(response.captured_at)}</span>{response.tracking_location && <span className="text-[var(--muted-foreground)]">· {response.tracking_location}</span>}</div>
+                        {response.error_message && <p className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm">{response.error_message}</p>}
+                        <div className="whitespace-pre-wrap break-words text-sm leading-7 text-[var(--foreground)]">{answer.split(/(\\*\\*[^*]+\\*\\*)/g).map((part, i) => part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong> : part.startsWith("[") && part.includes("](") ? <span key={i}>{part}</span> : part)}</div>
+                        {links.length > 0 && <div className="mt-6 border-t border-[var(--border)] pt-4"><div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Citations</h4><span className="text-xs text-[var(--muted-foreground)]">{links.length} sources</span></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{links.map((url, i) => { let domain = url; try { domain = new URL(url).hostname.replace(/^www\\./, ""); } catch {} return <a key={url} href={url} target="_blank" rel="noreferrer" className="group min-w-0 rounded-xl border border-[var(--border)] bg-[var(--background)] p-3 transition hover:border-emerald-600/50"><div className="flex items-center gap-2"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--soft)] text-[10px] font-bold text-[var(--muted-foreground)]">{i + 1}</span><span className="truncate text-[11px] font-medium text-[var(--muted-foreground)]">{domain}</span><ExternalLink size={12} className="ml-auto shrink-0"/></div><p className="mt-2 break-words text-sm font-semibold text-[var(--foreground)]">{url}</p></a>})}</div></div>}
+                        <details className="mt-5 rounded-lg border border-[var(--border)]"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-[var(--muted-foreground)]">Raw response payload</summary><pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words border-t border-[var(--border)] p-3 text-xs">{JSON.stringify(response.raw_response, null, 2) ?? "null"}</pre></details>
+                      </section>;
+                    })}
                   </div>}
                 </article>;
               })}
@@ -228,7 +224,7 @@ export default function ResponsesPage() {
           {!loading && grouped.length > PAGE_SIZE && <div className="flex items-center justify-between border-t border-[var(--border)] p-4">
             <span className="text-xs text-[var(--muted-foreground)]">Page {page} of {pageCount}</span>
             <div className="flex gap-2">
-              <button type="button" disabled={page <= 1} onClick={() => {setPage((p) => p - 1); setExpanded(null);}} className="platform-btn h-9 disabled:opacity-40">Previous</button>
+              <button type="button" disabled={page <= 1} onClick={() => {setPage((p) => p - 1); setExpanded([]);}} className="platform-btn h-9 disabled:opacity-40">Previous</button>
               <button type="button" disabled={page >= pageCount} onClick={() => {setPage((p) => p + 1); setExpanded(null);}} className="platform-btn h-9 disabled:opacity-40">Next</button>
             </div>
           </div>}
