@@ -258,6 +258,7 @@ Deno.serve(async (req: Request) => {
     const responseRows = enriched.map(({ row, prompt, text, rawJson, citations }) => ({
       Response_ID: String(row.id ?? ""),
       Captured_At: String(row.captured_at ?? ""),
+      Tracking_Location: String(row.tracking_location ?? "LEGACY"),
       Run_ID: String(row.run_id ?? ""),
       Prompt_No: prompt?.prompt_number ?? "",
       Prompt_ID: String(row.prompt_id ?? ""),
