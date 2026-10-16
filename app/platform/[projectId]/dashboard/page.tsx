@@ -34,7 +34,6 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [trackingLocation, setTrackingLocation] = useState("MY");
   const [scope, setScope] = useState<"current" | "legacy">("current");
-  const [latestMetrics, setLatestMetrics] = useState<Metric[]>([]);
   const [citationsByTopic, setCitationsByTopic] = useState<Record<string, AggregatedCitation[]>>({});
   const [competitorCounts, setCompetitorCounts] = useState<Record<string, number>>({});
   const [topics, setTopics] = useState<string[]>([]);
@@ -92,7 +91,7 @@ export default function DashboardPage() {
 
     const firstError = projectError || metricsError || competitorError;
     if (firstError) setError(firstError.message || "Unable to load dashboard data.");
-    setMetrics(chartRows ?? []); setLatestMetrics(chartRows ?? []); setCitationsByTopic(citations);
+    setMetrics(chartRows ?? []); setCitationsByTopic(citations);
     const counts: Record<string, number> = {};
     for (const row of (competitorRows ?? []) as CompetitorCount[]) {
       counts[row.topic] = Number(row.competitor_count) || 0;
