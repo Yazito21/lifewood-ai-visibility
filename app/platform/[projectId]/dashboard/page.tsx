@@ -62,7 +62,7 @@ export default function DashboardPage() {
     const end = period === "Custom" ? customEnd : localDateString();
     const [{ data: chartRows, error: metricsError }, { data: latestRows, error: latestError }, { data: competitorRows, error: competitorError }] = await Promise.all([
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").eq("tracking_location", dataLocation).gte("metric_date", start).lte("metric_date", end).order("metric_date"),
-      supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").order("metric_date", { ascending: false }).limit(500),
+      supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").eq("tracking_location", dataLocation).order("metric_date", { ascending: false }).limit(500),
       supabase.rpc("get_latest_competitor_counts", { p_project_id: projectId, p_tracking_location: dataLocation }),
     ]);
 
