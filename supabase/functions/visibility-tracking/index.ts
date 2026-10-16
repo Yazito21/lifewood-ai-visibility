@@ -95,29 +95,11 @@ function hostOf(url: string) {
 function titleFromUrl(url: string) {
   try { return new URL(url).hostname.replace(/^www\./, "").split(".").slice(0, -1).join(".").replace(/[-_]/g, " "); } catch { return url; }
 }
-const trackingRegionCountryCodes: Record<string, string[]> = {
- "REGION:ANGLO_WORLD":["GB","AU","NZ","IE","US","CA"],"REGION:EUROPE":["PL","CZ","HU","BG","RS","SK","HR","BA","MK","SI","ME","DE","FR","IT","ES","NL","BE","PT","AT","CH","LU","SE","DK","FI","NO","LT","LV","EE","GR","CY","IS","GL","RO","AL"],
- "REGION:NORTH_EURASIA":["RU","UA","BY","GE","AM"],"REGION:CARIBBEAN":["JM","TT","BS","GY","SR","BZ"],"REGION:LATIN_AMERICA":["MX","CO","PE","VE","GT","EC","DO","HN","NI","SV","CR","PA","PR","AR","CL","UY","BO","PY","CU","BR","GF"],
- "REGION:ATLANTIC_OCEAN":["CV"],"REGION:INDIAN_OCEAN":["MU","RE"],"REGION:ARAB_WORLD":["SA","AE","KW","OM","QA","BH","EG","IQ","SY","JO","LY","PS","MA","DZ","TN","YE","LB"],"REGION:ISRAEL":["IL"],"REGION:NASTALIQ_REGION":["IR","AF","PK"],
- "REGION:SAHEL":["SD","MR","NE","ML","TD","SO","DJ"],"REGION:TROPICAL_AFRICA":["CI","BF","SN","GN","BJ","TG","GM","GW","TZ","KE","UG","MW","ZM","ZW","CD","CM","CF","CG","GA","GQ","NG","GH","SL","LR","MZ","AO","RW","BI","MG","SS","HT"],
- "REGION:SOUTHERN_AFRICA":["ZA","BW","NA","LS","SZ"],"REGION:ETHIOPIC_AFRICA":["ET","ER"],"REGION:SOUTH_ASIA":["IN","NP","BT","BD","LK"],"REGION:CENTRAL_ASIA":["UZ","KZ","KG","TM","TR","AZ","TJ"],"REGION:MONGOLIA":["MN"],"REGION:EAST_ASIA":["CN","TW","JP","KR","KP"],
- "REGION:MAINLAND_SE_ASIA":["KH","LA","MM","TH","VN"],"REGION:SINGAPORE":["MY","BN","SG"],"REGION:INSULAR_SE_ASIA":["ID","PH"],"REGION:SOUTH_PACIFIC":["PG","SB","VU","NC","WS","PF","FJ"],"REGION:EAST_TIMOR":["TL"]
-};
-const uniqueTrackingLocations=(values:string[])=>[...new Set(values)];
-const regionCountries=(...ids:string[])=>uniqueTrackingLocations(ids.flatMap(id=>trackingRegionCountryCodes["REGION:"+id]??[]));
-Object.assign(trackingRegionCountryCodes,{
- "REGION:MACRO_NORTH_AUSTRALASIA":regionCountries("ANGLO_WORLD","EUROPE","NORTH_EURASIA"),
- "REGION:MACRO_CENTRAL_SOUTH_AMERICA":regionCountries("CARIBBEAN","LATIN_AMERICA","ATLANTIC_OCEAN","INDIAN_OCEAN"),
- "REGION:MACRO_MENA":regionCountries("ARAB_WORLD","ISRAEL","NASTALIQ_REGION","SAHEL"),
- "REGION:MACRO_SUBSAHARAN_AFRICA":regionCountries("SAHEL","TROPICAL_AFRICA","SOUTHERN_AFRICA","ETHIOPIC_AFRICA"),
- "REGION:MACRO_SOUTH_ASIA":regionCountries("SOUTH_ASIA"),"REGION:MACRO_CENTRAL_ASIA":regionCountries("CENTRAL_ASIA","MONGOLIA"),
- "REGION:MACRO_EAST_ASIA":regionCountries("EAST_ASIA"),"REGION:MACRO_SOUTHEAST_ASIA":regionCountries("MAINLAND_SE_ASIA","SINGAPORE","INSULAR_SE_ASIA"),
- "REGION:MACRO_SOUTH_PACIFIC":regionCountries("SOUTH_PACIFIC","EAST_TIMOR")
-});
 function resolveTrackingCountryCodes(project:Record<string,unknown>):string[]{
  const selected=Array.isArray(project.tracking_locations)?project.tracking_locations.map(String):[String(project.tracking_market??"MY")];
- if(selected.includes("GLOBAL"))return ["GLOBAL"];
- return uniqueTrackingLocations(selected.flatMap(value=>value.startsWith("REGION:")?trackingRegionCountryCodes[value]??[]:/^[A-Z]{2}$/.test(value)?[value]:[]));
+ const value=selected[0] ?? String(project.tracking_market ?? "MY");
+ if(value==="GLOBAL")return ["GLOBAL"];
+ return /^[A-Z]{2}$/.test(value) ? [value] : [String(project.tracking_market ?? "MY")];
 }
 
 type SearchMarket = { type: "approximate"; country: string; timezone?: string };
