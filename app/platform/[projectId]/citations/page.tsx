@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Search } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
+import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
 
 type AggregatedRow = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
@@ -71,6 +72,8 @@ function CitationTable({ title, data }: { title: string; data: AggregatedRow[] }
 export default function CitationsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [brandPages, setBrandPages] = useState<AggregatedRow[]>([]);
+  const [trackingLocation, setTrackingLocation] = useState("MY");
+  const [scope, setScope] = useState<"current" | "legacy">("current");
   const [allPages, setAllPages] = useState<AggregatedRow[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
@@ -96,19 +99,24 @@ export default function CitationsPage() {
     async function load() {
       setLoading(true);
       setError("");
-      const [{ data: project, error: projectError }, { data: brandRows, error: brandError }, { data: pageRows, error: pagesError }] = await Promise.all([
-        supabase.from("projects").select("topics").eq("id", projectId).single(),
+      const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
+      const location = project?.tracking_market ?? "MY";
+      const dataLocation = scope === "legacy" ? "LEGACY" : location;
+      const [{ data: brandRows, error: brandError }, { data: pageRows, error: pagesError }] = await Promise.all([
         supabase.rpc("get_cumulative_citations", {
           p_project_id: projectId, p_start_date: start, p_end_date: end,
           p_topic: topic === "All" ? null : topic, p_engines: llms, p_brand_related_only: true,
+          p_tracking_location: dataLocation,
         }),
         supabase.rpc("get_cumulative_citations", {
           p_project_id: projectId, p_start_date: start, p_end_date: end,
           p_topic: topic === "All" ? null : topic, p_engines: llms, p_brand_related_only: false,
+          p_tracking_location: dataLocation,
         }),
       ]);
       if (cancelled) return;
       setTopics(project?.topics ?? []);
+      setTrackingLocation(location);
       if (projectError || brandError || pagesError) setError((projectError || brandError || pagesError)?.message ?? "Unable to load citation data.");
       setBrandPages((brandRows ?? []) as AggregatedRow[]);
       setAllPages((pageRows ?? []) as AggregatedRow[]);
@@ -116,14 +124,15 @@ export default function CitationsPage() {
     }
     void load();
     return () => { cancelled = true; };
-  }, [projectId, start, end, topic, llms]);
+  }, [projectId, start, end, topic, llms, scope]);
 
 
 
   return <ProjectShell><div className="ops-page">
     <p className="page-eyebrow">Citations</p>
     <h2 className="page-title mt-1">Citation intelligence</h2>
-    <p className="page-description mt-2">Cumulative cited-page frequency across tracked runs within the selected period.</p>
+    <p className="page-description mt-2">Cumulative cited-page frequency for the selected reporting dataset.</p>
+    <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
     <div className="mt-8 ops-filter-panel">
       <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{["Today", "Last 2 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"].map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
       </div>
