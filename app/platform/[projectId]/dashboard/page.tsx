@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, ExternalLink, RefreshCw, Play, Download } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
+import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
 
@@ -31,6 +32,8 @@ function dateStart(period: string, customStart: string) {
 export default function DashboardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [metrics, setMetrics] = useState<Metric[]>([]);
+  const [trackingLocation, setTrackingLocation] = useState("MY");
+  const [scope, setScope] = useState<"current" | "legacy">("current");
   const [latestMetrics, setLatestMetrics] = useState<Metric[]>([]);
   const [citationsByTopic, setCitationsByTopic] = useState<Record<string, AggregatedCitation[]>>({});
   const [competitorCounts, setCompetitorCounts] = useState<Record<string, number>>({});
@@ -47,7 +50,10 @@ export default function DashboardPage() {
 
   async function load() {
     setLoading(true); setError("");
-    const { data: project, error: projectError } = await supabase.from("projects").select("topics").eq("id", projectId).single();
+    const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
+    const location = project?.tracking_market ?? "MY";
+    const dataLocation = scope === "legacy" ? "LEGACY" : location;
+    setTrackingLocation(location);
     const topicList: string[] = Array.isArray(project?.topics)
       ? project.topics.filter((topic: unknown): topic is string => typeof topic === "string")
       : [];
@@ -55,9 +61,9 @@ export default function DashboardPage() {
     const start = dateStart(period, customStart);
     const end = period === "Custom" ? customEnd : localDateString();
     const [{ data: chartRows, error: metricsError }, { data: latestRows, error: latestError }, { data: competitorRows, error: competitorError }] = await Promise.all([
-      supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").gte("metric_date", start).lte("metric_date", end).order("metric_date"),
+      supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").eq("tracking_location", dataLocation).gte("metric_date", start).lte("metric_date", end).order("metric_date"),
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").order("metric_date", { ascending: false }).limit(500),
-      supabase.rpc("get_latest_competitor_counts", { p_project_id: projectId }),
+      supabase.rpc("get_latest_competitor_counts", { p_project_id: projectId, p_tracking_location: dataLocation }),
     ]);
 
     // Aggregate citations in Postgres, using the same RPC and brand-related filter as the Citations page.
@@ -71,6 +77,7 @@ export default function DashboardPage() {
           p_topic: topic,
           p_engines: [],
           p_brand_related_only: true,
+          p_tracking_location: dataLocation,
         });
         return { topic, data, error };
       })
@@ -182,7 +189,7 @@ export default function DashboardPage() {
     return () => { alive = false; };
   }, [projectId]);
 
-  useEffect(() => { void load(); }, [projectId, period, customStart, customEnd]);
+  useEffect(() => { void load(); }, [projectId, period, customStart, customEnd, scope]);
 
   const cardTopics = useMemo(() => ["Overall", ...topics.filter((topic) => topic !== "Overall")], [topics]);
   const chartDateRange = useMemo(() => {
@@ -219,8 +226,10 @@ export default function DashboardPage() {
         <section>
           <p className="page-eyebrow">Project Overview</p>
           <h2 className="page-title mt-1">Dashboard</h2>
-          <p className="page-description mt-2">A live overview of AI visibility performance across tracked answer engines and topics.</p>
+          <p className="page-description mt-2">A live overview of AI visibility performance across answer engines and topics for the selected reporting dataset.</p>
         </section>
+
+        <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
 
         <section className="ops-filter-panel">
           <div className="ops-filter-row">
