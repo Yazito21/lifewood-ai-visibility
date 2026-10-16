@@ -264,6 +264,7 @@ export default function ResponsesPage() {
                   </div>}
                 </article>;
               })}
+            </div>}
           {!loading && grouped.length > PAGE_SIZE && <div className="flex items-center justify-between border-t border-[var(--border)] p-4">
             <span className="text-xs text-[var(--muted-foreground)]">Page {page} of {pageCount}</span>
             <div className="flex gap-2">
