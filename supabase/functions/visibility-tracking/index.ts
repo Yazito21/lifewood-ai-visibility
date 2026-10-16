@@ -95,6 +95,31 @@ function hostOf(url: string) {
 function titleFromUrl(url: string) {
   try { return new URL(url).hostname.replace(/^www\./, "").split(".").slice(0, -1).join(".").replace(/[-_]/g, " "); } catch { return url; }
 }
+const trackingRegionCountryCodes: Record<string, string[]> = {
+ "REGION:ANGLO_WORLD":["GB","AU","NZ","IE","US","CA"],"REGION:EUROPE":["PL","CZ","HU","BG","RS","SK","HR","BA","MK","SI","ME","DE","FR","IT","ES","NL","BE","PT","AT","CH","LU","SE","DK","FI","NO","LT","LV","EE","GR","CY","IS","GL","RO","AL"],
+ "REGION:NORTH_EURASIA":["RU","UA","BY","GE","AM"],"REGION:CARIBBEAN":["JM","TT","BS","GY","SR","BZ"],"REGION:LATIN_AMERICA":["MX","CO","PE","VE","GT","EC","DO","HN","NI","SV","CR","PA","PR","AR","CL","UY","BO","PY","CU","BR","GF"],
+ "REGION:ATLANTIC_OCEAN":["CV"],"REGION:INDIAN_OCEAN":["MU","RE"],"REGION:ARAB_WORLD":["SA","AE","KW","OM","QA","BH","EG","IQ","SY","JO","LY","PS","MA","DZ","TN","YE","LB"],"REGION:ISRAEL":["IL"],"REGION:NASTALIQ_REGION":["IR","AF","PK"],
+ "REGION:SAHEL":["SD","MR","NE","ML","TD","SO","DJ"],"REGION:TROPICAL_AFRICA":["CI","BF","SN","GN","BJ","TG","GM","GW","TZ","KE","UG","MW","ZM","ZW","CD","CM","CF","CG","GA","GQ","NG","GH","SL","LR","MZ","AO","RW","BI","MG","SS","HT"],
+ "REGION:SOUTHERN_AFRICA":["ZA","BW","NA","LS","SZ"],"REGION:ETHIOPIC_AFRICA":["ET","ER"],"REGION:SOUTH_ASIA":["IN","NP","BT","BD","LK"],"REGION:CENTRAL_ASIA":["UZ","KZ","KG","TM","TR","AZ","TJ"],"REGION:MONGOLIA":["MN"],"REGION:EAST_ASIA":["CN","TW","JP","KR","KP"],
+ "REGION:MAINLAND_SE_ASIA":["KH","LA","MM","TH","VN"],"REGION:SINGAPORE":["SG"],"REGION:INSULAR_SE_ASIA":["MY","BN","ID","PH"],"REGION:SOUTH_PACIFIC":["PG","SB","VU","NC","WS","PF","FJ"],"REGION:EAST_TIMOR":["TL"]
+};
+const uniqueTrackingLocations=(values:string[])=>[...new Set(values)];
+const regionCountries=(...ids:string[])=>uniqueTrackingLocations(ids.flatMap(id=>trackingRegionCountryCodes["REGION:"+id]??[]));
+Object.assign(trackingRegionCountryCodes,{
+ "REGION:MACRO_NORTH_AUSTRALASIA":regionCountries("ANGLO_WORLD","EUROPE","NORTH_EURASIA"),
+ "REGION:MACRO_CENTRAL_SOUTH_AMERICA":regionCountries("CARIBBEAN","LATIN_AMERICA","ATLANTIC_OCEAN","INDIAN_OCEAN"),
+ "REGION:MACRO_MENA":regionCountries("ARAB_WORLD","ISRAEL","NASTALIQ_REGION","SAHEL"),
+ "REGION:MACRO_SUBSAHARAN_AFRICA":regionCountries("SAHEL","TROPICAL_AFRICA","SOUTHERN_AFRICA","ETHIOPIC_AFRICA"),
+ "REGION:MACRO_SOUTH_ASIA":regionCountries("SOUTH_ASIA"),"REGION:MACRO_CENTRAL_ASIA":regionCountries("CENTRAL_ASIA","MONGOLIA"),
+ "REGION:MACRO_EAST_ASIA":regionCountries("EAST_ASIA"),"REGION:MACRO_SOUTHEAST_ASIA":regionCountries("MAINLAND_SE_ASIA","SINGAPORE","INSULAR_SE_ASIA"),
+ "REGION:MACRO_SOUTH_PACIFIC":regionCountries("SOUTH_PACIFIC","EAST_TIMOR")
+});
+function resolveTrackingCountryCodes(project:Record<string,unknown>):string[]{
+ const selected=Array.isArray(project.tracking_locations)?project.tracking_locations.map(String):[String(project.tracking_market??"MY")];
+ if(selected.includes("GLOBAL"))return ["GLOBAL"];
+ return uniqueTrackingLocations(selected.flatMap(value=>value.startsWith("REGION:")?trackingRegionCountryCodes[value]??[]:/^[A-Z]{2}$/.test(value)?[value]:[]));
+}
+
 type SearchMarket = { type: "approximate"; country: string; timezone?: string };
 
 function searchMarketFor(countryCode: string): SearchMarket | null {
@@ -167,12 +192,12 @@ async function callChatGPT(apiKey: string, prompt: string, project: Record<strin
     return { text: textParts.join("\\n\\n"), raw: payload, model: payload?.model ?? "gpt-4o-mini", citations: uniqueCitations };
   } finally { clearTimeout(timeout); }
 }
-async function processPrompts(prompts: Array<Record<string, unknown>>, providers: string[], project: Record<string, unknown>, apiKeys: Record<string,string>) {
-  const tasks: Array<{ provider: string; prompt: Record<string,unknown> }> = [];
+async function processPrompts(prompts: Array<Record<string, unknown>>, providers: string[], project: Record<string, unknown>, apiKeys: Record<string,string>, trackingLocations: string[]) {
+  const tasks: Array<{ provider: string; prompt: Record<string,unknown>; trackingLocation: string }> = [];
   for (const provider of providers) {
     if (provider !== "chatgpt") throw new Error("Only ChatGPT is enabled in this first tracking stage. Configure ChatGPT in Settings.");
     if (!apiKeys[provider]) throw new Error("No API key is configured for " + provider + ".");
-    for (const prompt of prompts) tasks.push({ provider, prompt });
+    for (const prompt of prompts) for (const trackingLocation of trackingLocations) tasks.push({ provider, prompt, trackingLocation });
   }
   const results: Array<Record<string, unknown> | undefined> = new Array(tasks.length);
   let cursor = 0;
@@ -180,10 +205,11 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
     while (true) {
       const index = cursor++;
       if (index >= tasks.length) return;
-      const { provider, prompt } = tasks[index];
+      const { provider, prompt, trackingLocation } = tasks[index];
       const started = new Date().toISOString();
       try {
-        const answer = await callChatGPT(apiKeys[provider], String(prompt.prompt ?? ""), project);
+        const projectForLocation = { ...project, tracking_market: trackingLocation, tracking_location: trackingLocation };
+        const answer = await callChatGPT(apiKeys[provider], String(prompt.prompt ?? ""), projectForLocation);
         const text = answer.text;
         const brandName = String(project.brand_name ?? "");
         const terms = [brandName, ...(Array.isArray(project.brand_terms) ? project.brand_terms.map(String) : [])].filter(Boolean);
@@ -200,7 +226,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         });
         const competitorHosts = [...new Set(citations.filter((c) => !c.is_brand_related).map((c) => hostOf(c.url)).filter((host) => Boolean(host) && !isGenericCitationDomain(host)))];
         results[index] = {
-          prompt_id: prompt.id, prompt_number: prompt.prompt_number, prompt: String(prompt.prompt ?? ""),
+          prompt_id: prompt.id, prompt_number: prompt.prompt_number, prompt: String(prompt.prompt ?? ""), tracking_location: trackingLocation,
           topic: String(prompt.topic ?? "General"), language: String(prompt.language ?? "English"),
           provider, status: "completed", response_text: text, raw_response: answer.raw,
           brand_mentioned: brandMentioned, citations, competitor_hosts: competitorHosts,
@@ -208,7 +234,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         };
       } catch (error) {
         results[index] = {
-          prompt_id: prompt.id, prompt_number: prompt.prompt_number, prompt: String(prompt.prompt ?? ""),
+          prompt_id: prompt.id, prompt_number: prompt.prompt_number, prompt: String(prompt.prompt ?? ""), tracking_location: trackingLocation,
           topic: String(prompt.topic ?? "General"), language: String(prompt.language ?? "English"),
           provider, status: "failed", error_message: (error instanceof Error ? error.message : String(error)).slice(0, 500),
           brand_mentioned: false, citations: [], competitor_hosts: [], started_at: started, completed_at: new Date().toISOString(),
@@ -245,7 +271,7 @@ Deno.serve(async (req: Request) => {
     const [{ data: profile, error: profileError }, { data: member, error: memberError }, { data: project, error: projectError }] = await Promise.all([
       admin.from("profiles").select("role").eq("id", userId).maybeSingle(),
       admin.from("project_members").select("role").eq("project_id", projectId).eq("user_id", userId).maybeSingle(),
-      admin.from("projects").select("id,brand_name,brand_description,brand_domains,brand_terms,topics,tracking_market").eq("id", projectId).maybeSingle(),
+      admin.from("projects").select("id,brand_name,brand_description,brand_domains,brand_terms,topics,tracking_market,tracking_locations").eq("id", projectId).maybeSingle(),
     ]);
     if (profileError || memberError || projectError) {
       console.error("PROJECT_ACCESS_LOOKUP_FAILED", JSON.stringify({
@@ -289,6 +315,8 @@ Deno.serve(async (req: Request) => {
     if (secretError) return json({ error: "API_KEY_LOOKUP_FAILED" }, 500);
     if (!secret?.ciphertext) return json({ error: "CHATGPT_API_KEY_NOT_CONFIGURED" }, 400);
     const apiKey = await decrypt(secret.ciphertext, projectId + ":chatgpt");
+    const trackingLocationsForRun = resolveTrackingCountryCodes(project as Record<string, unknown>);
+    if (!trackingLocationsForRun.length) return json({ error: "NO_VALID_TRACKING_LOCATIONS" }, 400);
     let runId: string | null = null;
     let isSuperadminRerun = false;
     if (mode !== "sample") {
@@ -312,7 +340,7 @@ Deno.serve(async (req: Request) => {
         }
         const { error: runInsertError } = await admin.from("tracking_runs").insert({
           id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running",
-          total_prompts: prompts.length, completed_prompts: 0, failed_prompts: 0,
+          total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
         });
         if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
         const now = new Date().toISOString();
@@ -340,7 +368,7 @@ Deno.serve(async (req: Request) => {
           p_project_id: projectId,
           p_started_by: userId,
           p_run_id: runId,
-          p_total_prompts: prompts.length,
+          p_total_prompts: prompts.length * trackingLocationsForRun.length,
         });
         if (claimError) {
           console.error("DAILY_TRACKING_CLAIM_FAILED", claimError.message);
@@ -364,7 +392,7 @@ Deno.serve(async (req: Request) => {
       }
       activeRunId = runId;
     }
-    const results = await processPrompts(prompts as Array<Record<string,unknown>>, providerIds, project as Record<string,unknown>, { chatgpt: apiKey });
+    const results = await processPrompts(prompts as Array<Record<string,unknown>>, providerIds, project as Record<string,unknown>, { chatgpt: apiKey }, trackingLocationsForRun);
     const succeeded = results.filter((r) => r.status === "completed");
     const failed = results.filter((r) => r.status === "failed");
 
@@ -406,10 +434,10 @@ Deno.serve(async (req: Request) => {
       if (metricsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsDeleteError.message }, 500);
     }
     const rawRows = results.map((r) => ({
-      project_id: projectId, prompt_id: r.prompt_id, llm_provider: "chatgpt", captured_at: r.completed_at,
+      project_id: projectId, prompt_id: r.prompt_id, llm_provider: "chatgpt", captured_at: r.completed_at, tracking_location: r.tracking_location ?? null,
       prompt_snapshot: r.prompt, raw_response: r.raw_response ?? { error: r.error_message }, response_text: r.response_text ?? null,
       response_status: r.status, error_message: r.error_message ?? null, run_id: runId,
-      project_snapshot: { brand_domains: project.brand_domains ?? [], brand_terms: project.brand_terms ?? [], topics: project.topics ?? [] },
+      project_snapshot: { brand_domains: project.brand_domains ?? [], brand_terms: project.brand_terms ?? [], topics: project.topics ?? [], tracking_locations: project.tracking_locations ?? [project.tracking_market ?? "MY"], tracking_location: r.tracking_location ?? null },
       brand_name_snapshot: String(project.brand_name ?? ""),
     }));
     const { error: rawError } = await admin.from("ai_responses").insert(rawRows);
