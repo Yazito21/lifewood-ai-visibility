@@ -61,7 +61,7 @@ export default function LoginPage() {
                 <div className="mb-8 text-center">
                     <div className="mx-auto mb-7 inline-flex max-w-full items-center justify-center rounded-2xl bg-white px-5 py-3.5 shadow-[0_10px_35px_rgba(0,0,0,0.18)] sm:px-6 sm:py-4">
                         <img
-                            src="/transparent_lw.png"
+                            src="/lifewood-wordmark.svg"
                             alt="Lifewood"
                             className="h-auto w-[300px] max-w-[72vw] object-contain"
                         />
