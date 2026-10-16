@@ -410,7 +410,7 @@ Deno.serve(async (req: Request) => {
       if (responseDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: responseDeleteError.message }, 500);
       const { error: citationsDeleteError } = await admin.from("citations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
       if (citationsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: citationsDeleteError.message }, 500);
-      const { error: competitorsDeleteError } = await admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", rerunDay);
+      const { error: competitorsDeleteError } = await admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
       if (competitorsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorsDeleteError.message }, 500);
       const { error: metricsDeleteError } = await admin.from("visibility_daily").delete().eq("project_id", projectId).eq("metric_date", rerunDay);
       if (metricsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsDeleteError.message }, 500);
@@ -597,7 +597,7 @@ Deno.serve(async (req: Request) => {
       const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
       if (error) console.error("METRICS_WRITE_FAILED", topic, error.message);
       const providerRow = { ...row, llm_provider: "chatgpt" };
-      const { error: providerError } = await admin.from("visibility_daily").upsert(providerRow, { onConflict: "project_id,metric_date,topic,llm_provider" });
+      const { error: providerError } = await admin.from("visibility_daily").upsert(providerRow, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
       if (providerError) console.error("PROVIDER_METRICS_WRITE_FAILED", topic, providerError.message);
     }
 
