@@ -22,6 +22,57 @@ WHERE tr.id = known.run_id AND tr.tracking_location IS NULL;
 
 UPDATE public.tracking_runs SET tracking_location = 'LEGACY' WHERE tracking_location IS NULL;
 UPDATE public.ai_responses SET tracking_location = 'LEGACY' WHERE tracking_location IS NULL;
+
+-- Preserve known historical location only when exactly one successful run exists for
+-- the project and Malaysia-time date. Ambiguous dates remain in the legacy dataset.
+WITH known_daily AS (
+  SELECT project_id,
+         (started_at AT TIME ZONE 'Asia/Kuala_Lumpur')::date AS metric_date,
+         min(tracking_location) AS location
+  FROM public.tracking_runs
+  GROUP BY project_id, (started_at AT TIME ZONE 'Asia/Kuala_Lumpur')::date
+  HAVING count(*) = 1
+     AND bool_and(status IN ('completed', 'partial'))
+     AND bool_and(tracking_location <> 'LEGACY')
+)
+UPDATE public.citations c
+SET tracking_location = k.location
+FROM known_daily k
+WHERE c.project_id = k.project_id AND c.metric_date = k.metric_date
+  AND c.tracking_location IS NULL;
+
+WITH known_daily AS (
+  SELECT project_id,
+         (started_at AT TIME ZONE 'Asia/Kuala_Lumpur')::date AS metric_date,
+         min(tracking_location) AS location
+  FROM public.tracking_runs
+  GROUP BY project_id, (started_at AT TIME ZONE 'Asia/Kuala_Lumpur')::date
+  HAVING count(*) = 1
+     AND bool_and(status IN ('completed', 'partial'))
+     AND bool_and(tracking_location <> 'LEGACY')
+)
+UPDATE public.competitors c
+SET tracking_location = k.location
+FROM known_daily k
+WHERE c.project_id = k.project_id AND c.metric_date = k.metric_date
+  AND c.tracking_location IS NULL;
+
+WITH known_daily AS (
+  SELECT project_id,
+         (started_at AT TIME ZONE 'Asia/Kuala_Lumpur')::date AS metric_date,
+         min(tracking_location) AS location
+  FROM public.tracking_runs
+  GROUP BY project_id, (started_at AT TIME ZONE 'Asia/Kuala_Lumpur')::date
+  HAVING count(*) = 1
+     AND bool_and(status IN ('completed', 'partial'))
+     AND bool_and(tracking_location <> 'LEGACY')
+)
+UPDATE public.visibility_daily vd
+SET tracking_location = k.location
+FROM known_daily k
+WHERE vd.project_id = k.project_id AND vd.metric_date = k.metric_date
+  AND vd.tracking_location IS NULL;
+
 UPDATE public.citations SET tracking_location = 'LEGACY' WHERE tracking_location IS NULL;
 UPDATE public.competitors SET tracking_location = 'LEGACY' WHERE tracking_location IS NULL;
 UPDATE public.visibility_daily SET tracking_location = 'LEGACY' WHERE tracking_location IS NULL;
