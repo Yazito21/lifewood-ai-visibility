@@ -112,6 +112,7 @@ CREATE UNIQUE INDEX citations_daily_url_location_unique_idx
 DROP INDEX IF EXISTS public.competitors_daily_brand_unique_idx;
 CREATE UNIQUE INDEX competitors_daily_brand_location_unique_idx
   ON public.competitors (project_id, metric_date, topic, llm_provider, brand_name, tracking_location);
+ALTER TABLE public.visibility_daily DROP CONSTRAINT IF EXISTS visibility_daily_project_id_metric_date_topic_llm_provider_key;
 DROP INDEX IF EXISTS public.visibility_daily_project_id_metric_date_topic_llm_provider_key;
 CREATE UNIQUE INDEX visibility_daily_project_date_topic_engine_location_key
   ON public.visibility_daily (project_id, metric_date, topic, llm_provider, tracking_location);
