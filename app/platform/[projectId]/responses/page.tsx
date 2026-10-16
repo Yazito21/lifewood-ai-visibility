@@ -66,7 +66,7 @@ export default function ResponsesPage() {
   const [searched, setSearched] = useState(false);
   const [search, setSearch] = useState("");
   const [rows, setRows] = useState<ResponseRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -99,12 +99,19 @@ export default function ResponsesPage() {
       setError(queryError.message);
       setRows([]);
     } else {
-      setRows((data ?? []) as ResponseRow[]);
+      const result = (data ?? []) as ResponseRow[];
+      const ids = [...new Set(result.map((r) => r.prompt_id).filter((id): id is string => Boolean(id)))];
+      const topicByPrompt = new Map<string, string>();
+      if (ids.length) {
+        const { data: promptRows } = await supabase.from("prompts").select("*").in("id", ids);
+        for (const prompt of (promptRows ?? []) as Array<Record<string, unknown>>) topicByPrompt.set(String(prompt.id), String(prompt.topic_name || prompt.topic || ""));
+      }
+      setRows(result.filter((r) => r.prompt_id ? topics.includes(topicByPrompt.get(r.prompt_id) || "") : topics.includes("")));
     }
     setPage(1);
     setExpanded([]);
     setLoading(false);
-  }, [projectId, fromDate, toDate]);
+  }, [projectId, fromDate, toDate, topics, provider]);
 
   useEffect(() => { void supabase.from("prompts").select("*").eq("project_id", projectId).limit(2000).then(({data}) => { if (data) setTopicOptions([...new Set((data as Array<Record<string, unknown>>).map((p) => String(p.topic_name || p.topic || "")).filter(Boolean))].sort()); }); }, [projectId]);
 
@@ -212,7 +219,7 @@ export default function ResponsesPage() {
                       return <section key={response.id} className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-5">
                         <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-[var(--border)] pb-3 text-xs"><span className="rounded-full border border-[var(--border)] bg-[var(--soft)] px-2.5 py-1 font-semibold">{providerLabels[response.llm_provider] || response.llm_provider}</span><span className="text-[var(--muted-foreground)]">{formatDate(response.captured_at)}</span>{response.tracking_location && <span className="text-[var(--muted-foreground)]">· {response.tracking_location}</span>}</div>
                         {response.error_message && <p className="mb-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm">{response.error_message}</p>}
-                        <div className="whitespace-pre-wrap break-words text-sm leading-7 text-[var(--foreground)]">{answer.split(/(\\*\\*[^*]+\\*\\*)/g).map((part, i) => part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong> : part.startsWith("[") && part.includes("](") ? <span key={i}>{part}</span> : part)}</div>
+                        <div className="whitespace-pre-wrap break-words text-sm leading-7 text-[var(--foreground)]">{answer.split(/(\\*\\*[^*]+\\*\\*|\\[[^\\]]+\\]\\(https?:\\/\\/[^\\s)]+\\))/g).map((part, i) => { const link = part.match(/^\\[([^\\]]+)\\]\\((https?:\\/\\/[^\\s)]+)\\)$/); return link ? <a key={i} href={link[2]} target="_blank" rel="noreferrer" className="text-emerald-700 underline underline-offset-2 dark:text-emerald-300">{link[1]}</a> : part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2, -2)}</strong> : part; })}</div>
                         {links.length > 0 && <div className="mt-6 border-t border-[var(--border)] pt-4"><div className="mb-3 flex items-center justify-between"><h4 className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Citations</h4><span className="text-xs text-[var(--muted-foreground)]">{links.length} sources</span></div><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{links.map((url, i) => { let domain = url; try { domain = new URL(url).hostname.replace(/^www\\./, ""); } catch {} return <a key={url} href={url} target="_blank" rel="noreferrer" className="group min-w-0 rounded-xl border border-[var(--border)] bg-[var(--background)] p-3 transition hover:border-emerald-600/50"><div className="flex items-center gap-2"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--soft)] text-[10px] font-bold text-[var(--muted-foreground)]">{i + 1}</span><span className="truncate text-[11px] font-medium text-[var(--muted-foreground)]">{domain}</span><ExternalLink size={12} className="ml-auto shrink-0"/></div><p className="mt-2 break-words text-sm font-semibold text-[var(--foreground)]">{url}</p></a>})}</div></div>}
                         <details className="mt-5 rounded-lg border border-[var(--border)]"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-[var(--muted-foreground)]">Raw response payload</summary><pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words border-t border-[var(--border)] p-3 text-xs">{JSON.stringify(response.raw_response, null, 2) ?? "null"}</pre></details>
                       </section>;
