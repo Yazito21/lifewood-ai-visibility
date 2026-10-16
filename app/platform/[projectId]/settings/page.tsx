@@ -1,46 +1,21 @@
 "use client";
 import { useEffect,useState } from "react";
-import { Check,Eye,EyeOff,Plus,Save,Trash2,Settings2,Upload,Image as ImageIcon,X,LogOut,Mail,UserRound } from "lucide-react";
+import { Check,Eye,EyeOff,Plus,Save,Trash2,Settings2,Upload,Image as ImageIcon,X,LogOut,Mail,UserRound,MapPin } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { ProjectShell,UserRole } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
+import { countryOptions,trackingLocationLabel } from "@/lib/tracking-locations";
 const providers=[["chatgpt","ChatGPT"],["gemini","Gemini"],["perplexity","Perplexity"],["google_ai_overview","Google AI Overview"],["claude","Claude"]] as const;
 
-const marketOptions = [
-  { value: "GLOBAL", label: "Global" },
-  { value: "MY", label: "Malaysia" }, { value: "US", label: "United States" },
-  { value: "GB", label: "United Kingdom" }, { value: "SG", label: "Singapore" },
-  { value: "AU", label: "Australia" }, { value: "CA", label: "Canada" },
-  { value: "IN", label: "India" }, { value: "ID", label: "Indonesia" },
-  { value: "TH", label: "Thailand" }, { value: "PH", label: "Philippines" },
-  { value: "VN", label: "Vietnam" }, { value: "BN", label: "Brunei" },
-  { value: "MM", label: "Myanmar" }, { value: "KH", label: "Cambodia" },
-  { value: "LA", label: "Laos" }, { value: "TL", label: "Timor-Leste" },
-  { value: "CN", label: "China" }, { value: "JP", label: "Japan" },
-  { value: "KR", label: "South Korea" }, { value: "NZ", label: "New Zealand" },
-  { value: "DE", label: "Germany" }, { value: "FR", label: "France" },
-  { value: "ES", label: "Spain" }, { value: "IT", label: "Italy" },
-  { value: "NL", label: "Netherlands" }, { value: "AE", label: "United Arab Emirates" },
-  { value: "SA", label: "Saudi Arabia" }, { value: "ZA", label: "South Africa" },
-  { value: "BR", label: "Brazil" }, { value: "MX", label: "Mexico" },
-  { value: "TR", label: "Türkiye" }, { value: "PK", label: "Pakistan" },
-  { value: "BD", label: "Bangladesh" }, { value: "NG", label: "Nigeria" },
-  { value: "EG", label: "Egypt" }, { value: "IE", label: "Ireland" },
-  { value: "CH", label: "Switzerland" }, { value: "SE", label: "Sweden" },
-  { value: "NO", label: "Norway" }, { value: "DK", label: "Denmark" },
-  { value: "PL", label: "Poland" }, { value: "PT", label: "Portugal" },
-  { value: "AR", label: "Argentina" }, { value: "CL", label: "Chile" },
-] as const;
-
 export default function SettingsPage(){
- const {projectId}=useParams<{projectId:string}>();const router=useRouter();const [role,setRole]=useState<UserRole>("viewer"),[brand,setBrand]=useState({brand_name:"",brand_description:"",brand_domains:"",brand_terms:"",brand_logo_url:""}),[trackingMarket,setTrackingMarket]=useState("MY"),[topics,setTopics]=useState<string[]>([]),[newTopic,setNewTopic]=useState(""),[llms,setLlms]=useState<Record<string,{enabled:boolean;last4:string|null;key_updated_at:string|null}>>({}),[keys,setKeys]=useState<Record<string,string>>({}),[show,setShow]=useState<Record<string,boolean>>({}),[password,setPassword]=useState(""),[confirmPassword,setConfirmPassword]=useState(""),[accountName,setAccountName]=useState(""),[accountEmail,setAccountEmail]=useState(""),[accountSaving,setAccountSaving]=useState(false),[accountMessage,setAccountMessage]=useState(""),[accountError,setAccountError]=useState(""),[loggingOut,setLoggingOut]=useState(false),[logoutError,setLogoutError]=useState(""),[preferences,setPreferences]=useState({theme:"light",text_size:100,scale:100}),[message,setMessage]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false),[logoUploading,setLogoUploading]=useState(false),[logoPreviewError,setLogoPreviewError]=useState("");
- async function load(){const {data:{user}}=await supabase.auth.getUser();if(!user)return;const [{data:p},{data:profile},{data:m},{data:configs}]=await Promise.all([supabase.from("projects").select("brand_name,brand_description,brand_domains,brand_terms,brand_logo_url,topics,tracking_market").eq("id",projectId).single(),supabase.from("profiles").select("*").eq("id",user.id).single(),supabase.from("project_members").select("role").eq("project_id",projectId).eq("user_id",user.id).maybeSingle(),supabase.from("llm_configs").select("provider,enabled,api_key_last4,key_updated_at").eq("project_id",projectId)]);setRole(profile?.role==="superadmin"?"superadmin":m?.role??profile?.role??"viewer");setAccountEmail(user.email||"");setAccountName(profile?.display_name||profile?.full_name||user.user_metadata?.display_name||user.user_metadata?.full_name||"");if(p){setBrand({brand_name:p.brand_name,brand_description:p.brand_description||"",brand_domains:(p.brand_domains||[]).join("\n"),brand_terms:(p.brand_terms||[]).join("\n"),brand_logo_url:p.brand_logo_url||""});setTopics(p.topics||[]);setTrackingMarket(p.tracking_market||"MY")}const map:Record<string,{enabled:boolean;last4:string|null;key_updated_at:string|null}>={};for(const c of configs??[])map[c.provider]={enabled:c.enabled,last4:c.api_key_last4,key_updated_at:c.key_updated_at};setLlms(map)}
+ const {projectId}=useParams<{projectId:string}>();const router=useRouter();const [role,setRole]=useState<UserRole>("viewer"),[brand,setBrand]=useState({brand_name:"",brand_description:"",brand_domains:"",brand_terms:"",brand_logo_url:""}),[trackingLocations,setTrackingLocations]=useState<string[]>(["MY"]),[topics,setTopics]=useState<string[]>([]),[newTopic,setNewTopic]=useState(""),[llms,setLlms]=useState<Record<string,{enabled:boolean;last4:string|null;key_updated_at:string|null}>>({}),[keys,setKeys]=useState<Record<string,string>>({}),[show,setShow]=useState<Record<string,boolean>>({}),[password,setPassword]=useState(""),[confirmPassword,setConfirmPassword]=useState(""),[accountName,setAccountName]=useState(""),[accountEmail,setAccountEmail]=useState(""),[accountSaving,setAccountSaving]=useState(false),[accountMessage,setAccountMessage]=useState(""),[accountError,setAccountError]=useState(""),[loggingOut,setLoggingOut]=useState(false),[logoutError,setLogoutError]=useState(""),[preferences,setPreferences]=useState({theme:"light",text_size:100,scale:100}),[message,setMessage]=useState(""),[error,setError]=useState(""),[busy,setBusy]=useState(false),[logoUploading,setLogoUploading]=useState(false),[logoPreviewError,setLogoPreviewError]=useState("");
+ async function load(){const {data:{user}}=await supabase.auth.getUser();if(!user)return;const [{data:p},{data:profile},{data:m},{data:configs}]=await Promise.all([supabase.from("projects").select("brand_name,brand_description,brand_domains,brand_terms,brand_logo_url,topics,tracking_market,tracking_locations").eq("id",projectId).single(),supabase.from("profiles").select("*").eq("id",user.id).single(),supabase.from("project_members").select("role").eq("project_id",projectId).eq("user_id",user.id).maybeSingle(),supabase.from("llm_configs").select("provider,enabled,api_key_last4,key_updated_at").eq("project_id",projectId)]);setRole(profile?.role==="superadmin"?"superadmin":m?.role??profile?.role??"viewer");setAccountEmail(user.email||"");setAccountName(profile?.display_name||profile?.full_name||user.user_metadata?.display_name||user.user_metadata?.full_name||"");if(p){setBrand({brand_name:p.brand_name,brand_description:p.brand_description||"",brand_domains:(p.brand_domains||[]).join("\n"),brand_terms:(p.brand_terms||[]).join("\n"),brand_logo_url:p.brand_logo_url||""});setTopics(p.topics||[]);setTrackingLocations([Array.isArray(p.tracking_locations)&&p.tracking_locations.includes("GLOBAL")?"GLOBAL":Array.isArray(p.tracking_locations)?p.tracking_locations.find((v:string)=>/^[A-Z]{2}$/.test(v))||p.tracking_market||"MY":p.tracking_market||"MY"])}const map:Record<string,{enabled:boolean;last4:string|null;key_updated_at:string|null}>={};for(const c of configs??[])map[c.provider]={enabled:c.enabled,last4:c.api_key_last4,key_updated_at:c.key_updated_at};setLlms(map)}
  useEffect(()=>{load()},[projectId]);
  const canEdit=role==="admin"||role==="superadmin";
  useEffect(()=>{supabase.auth.getUser().then(async({data:{user}})=>{if(!user)return;const {data}=await supabase.from("profiles").select("ui_preferences").eq("id",user.id).single();if(data?.ui_preferences)setPreferences({...preferences,...data.ui_preferences});})},[]);
  useEffect(()=>{document.documentElement.style.fontSize=preferences.text_size+"%";document.body.style.zoom=String(preferences.scale/100);document.documentElement.classList.toggle("dark",preferences.theme==="dark");document.documentElement.dataset.theme=preferences.theme},[preferences]);
  async function saveProjectDetails(){setBusy(true);setMessage("");setError("");const {error}=await supabase.from("projects").update({brand_name:brand.brand_name.trim(),brand_description:brand.brand_description.trim()||null}).eq("id",projectId);if(error)setError(error.message);else setMessage("Project details saved.");setBusy(false)}
- async function saveTrackingMarket(){setBusy(true);setMessage("");setError("");const {error}=await supabase.from("projects").update({tracking_market:trackingMarket}).eq("id",projectId);if(error)setError(error.message);else setMessage("Tracking market saved. Future tracking runs will use "+(marketOptions.find(o=>o.value===trackingMarket)?.label||trackingMarket)+".");setBusy(false)}
+ async function saveTrackingMarket(){if(trackingLocations.length!==1){setError("Select one country or Global.");return;}setBusy(true);setMessage("");setError("");const legacyMarket=trackingLocations[0];const {error}=await supabase.from("projects").update({tracking_locations:trackingLocations,tracking_market:legacyMarket}).eq("id",projectId);if(error)setError(error.message);else setMessage("Tracking location saved. Future runs will use "+trackingLocationLabel(trackingLocations[0])+".");setBusy(false)}
  async function saveBrand(){setBusy(true);setMessage("");setError("");const {error}=await supabase.from("projects").update({brand_domains:brand.brand_domains.split("\n").map(x=>x.trim()).filter(Boolean),brand_terms:brand.brand_terms.split("\n").map(x=>x.trim()).filter(Boolean),topics}).eq("id",projectId);if(error)setError(error.message);else setMessage("Visibility configuration saved.");setBusy(false)}
  async function saveBranding(){setBusy(true);setMessage("");setError("");const {error}=await supabase.from("projects").update({brand_logo_url:brand.brand_logo_url||null}).eq("id",projectId);if(error)setError(error.message);else setMessage("Branding saved.");setBusy(false)}
  const allowedLogoTypes=["image/png","image/jpeg","image/webp","image/gif","image/svg+xml","image/avif"];
@@ -142,19 +117,23 @@ export default function SettingsPage(){
 
         <section>
           <div className="mb-4 flex items-end gap-3 border-b border-[var(--line)] pb-3">
-            <div className="platform-icon"><Settings2 size={17}/></div>
-            <div><h2 className="text-xl font-semibold">Tracking Market</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Choose the market whose AI search results should be measured for this brand.</p></div>
+            <div className="platform-icon"><MapPin size={17}/></div>
+            <div><h2 className="text-xl font-semibold">Tracking Location</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Choose one country or Global for this brand's AI visibility tracking.</p></div>
           </div>
           <div className="platform-card p-5 sm:p-6">
-            <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-              <label className="block text-sm font-semibold">AI visibility market
-                <select disabled={!canEdit} value={trackingMarket} onChange={e=>setTrackingMarket(e.target.value)} className="mt-2 w-full platform-input disabled:bg-[var(--paper)]">
-                  {marketOptions.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-                <span className="mt-2 block text-xs font-normal text-[var(--muted-foreground)]">Country markets use that country as the search location. Global leaves the search location unspecified and does not substitute a country.</span>
+            <p className="mb-3 text-sm text-[var(--muted-foreground)]">Only one tracking location can be selected at a time. Countries are listed alphabetically.</p>
+            <div className="max-h-80 overflow-y-auto rounded-xl border border-[var(--line)] p-2">
+              <label className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold hover:bg-[var(--soft)]">
+                <input type="radio" name="tracking-location" className="accent-[var(--green)]" checked={trackingLocations[0]==="GLOBAL"} disabled={!canEdit} onChange={()=>setTrackingLocations(["GLOBAL"])}/>
+                <span>Global</span>
               </label>
-              {canEdit&&<button disabled={busy} onClick={()=>void saveTrackingMarket()} className="inline-flex items-center justify-center gap-2 platform-btn platform-btn-primary disabled:opacity-50"><Save size={15}/>Save Tracking Market</button>}
+              <div className="my-1 border-t border-[var(--line)]"/>
+              {countryOptions.map(option=><label key={option.value} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm hover:bg-[var(--soft)]">
+                <input type="radio" name="tracking-location" className="accent-[var(--green)]" checked={trackingLocations[0]===option.value} disabled={!canEdit} onChange={()=>setTrackingLocations([option.value])}/>
+                <span>{option.label}</span>
+              </label>)}
             </div>
+            {canEdit&&<button disabled={busy||trackingLocations.length!==1} onClick={()=>void saveTrackingMarket()} className="mt-5 inline-flex items-center justify-center gap-2 platform-btn platform-btn-primary disabled:opacity-50"><Save size={15}/>Save Tracking Location</button>}
           </div>
         </section>
 
