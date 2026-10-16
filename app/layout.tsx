@@ -4,8 +4,8 @@ import { Manrope } from "next/font/google";
 const manrope = Manrope({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "Lifewood AI Visibility",
-  description: "AI visibility monitoring and analytics platform",
+  title: "AEO/GEO Tracking",
+  description: "Lifewood AEO/GEO tracking, AI search visibility, and brand performance analytics.",
   icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
 };
 
