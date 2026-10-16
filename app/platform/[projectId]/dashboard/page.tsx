@@ -241,6 +241,10 @@ export default function DashboardPage() {
 
         {trackingMessage && <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{trackingMessage}</div>}
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+        {!loading && metrics.length === 0 && <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold">{scope === "legacy" ? "No legacy results found for this period." : "No results are available for the current tracking location in this period."}</p>
+          <p className="mt-1">{scope === "legacy" ? "Try a wider date range to inspect older location-unknown records." : "Historical location-unknown data is kept separate to protect the accuracy of this report. Run tracking at the selected location to establish or refresh its baseline, or switch to Legacy data to inspect older records."}</p>
+        </div>}
 
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
