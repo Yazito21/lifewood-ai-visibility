@@ -6,6 +6,20 @@ ALTER TABLE public.visibility_daily ADD COLUMN IF NOT EXISTS tracking_location t
 
 -- The old records were collected before reliable run-level location tracking existed.
 -- Do not infer their location from the project's current setting.
+-- Where raw responses already recorded a consistent location, carry that evidence to the run.
+UPDATE public.tracking_runs tr
+SET tracking_location = known.location
+FROM (
+  SELECT ar.run_id, min(ar.tracking_location) AS location
+  FROM public.ai_responses ar
+  WHERE ar.run_id IS NOT NULL
+    AND ar.tracking_location IS NOT NULL
+    AND ar.tracking_location <> 'LEGACY'
+  GROUP BY ar.run_id
+  HAVING count(DISTINCT ar.tracking_location) = 1
+) known
+WHERE tr.id = known.run_id AND tr.tracking_location IS NULL;
+
 UPDATE public.tracking_runs SET tracking_location = 'LEGACY' WHERE tracking_location IS NULL;
 UPDATE public.ai_responses SET tracking_location = 'LEGACY' WHERE tracking_location IS NULL;
 UPDATE public.citations SET tracking_location = 'LEGACY' WHERE tracking_location IS NULL;
