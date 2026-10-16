@@ -321,7 +321,7 @@ Deno.serve(async (req: Request) => {
           return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
         }
         const { error: runInsertError } = await admin.from("tracking_runs").insert({
-          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running",
+          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running", tracking_location: trackingLocationsForRun[0],
           total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
         });
         if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
@@ -406,9 +406,9 @@ Deno.serve(async (req: Request) => {
       const dayStart = new Date(rerunDay + "T00:00:00+08:00").toISOString();
       const dayEnd = new Date(new Date(rerunDay + "T00:00:00+08:00").getTime() + 86400000).toISOString();
       const { error: responseDeleteError } = await admin.from("ai_responses")
-        .delete().eq("project_id", projectId).gte("captured_at", dayStart).lt("captured_at", dayEnd);
+        .delete().eq("project_id", projectId).eq("tracking_location", trackingLocationsForRun[0]).gte("captured_at", dayStart).lt("captured_at", dayEnd);
       if (responseDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: responseDeleteError.message }, 500);
-      const { error: citationsDeleteError } = await admin.from("citations").delete().eq("project_id", projectId).eq("metric_date", rerunDay);
+      const { error: citationsDeleteError } = await admin.from("citations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
       if (citationsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: citationsDeleteError.message }, 500);
       const { error: competitorsDeleteError } = await admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", rerunDay);
       if (competitorsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorsDeleteError.message }, 500);
@@ -435,7 +435,7 @@ Deno.serve(async (req: Request) => {
     if (isSuperadminRerun) {
       // Remove today's old summary rows so metrics for disappeared topics are not retained.
       const { error: metricsCleanupError } = await admin.from("visibility_daily")
-        .delete().eq("project_id", projectId).eq("metric_date", day);
+        .delete().eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocationsForRun[0]);
       if (metricsCleanupError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsCleanupError.message }, 500);
     }
     const topicNames = [...new Set(prompts.map((p) => String(p.topic ?? "General")))];
@@ -446,7 +446,7 @@ Deno.serve(async (req: Request) => {
       for (const c of result.citations as Array<Record<string,unknown>>) {
         const key = String(c.url) + "|" + String(result.topic);
         const old = citationsMap.get(key);
-        citationsMap.set(key, { project_id: projectId, metric_date: day, topic: result.topic, llm_provider: "chatgpt", url: c.url, page_name: c.page_name, brand_name: c.brand_name, is_brand_related: c.is_brand_related, frequency: Number(old?.frequency ?? 0) + 1, prompt_id: result.prompt_id });
+        citationsMap.set(key, { project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0], topic: result.topic, llm_provider: "chatgpt", url: c.url, page_name: c.page_name, brand_name: c.brand_name, is_brand_related: c.is_brand_related, frequency: Number(old?.frequency ?? 0) + 1, prompt_id: result.prompt_id });
       }
       for (const host of result.competitor_hosts as string[]) {
         competitorMap.set(host, (competitorMap.get(host) ?? 0) + 1);
@@ -456,12 +456,12 @@ Deno.serve(async (req: Request) => {
     }
     const citationRows = [...citationsMap.values()];
     if (citationRows.length) {
-      const { error } = await admin.from("citations").upsert(citationRows, { onConflict: "project_id,metric_date,topic,llm_provider,url" });
+      const { error } = await admin.from("citations").upsert(citationRows, { onConflict: "project_id,metric_date,topic,llm_provider,url,tracking_location" });
       if (error) console.error("CITATIONS_WRITE_FAILED", error.message);
     }
     const competitorRows = [
       ...[...competitorMap.entries()].map(([host, count]) => ({
-        project_id: projectId, metric_date: day, topic: "Overall", llm_provider: "chatgpt",
+        project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0], topic: "Overall", llm_provider: "chatgpt",
         brand_name: host, website: "https://" + host,
         visibility_score: Math.round(count / Math.max(succeeded.length, 1) * 1000) / 10,
         citation_count: count,
@@ -470,7 +470,7 @@ Deno.serve(async (req: Request) => {
         const [topic, host] = JSON.parse(key) as [string, string];
         const topicPromptCount = succeeded.filter((r) => String(r.topic ?? "General") === topic).length;
         return {
-          project_id: projectId, metric_date: day, topic, llm_provider: "chatgpt",
+          project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0], topic, llm_provider: "chatgpt",
           brand_name: host, website: "https://" + host,
           visibility_score: Math.round(count / Math.max(topicPromptCount, 1) * 1000) / 10,
           citation_count: count,
@@ -478,7 +478,7 @@ Deno.serve(async (req: Request) => {
       }),
     ];
     if (competitorRows.length) {
-      const { error } = await admin.from("competitors").upsert(competitorRows, { onConflict: "project_id,metric_date,topic,llm_provider,brand_name" });
+      const { error } = await admin.from("competitors").upsert(competitorRows, { onConflict: "project_id,metric_date,topic,llm_provider,brand_name,tracking_location" });
       if (error) console.error("COMPETITORS_WRITE_FAILED", error.message);
     }
 
@@ -590,11 +590,11 @@ Deno.serve(async (req: Request) => {
       const subset = succeeded.filter((r) => topic === "Overall" || r.topic === topic);
       const metrics = analyzeSubset(subset);
       const row = {
-        project_id: projectId, metric_date: day, topic, llm_provider: "Overall",
+        project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0], topic, llm_provider: "Overall",
         ...metrics,
         citation_count: subset.reduce((sum, r) => sum + (r.citations as unknown[]).length, 0),
       };
-      const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,topic,llm_provider" });
+      const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
       if (error) console.error("METRICS_WRITE_FAILED", topic, error.message);
       const providerRow = { ...row, llm_provider: "chatgpt" };
       const { error: providerError } = await admin.from("visibility_daily").upsert(providerRow, { onConflict: "project_id,metric_date,topic,llm_provider" });
