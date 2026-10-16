@@ -44,15 +44,23 @@ export default function CompetitorsPage() {
       const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
       const location = project?.tracking_market ?? "MY";
       const dataLocation = scope === "legacy" ? "LEGACY" : location;
-      const { data, error: fetchError } = await supabase.rpc("get_cumulative_competitors", {
-        p_project_id: projectId, p_start_date: start, p_end_date: end,
-        p_topic: topic === "All" ? null : topic, p_engines: llms, p_tracking_location: dataLocation,
-      });
+      const allRows: CompetitorRow[] = [];
+      let fetchError: { message: string } | null = null;
+      for (let offset = 0; ; offset += 1000) {
+        const { data: batch, error } = await supabase.rpc("get_cumulative_competitors", {
+          p_project_id: projectId, p_start_date: start, p_end_date: end,
+          p_topic: topic === "All" ? null : topic, p_engines: llms, p_tracking_location: dataLocation,
+        }).range(offset, offset + 999);
+        if (error) { fetchError = error; break; }
+        const rows = (batch ?? []) as CompetitorRow[];
+        allRows.push(...rows);
+        if (rows.length < 1000) break;
+      }
       if (cancelled) return;
       setTopics(project?.topics ?? []);
       setTrackingLocation(location);
       if (projectError || fetchError) setError((projectError || fetchError)?.message ?? "Unable to load competitor data.");
-      setAggregated((data ?? []) as CompetitorRow[]);
+      setAggregated(allRows);
       setLoading(false);
     }
     void load();
