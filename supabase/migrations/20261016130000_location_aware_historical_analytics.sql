@@ -27,6 +27,7 @@ UPDATE public.competitors SET tracking_location = 'LEGACY' WHERE tracking_locati
 UPDATE public.visibility_daily SET tracking_location = 'LEGACY' WHERE tracking_location IS NULL;
 
 ALTER TABLE public.tracking_runs ALTER COLUMN tracking_location SET DEFAULT 'LEGACY';
+ALTER TABLE public.ai_responses ALTER COLUMN tracking_location SET DEFAULT 'LEGACY';
 ALTER TABLE public.citations ALTER COLUMN tracking_location SET DEFAULT 'LEGACY';
 ALTER TABLE public.competitors ALTER COLUMN tracking_location SET DEFAULT 'LEGACY';
 ALTER TABLE public.visibility_daily ALTER COLUMN tracking_location SET DEFAULT 'LEGACY';
