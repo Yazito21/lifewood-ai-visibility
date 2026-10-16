@@ -16,6 +16,11 @@ ALTER TABLE public.tracking_runs ALTER COLUMN tracking_location SET DEFAULT 'LEG
 ALTER TABLE public.citations ALTER COLUMN tracking_location SET DEFAULT 'LEGACY';
 ALTER TABLE public.competitors ALTER COLUMN tracking_location SET DEFAULT 'LEGACY';
 ALTER TABLE public.visibility_daily ALTER COLUMN tracking_location SET DEFAULT 'LEGACY';
+ALTER TABLE public.tracking_runs ALTER COLUMN tracking_location SET NOT NULL;
+ALTER TABLE public.ai_responses ALTER COLUMN tracking_location SET NOT NULL;
+ALTER TABLE public.citations ALTER COLUMN tracking_location SET NOT NULL;
+ALTER TABLE public.competitors ALTER COLUMN tracking_location SET NOT NULL;
+ALTER TABLE public.visibility_daily ALTER COLUMN tracking_location SET NOT NULL;
 
 ALTER TABLE public.tracking_runs DROP CONSTRAINT IF EXISTS tracking_runs_tracking_location_check;
 ALTER TABLE public.tracking_runs ADD CONSTRAINT tracking_runs_tracking_location_check
@@ -153,6 +158,10 @@ AS $$
     )
   GROUP BY c.topic, c.metric_date;
 $$;
+
+DROP FUNCTION IF EXISTS public.get_cumulative_citations(uuid, date, date, text, text[], boolean);
+DROP FUNCTION IF EXISTS public.get_cumulative_competitors(uuid, date, date, text, text[]);
+DROP FUNCTION IF EXISTS public.get_latest_competitor_counts(uuid);
 
 GRANT EXECUTE ON FUNCTION public.get_cumulative_citations(uuid, date, date, text, text[], boolean, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_cumulative_competitors(uuid, date, date, text, text[], text) TO authenticated;
