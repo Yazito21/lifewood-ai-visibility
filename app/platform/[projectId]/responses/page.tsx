@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { CalendarDays, ChevronDown, ChevronRight, Download, FileText, Search } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Download, ExternalLink, FileText, Search } from "lucide-react";
 import * as XLSX from "xlsx";
 import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
@@ -232,7 +232,7 @@ export default function ResponsesPage() {
             <span className="text-xs text-[var(--muted-foreground)]">Page {page} of {pageCount}</span>
             <div className="flex gap-2">
               <button type="button" disabled={page <= 1} onClick={() => {setPage((p) => p - 1); setExpanded([]);}} className="platform-btn h-9 disabled:opacity-40">Previous</button>
-              <button type="button" disabled={page >= pageCount} onClick={() => {setPage((p) => p + 1); setExpanded(null);}} className="platform-btn h-9 disabled:opacity-40">Next</button>
+              <button type="button" disabled={page >= pageCount} onClick={() => {setPage((p) => p + 1); setExpanded([]);}} className="platform-btn h-9 disabled:opacity-40">Next</button>
             </div>
           </div>}
         </section>
