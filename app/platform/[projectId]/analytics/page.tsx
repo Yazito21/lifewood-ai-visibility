@@ -2,16 +2,17 @@
 import { useEffect,useMemo,useState } from "react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
+import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
 type Row={metric_date:string;topic:string;llm_provider:string;visibility_score:number|null;visibility_rank:number|null;share_of_voice_score:number|null;share_of_voice_rank:number|null;average_position:number|null;average_position_rank:number|null};
 function localDateString(date = new Date()) { return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-"); }
 const LLMS=["chatgpt","gemini","perplexity","google_ai_overview","claude"],labels:Record<string,string>={chatgpt:"ChatGPT",gemini:"Gemini",perplexity:"Perplexity",google_ai_overview:"Google AI Overview",claude:"Claude"};
 export default function AnalyticsPage(){
- const {projectId}=useParams<{projectId:string}>();const [rows,setRows]=useState<Row[]>([]),[topics,setTopics]=useState<string[]>([]),[selectedTopics,setSelectedTopics]=useState<string[]>([]),[selectedLlms,setSelectedLlms]=useState<string[]>(LLMS),[period,setPeriod]=useState("Last 7 Days"),[customStart,setCustomStart]=useState(""),[customEnd,setCustomEnd]=useState(localDateString()),[loading,setLoading]=useState(true),[error,setError]=useState("");
+ const {projectId}=useParams<{projectId:string}>();const [rows,setRows]=useState<Row[]>([]),[topics,setTopics]=useState<string[]>([]),[trackingLocation,setTrackingLocation]=useState("MY"),[scope,setScope]=useState<"current"|"legacy">("current"),[selectedTopics,setSelectedTopics]=useState<string[]>([]),[selectedLlms,setSelectedLlms]=useState<string[]>(LLMS),[period,setPeriod]=useState("Last 7 Days"),[customStart,setCustomStart]=useState(""),[customEnd,setCustomEnd]=useState(localDateString()),[loading,setLoading]=useState(true),[error,setError]=useState("");
  const start=useMemo(()=>{if(period==="Custom")return customStart||localDateString();const now=new Date();const d=new Date(now.getFullYear(),now.getMonth(),now.getDate());const days=period==="Today"?0:period==="Last 2 days"?1:period==="Last 14 Days"?13:period==="Last 30 Days"?29:period==="Last 90 Days"?89:period==="All Time"?36500:6;d.setDate(d.getDate()-days);return localDateString(d)},[period,customStart]);
  const end=period==="Custom"?customEnd:localDateString();
- useEffect(()=>{(async()=>{setLoading(true);const {data:p}=await supabase.from("projects").select("topics").eq("id",projectId).single();const t=p?.topics??[];setTopics(t);setSelectedTopics(v=>v.length?v:t);const {data,error}=await supabase.from("visibility_daily").select("metric_date,topic,llm_provider,visibility_score,visibility_rank,share_of_voice_score,share_of_voice_rank,average_position,average_position_rank").eq("project_id",projectId).neq("llm_provider","Overall").gte("metric_date",start).lte("metric_date",end).order("metric_date");if(error)setError(error.message);setRows(data??[]);setLoading(false)})()},[projectId,start,end]);
+ useEffect(()=>{(async()=>{setLoading(true);const {data:p}=await supabase.from("projects").select("topics,tracking_market").eq("id",projectId).single();const t=p?.topics??[];const location=p?.tracking_market??"MY";const dataLocation=scope==="legacy"?"LEGACY":location;setTrackingLocation(location);setTopics(t);setSelectedTopics(v=>v.length?v:t);const {data,error}=await supabase.from("visibility_daily").select("metric_date,topic,llm_provider,visibility_score,visibility_rank,share_of_voice_score,share_of_voice_rank,average_position,average_position_rank").eq("project_id",projectId).eq("tracking_location",dataLocation).neq("llm_provider","Overall").gte("metric_date",start).lte("metric_date",end).order("metric_date");if(error)setError(error.message);setRows(data??[]);setLoading(false)})()},[projectId,start,end,scope]);
  const chartDateRange=useMemo(()=>{
   const trackedDates=rows.map(r=>r.metric_date).sort();
   const firstTrackedDate=trackedDates[0];
@@ -25,7 +26,8 @@ export default function AnalyticsPage(){
     <header className="page-heading">
       <p className="page-eyebrow">Analytics</p>
       <h1 className="page-title mt-1">Detailed analytics</h1>
-      <p className="page-description mt-2">Compare visibility, share of voice and average position by answer engine.</p>
+      <p className="page-description mt-2">Compare visibility, share of voice and average position by answer engine for the selected reporting dataset.</p>
+      <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
     </header>
 
     <section className="mt-8 ops-filter-panel">
