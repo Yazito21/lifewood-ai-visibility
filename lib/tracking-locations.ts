@@ -13,7 +13,7 @@ const regionEntries: Array<[string, string, string]> = [
   ["ARAB_WORLD", "3A - Arab World", "Sub-region"], ["ISRAEL", "3B - Israel", "Sub-region"], ["NASTALIQ_REGION", "3C - Iran, Afghanistan & Pakistan", "Sub-region"], ["SAHEL", "3D/4A - The Sahel", "Sub-region"],
   ["TROPICAL_AFRICA", "4B - Tropical Africa", "Sub-region"], ["SOUTHERN_AFRICA", "4C - Southern Africa", "Sub-region"], ["ETHIOPIC_AFRICA", "4D - Ethiopia & Eritrea", "Sub-region"],
   ["SOUTH_ASIA", "5 - South Asia", "Sub-region"], ["CENTRAL_ASIA", "6A - Central Asia", "Sub-region"], ["MONGOLIA", "6B - Mongolia", "Sub-region"],
-  ["EAST_ASIA", "7 - East Asia", "Sub-region"], ["MAINLAND_SE_ASIA", "8A - Mainland Southeast Asia", "Sub-region"], ["SINGAPORE", "8B - Singapore", "Sub-region"], ["INSULAR_SE_ASIA", "8C - Insular Southeast Asia", "Sub-region"],
+  ["EAST_ASIA", "7 - East Asia", "Sub-region"], ["MAINLAND_SE_ASIA", "8A - Mainland Southeast Asia", "Sub-region"], ["SINGAPORE", "8B - Malaysia, Brunei & Singapore", "Sub-region"], ["INSULAR_SE_ASIA", "8C - Indonesia & Philippines", "Sub-region"],
   ["SOUTH_PACIFIC", "9A - South Pacific", "Sub-region"], ["EAST_TIMOR", "9B - East Timor", "Sub-region"],
 ];
 export const regionOptions: TrackingLocationOption[] = regionEntries.map(([id, label, description]) => ({ value: "REGION:" + id, label, description }));
