@@ -180,26 +180,30 @@ Deno.serve(async (req: Request) => {
     const projectId = String(body?.project_id ?? "");
     const startDate = body?.start_date;
     const endDate = body?.end_date;
+    const requestedLocation = typeof body?.tracking_location === "string" ? body.tracking_location : null;
     if (!projectId) return jsonError("PROJECT_ID_REQUIRED");
     if (!validDate(startDate) || !validDate(endDate) || startDate > endDate) return jsonError("INVALID_DATE_RANGE");
 
     const [{ data: profile, error: profileError }, { data: member, error: memberError }, { data: project, error: projectError }] = await Promise.all([
       admin.from("profiles").select("role").eq("id", user.id).maybeSingle(),
       admin.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle(),
-      admin.from("projects").select("id,brand_name").eq("id", projectId).maybeSingle(),
+      admin.from("projects").select("id,brand_name,tracking_market").eq("id", projectId).maybeSingle(),
     ]);
     if (profileError || memberError || projectError) return jsonError("PROJECT_ACCESS_LOOKUP_FAILED", 500);
     if (!project) return jsonError("PROJECT_NOT_FOUND", 404);
     if (profile?.role !== "superadmin" && !member) return jsonError("PROJECT_ACCESS_DENIED", 403);
 
+    const trackingLocation = requestedLocation ?? project.tracking_market ?? "MY";
+    if (trackingLocation !== "LEGACY" && trackingLocation !== "GLOBAL" && !/^[A-Z]{2}$/.test(trackingLocation)) return jsonError("INVALID_TRACKING_LOCATION");
     const startIso = new Date(startDate + "T00:00:00+08:00").toISOString();
     const endExclusiveIso = new Date(new Date(endDate + "T00:00:00+08:00").getTime() + 86400000).toISOString();
     const responses: Array<Record<string, unknown>> = [];
     const pageSize = 500;
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await admin.from("ai_responses")
-        .select("id,project_id,prompt_id,llm_provider,captured_at,prompt_snapshot,raw_response,response_text,response_status,error_message,run_id,brand_name_snapshot")
+        .select("id,project_id,prompt_id,llm_provider,captured_at,prompt_snapshot,raw_response,response_text,response_status,error_message,run_id,brand_name_snapshot,tracking_location")
         .eq("project_id", projectId)
+        .eq("tracking_location", trackingLocation)
         .gte("captured_at", startIso)
         .lt("captured_at", endExclusiveIso)
         .order("captured_at", { ascending: true })
@@ -236,6 +240,7 @@ Deno.serve(async (req: Request) => {
     const citationRows = enriched.flatMap(({ row, prompt, citations }) => citations.map((citation) => ({
       Response_ID: String(row.id ?? ""),
       Captured_At: String(row.captured_at ?? ""),
+      Tracking_Location: String(row.tracking_location ?? "LEGACY"),
       Run_ID: String(row.run_id ?? ""),
       Prompt_No: prompt?.prompt_number ?? "",
       Prompt_ID: String(row.prompt_id ?? ""),
@@ -291,6 +296,7 @@ Deno.serve(async (req: Request) => {
       ["Field", "Value"],
       ["Project", String(project.brand_name ?? "Project")],
       ["Project ID", projectId],
+      ["Tracking Location", trackingLocation],
       ["Period Start (Malaysia Time)", startDate],
       ["Period End (Malaysia Time)", endDate],
       ["Exported At (UTC)", new Date().toISOString()],
