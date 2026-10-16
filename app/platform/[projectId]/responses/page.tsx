@@ -57,19 +57,24 @@ export default function ResponsesPage() {
     date.setDate(date.getDate() - 6);
     return dateValue(date);
   }, []);
-  const [fromDate, setFromDate] = useState(sevenDaysAgo);
+  const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState(today);
-  const [provider, setProvider] = useState("all");
+  const [provider, setProvider] = useState<string[]>([]);
   const [status, setStatus] = useState("all");
+  const [topicOptions, setTopicOptions] = useState<string[]>([]);
+  const [topics, setTopics] = useState<string[]>([]);
+  const [searched, setSearched] = useState(false);
   const [search, setSearch] = useState("");
   const [rows, setRows] = useState<ResponseRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string[]>([]);
 
   const loadResponses = useCallback(async () => {
+    if (!fromDate || !toDate || !topics.length || !provider.length) { setError("Choose a date range, at least one topic, and at least one AI engine."); return; }
     setLoading(true);
+    setSearched(true);
     setError("");
     const start = new Date(fromDate + "T00:00:00");
     const end = new Date(toDate + "T00:00:00");
@@ -85,6 +90,7 @@ export default function ResponsesPage() {
       .from("ai_responses")
       .select("id,prompt_id,llm_provider,captured_at,prompt_snapshot,raw_response,response_text,response_status,error_message,run_id,tracking_location,brand_name_snapshot,project_snapshot")
       .eq("project_id", projectId)
+      .in("llm_provider", provider)
       .gte("captured_at", start.toISOString())
       .lt("captured_at", endExclusive.toISOString())
       .order("captured_at", { ascending: false })
@@ -96,14 +102,14 @@ export default function ResponsesPage() {
       setRows((data ?? []) as ResponseRow[]);
     }
     setPage(1);
-    setExpanded(null);
+    setExpanded([]);
     setLoading(false);
   }, [projectId, fromDate, toDate]);
 
-  useEffect(() => { void loadResponses(); }, [loadResponses]);
+  useEffect(() => { void supabase.from("prompts").select("*").eq("project_id", projectId).limit(2000).then(({data}) => { if (data) setTopicOptions([...new Set((data as Array<Record<string, unknown>>).map((p) => String(p.topic_name || p.topic || "")).filter(Boolean))].sort()); }); }, [projectId]);
 
   const filtered = useMemo(() => rows.filter((row) => {
-    if (provider !== "all" && row.llm_provider !== provider) return false;
+    if (provider.length && !provider.includes(row.llm_provider)) return false;
     if (status !== "all" && row.response_status !== status) return false;
     const needle = search.trim().toLowerCase();
     if (!needle) return true;
@@ -114,8 +120,9 @@ export default function ResponsesPage() {
     ].some((value) => value.toLowerCase().includes(needle));
   }), [rows, provider, status, search]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const grouped = useMemo(() => { const map = new Map<string, ResponseRow[]>(); for (const row of filtered) { const key = row.prompt_id || row.prompt_snapshot || row.id; map.set(key, [...(map.get(key) || []), row]); } return [...map.entries()].map(([key, responses]) => ({key, prompt: responses[0].prompt_snapshot || "Prompt unavailable", responses})); }, [filtered]);
+  const pageCount = Math.max(1, Math.ceil(grouped.length / PAGE_SIZE));
+  const visible = grouped.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function exportExcel() {
     const workbook = XLSX.utils.book_new();
@@ -144,66 +151,47 @@ export default function ResponsesPage() {
           <p className="page-description mt-2">Browse the full AI answers captured by tracking runs, inspect the raw provider payload, and export responses for a selected period.</p>
         </header>
 
-        <section className="ops-card p-4 sm:p-5">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_1fr_auto] xl:items-end">
-            <label className="block text-xs font-semibold text-[var(--muted-foreground)]">
-              <span className="mb-1.5 flex items-center gap-1.5"><CalendarDays size={14}/> From</span>
-              <input type="date" value={fromDate} max={toDate} onChange={(e) => setFromDate(e.target.value)} className="platform-input text-sm"/>
-            </label>
-            <label className="block text-xs font-semibold text-[var(--muted-foreground)]">
-              <span className="mb-1.5 flex items-center gap-1.5"><CalendarDays size={14}/> To</span>
-              <input type="date" value={toDate} min={fromDate} max={today} onChange={(e) => setToDate(e.target.value)} className="platform-input text-sm"/>
-            </label>
-            <label className="block text-xs font-semibold text-[var(--muted-foreground)]">
-              <span className="mb-1.5 block">AI platform</span>
-              <select value={provider} onChange={(e) => {setProvider(e.target.value); setPage(1);}} className="platform-input text-sm">
-                <option value="all">All platforms</option>
-                {Object.entries(providerLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-            </label>
-            <label className="block text-xs font-semibold text-[var(--muted-foreground)]">
-              <span className="mb-1.5 block">Response status</span>
-              <select value={status} onChange={(e) => {setStatus(e.target.value); setPage(1);}} className="platform-input text-sm">
-                <option value="all">All statuses</option>
-                <option value="completed">Completed</option>
-                <option value="failed">Failed</option>
-              </select>
-            </label>
-            <button type="button" onClick={() => void loadResponses()} disabled={loading} className="platform-btn platform-btn-primary h-10 justify-center">
-              {loading ? "Loading…" : "Apply filters"}
-            </button>
-          </div>
-          <div className="mt-4 flex flex-col gap-3 border-t border-[var(--border)] pt-4 sm:flex-row sm:items-center">
-            <div className="relative min-w-0 flex-1">
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"/>
-              <input value={search} onChange={(e) => {setSearch(e.target.value); setPage(1);}} placeholder="Search prompts, response text, region or run ID…" className="platform-input pl-9 text-sm"/>
-            </div>
-            <button type="button" onClick={exportExcel} disabled={!filtered.length} className="platform-btn h-10 justify-center gap-2">
-              <Download size={15}/> Export Excel
-            </button>
-          </div>
-        </section>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-[var(--muted-foreground)]">
-          <span>{loading ? "Loading stored responses…" : `${filtered.length.toLocaleString()} responses`} <span className="opacity-70">· ${fromDate} to ${toDate}</span></span>
-          <span>Raw responses are retained from persistent tracking runs.</span>
+        <section className="ops-card p-5 sm:p-6">
+          <h2 className="mb-4 text-sm font-semibold">Filter responses</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="text-xs font-semibold text-[var(--muted-foreground)]">Start date
+              <input type="date" value={fromDate} max={toDate || today} onChange={(e) => setFromDate(e.target.value)} className="platform-input mt-2 text-sm"/>
+            </label>
+            <label className="text-xs font-semibold text-[var(--muted-foreground)]">End date
+              <input type="date" value={toDate} min={fromDate || undefined} max={today} onChange={(e) => setToDate(e.target.value)} className="platform-input mt-2 text-sm"/>
+            </label>
+          </div>
+          <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">Topics</p><div className="flex flex-wrap gap-2">
+            {topicOptions.map((topic) => <label key={topic} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs"><input type="checkbox" checked={topics.includes(topic)} onChange={(e) => setTopics((s) => e.target.checked ? [...s, topic] : s.filter((x) => x !== topic))} className="accent-emerald-600"/>{topic}</label>)}
+            {!topicOptions.length && <span className="text-xs text-[var(--muted-foreground)]">No topics found.</span>}
+          </div></div>
+          <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">AI engines</p><div className="flex flex-wrap gap-2">
+            {Object.entries(providerLabels).map(([id,label]) => <label key={id} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs"><input type="checkbox" checked={provider.includes(id)} onChange={(e) => setProvider((s) => e.target.checked ? [...s,id] : s.filter((x) => x !== id))} className="accent-emerald-600"/>{label}</label>)}
+          </div></div>
+          <div className="mt-5 flex justify-end border-t border-[var(--border)] pt-4"><button type="button" onClick={() => void loadResponses()} disabled={loading} className="platform-btn platform-btn-primary h-10 px-5">{loading ? "Loading…" : "Show responses"}</button></div>
+        </section>
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted-foreground)]">
+          <span>{searched ? `${grouped.length} prompts · ${filtered.length} responses` : "Choose filters to view responses"}</span>
+          {searched && <div className="flex gap-2"><input value={search} onChange={(e) => {setSearch(e.target.value);setPage(1)}} placeholder="Search prompts or responses…" className="platform-input text-sm"/><button type="button" onClick={exportExcel} disabled={!filtered.length} className="platform-btn h-10 gap-2"><Download size={15}/> Export Excel</button></div>}
         </div>
 
         {error && <div role="alert" className="platform-notice-error rounded-xl px-4 py-3 text-sm">{error}</div>}
 
         <section className="ops-card overflow-hidden">
           {loading ? <div className="space-y-3 p-5">{[0,1,2,3,4].map((n) => <div key={n} className="h-16 animate-pulse rounded-lg bg-[var(--soft)]"/>)}</div> :
-            !visible.length ? <div className="px-6 py-16 text-center">
+            !searched ? <div className="px-6 py-16 text-center"><FileText size={28} className="mx-auto text-[var(--muted-foreground)]"/><h2 className="mt-3 font-semibold">Choose filters to get started</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Select a date range, topics, and AI engines to view responses.</p></div> : !visible.length ? <div className="px-6 py-16 text-center">
               <FileText size={28} className="mx-auto text-[var(--muted-foreground)]"/>
               <h2 className="mt-3 font-semibold">No responses found</h2>
               <p className="mt-1 text-sm text-[var(--muted-foreground)]">Try another date range or filter. Responses are saved when a persistent tracking run completes.</p>
             </div> :
             <div className="divide-y divide-[var(--border)]">
-              {visible.map((row) => {
-                const isOpen = expanded === row.id;
+              {visible.map((group) => {
+                const isOpen = expanded.includes(row.key);
+                const row = group.responses[0];
                 const text = responseText(row);
                 return <article key={row.id} className="min-w-0">
-                  <button type="button" onClick={() => setExpanded(isOpen ? null : row.id)} className="flex w-full min-w-0 items-start gap-3 p-4 text-left transition hover:bg-[var(--accent)]/50 sm:items-center sm:px-5">
+                  <button type="button" onClick={() => setExpanded(isOpen ? expanded.filter((x) => x !== row.key) : [...expanded, row.key])} className="flex w-full min-w-0 items-start gap-3 p-4 text-left transition hover:bg-[var(--accent)]/50 sm:items-center sm:px-5">
                     <span className="mt-0.5 shrink-0 text-[var(--muted-foreground)]">{isOpen ? <ChevronDown size={17}/> : <ChevronRight size={17}/>}</span>
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
@@ -212,12 +200,12 @@ export default function ResponsesPage() {
                         {row.tracking_location && <><span>·</span><span>{row.tracking_location}</span></>}
                         <span className={row.response_status === "completed" ? "rounded-full bg-emerald-500/10 px-2 py-0.5 font-semibold text-emerald-700 dark:text-emerald-300" : "rounded-full bg-red-500/10 px-2 py-0.5 font-semibold text-red-700 dark:text-red-300"}>{row.response_status}</span>
                       </span>
-                      <span className="mt-1.5 block text-sm font-semibold text-[var(--foreground)]">{row.prompt_snapshot || "Prompt text unavailable"}</span>
+                      <span className="mt-1.5 block text-sm font-semibold text-[var(--foreground)]">{group.prompt}</span>
                       <span className="mt-1 block line-clamp-2 whitespace-pre-wrap text-xs leading-5 text-[var(--muted-foreground)]">{row.error_message || text || "No text response available. Expand to inspect the raw payload."}</span>
                     </span>
                     <span className="hidden shrink-0 text-xs text-[var(--muted-foreground)] lg:block">{row.run_id ? `Run ${row.run_id.slice(0, 8)}` : "No run ID"}</span>
                   </button>
-                  {isOpen && <div className="space-y-4 border-t border-[var(--border)] bg-[var(--soft)]/40 p-4 sm:p-5">
+                  {isOpen && <div className="space-y-4 border-t border-[var(--border)] bg-[var(--soft)]/40 p-4 sm:p-5">{group.responses.map((row) => { const text = responseText(row); const links = [...new Set((text.match(/https?:\/\/[^\s<>"\)]+/g) || []).map((u) => u.replace(/[.,;:!?]+$/, "")))]; return <div key={row.id} className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-4"><div className="mb-3 flex items-center gap-2 text-xs"><strong>{providerLabels[row.llm_provider] || row.llm_provider}</strong><span className="text-[var(--muted-foreground)]">{formatDate(row.captured_at)}</span></div><div className="whitespace-pre-wrap break-words text-sm leading-7 text-[var(--foreground)]">{text.split(/(\\*\\*[^*]+\\*\\*)/g).map((part,i) => part.startsWith("**") && part.endsWith("**") ? <strong key={i}>{part.slice(2,-2)}</strong> : part)}</div>{links.length > 0 && <div className="mt-5 border-t border-[var(--border)] pt-3"><h4 className="mb-3 text-xs font-bold uppercase tracking-wide text-[var(--muted-foreground)]">Citations</h4><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{links.map((url,i) => { let domain=url; try {domain=new URL(url).hostname.replace(/^www\\./,"")} catch {} return <a key={url} href={url} target="_blank" rel="noreferrer" className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 hover:border-emerald-600/50"><span className="text-xs text-[var(--muted-foreground)]">{domain}</span><p className="mt-1 break-all text-sm font-medium">{url}</p></a>})}</div></div>}<details className="mt-4"><summary className="cursor-pointer text-xs text-[var(--muted-foreground)]">Raw response JSON</summary><pre className="mt-2 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(row.raw_response,null,2)}</pre></details></div> })}
                     <div>
                       <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Full response</h3>
                       {text ? <pre className="mt-2 whitespace-pre-wrap break-words rounded-xl border border-[var(--border)] bg-[var(--card)] p-4 text-sm leading-6 text-[var(--foreground)]">{text}</pre> : <p className="mt-2 text-sm text-[var(--muted-foreground)]">No extracted response text was stored.</p>}
@@ -237,7 +225,7 @@ export default function ResponsesPage() {
                 </article>;
               })}
             </div>}
-          {!loading && filtered.length > PAGE_SIZE && <div className="flex items-center justify-between border-t border-[var(--border)] p-4">
+          {!loading && grouped.length > PAGE_SIZE && <div className="flex items-center justify-between border-t border-[var(--border)] p-4">
             <span className="text-xs text-[var(--muted-foreground)]">Page {page} of {pageCount}</span>
             <div className="flex gap-2">
               <button type="button" disabled={page <= 1} onClick={() => {setPage((p) => p - 1); setExpanded(null);}} className="platform-btn h-9 disabled:opacity-40">Previous</button>
