@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
+import { brandDisplayName } from "@/lib/brand-display";
 
 type AggregatedRow = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
 const LLMS = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "claude"];
@@ -52,7 +53,7 @@ function CitationTable({ title, data }: { title: string; data: AggregatedRow[] }
               <td className="px-3 py-3">{index + 1}</td>
               <td className="max-w-[380px] px-3 py-3"><a href={row.url} target="_blank" rel="noreferrer" title={row.url} className="inline-flex max-w-[360px] items-center gap-1 truncate font-semibold text-[var(--green)] hover:underline">{row.url}<ExternalLink size={13} className="shrink-0" /></a></td>
               <td className="px-3 py-3">{row.page_name || "—"}</td>
-              <td className="px-3 py-3">{row.brand_name || "—"}</td>
+              <td className="px-3 py-3">{brandDisplayName(row.brand_name, row.url) || "—"}</td>
               <td className="px-3 py-3 font-semibold">{row.frequency}</td>
             </tr>)}
             {!visibleData.length && <tr><td colSpan={5} className="px-3 py-10 text-center text-sm text-[#66736c]">{query.trim() ? "No pages match your search." : "No citations found."}</td></tr>}
