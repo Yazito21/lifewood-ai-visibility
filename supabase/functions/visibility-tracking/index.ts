@@ -101,7 +101,7 @@ const trackingRegionCountryCodes: Record<string, string[]> = {
  "REGION:ATLANTIC_OCEAN":["CV"],"REGION:INDIAN_OCEAN":["MU","RE"],"REGION:ARAB_WORLD":["SA","AE","KW","OM","QA","BH","EG","IQ","SY","JO","LY","PS","MA","DZ","TN","YE","LB"],"REGION:ISRAEL":["IL"],"REGION:NASTALIQ_REGION":["IR","AF","PK"],
  "REGION:SAHEL":["SD","MR","NE","ML","TD","SO","DJ"],"REGION:TROPICAL_AFRICA":["CI","BF","SN","GN","BJ","TG","GM","GW","TZ","KE","UG","MW","ZM","ZW","CD","CM","CF","CG","GA","GQ","NG","GH","SL","LR","MZ","AO","RW","BI","MG","SS","HT"],
  "REGION:SOUTHERN_AFRICA":["ZA","BW","NA","LS","SZ"],"REGION:ETHIOPIC_AFRICA":["ET","ER"],"REGION:SOUTH_ASIA":["IN","NP","BT","BD","LK"],"REGION:CENTRAL_ASIA":["UZ","KZ","KG","TM","TR","AZ","TJ"],"REGION:MONGOLIA":["MN"],"REGION:EAST_ASIA":["CN","TW","JP","KR","KP"],
- "REGION:MAINLAND_SE_ASIA":["KH","LA","MM","TH","VN"],"REGION:SINGAPORE":["SG"],"REGION:INSULAR_SE_ASIA":["MY","BN","ID","PH"],"REGION:SOUTH_PACIFIC":["PG","SB","VU","NC","WS","PF","FJ"],"REGION:EAST_TIMOR":["TL"]
+ "REGION:MAINLAND_SE_ASIA":["KH","LA","MM","TH","VN"],"REGION:SINGAPORE":["MY","BN","SG"],"REGION:INSULAR_SE_ASIA":["ID","PH"],"REGION:SOUTH_PACIFIC":["PG","SB","VU","NC","WS","PF","FJ"],"REGION:EAST_TIMOR":["TL"]
 };
 const uniqueTrackingLocations=(values:string[])=>[...new Set(values)];
 const regionCountries=(...ids:string[])=>uniqueTrackingLocations(ids.flatMap(id=>trackingRegionCountryCodes["REGION:"+id]??[]));
