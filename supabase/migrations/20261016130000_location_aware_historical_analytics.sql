@@ -114,7 +114,7 @@ AS $$
     ), 'LEGACY')
     AND (p_topic IS NULL OR c.topic = p_topic)
     AND (coalesce(array_length(p_engines, 1), 0) = 0 OR c.llm_provider = ANY(p_engines))
-    AND lower(regexp_replace(coalesce(c.brand_name, ''), '^www\\.', '')) not in (
+    AND lower(regexp_replace(coalesce(c.brand_name, ''), '^www\.', '')) not in (
       'google.com', 'google.co.uk', 'google.ca', 'google.com.au', 'google.co.in',
       'googleusercontent.com', 'gstatic.com', 'googleapis.com', 'bing.com',
       'search.yahoo.com', 'yahoo.com', 'duckduckgo.com', 'wikipedia.org',
@@ -148,7 +148,7 @@ AS $$
   JOIN latest l ON l.topic = c.topic AND l.metric_date = c.metric_date
   JOIN chosen_location cl ON c.tracking_location = cl.location
   WHERE c.project_id = p_project_id
-    AND lower(regexp_replace(coalesce(c.brand_name, ''), '^www\\.', '')) not in (
+    AND lower(regexp_replace(coalesce(c.brand_name, ''), '^www\.', '')) not in (
       'google.com', 'google.co.uk', 'google.ca', 'google.com.au', 'google.co.in',
       'googleusercontent.com', 'gstatic.com', 'googleapis.com', 'bing.com',
       'search.yahoo.com', 'yahoo.com', 'duckduckgo.com', 'wikipedia.org',
