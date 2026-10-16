@@ -447,3 +447,47 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
   background: var(--card);
   padding: .8rem 1rem;
 }
+
+
+/* Dark-mode contrast corrections for legacy fixed-colour utilities and notices. */
+.platform-notice-success {
+  border: 1px solid #a7d9bf;
+  background: #eaf5ef;
+  color: #14532d;
+}
+.platform-notice-error {
+  border: 1px solid #f2b8b5;
+  background: #fff0ee;
+  color: #8a2c23;
+}
+.dark .platform-notice-success {
+  border-color: #39785b;
+  background: #173d2d;
+  color: #d8f7e5;
+}
+.dark .platform-notice-error {
+  border-color: #87534d;
+  background: #3b2422;
+  color: #ffd6d1;
+}
+.dark .text-green-800,
+.dark .text-green-700,
+.dark .text-emerald-800,
+.dark .text-emerald-700 {
+  color: #baf0d1 !important;
+}
+.dark .text-red-800,
+.dark .text-red-700,
+.dark .text-red-600 {
+  color: #ffb8af !important;
+}
+.dark .border-green-200,
+.dark .border-emerald-200 {
+  border-color: #39785b !important;
+}
+.dark .border-red-200 {
+  border-color: #87534d !important;
+}
+.dark .text-\[\#66736c\] {
+  color: var(--muted-foreground) !important;
+}
