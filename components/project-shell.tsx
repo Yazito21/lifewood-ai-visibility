@@ -130,7 +130,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
             key={segment || "dashboard"}
             href={href}
             onClick={() => setMobileNavOpen(false)}
-            className={`flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-[11px] font-semibold transition sm:px-3 sm:text-xs ${active ? "bg-[var(--primary)] shadow-sm" : "text-[#111827] hover:bg-[var(--accent)] hover:text-[#111827]"}`} style={active ? { color: "#ffffff" } : { color: "#111827" }}
+            className={`flex shrink-0 items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-[11px] font-semibold transition sm:px-3 sm:text-xs ${active ? "bg-[var(--primary)] text-[var(--primary-foreground)] shadow-sm" : "text-[var(--muted-foreground)] hover:bg-[var(--accent)] hover:text-[var(--foreground)]"}`}
           >
             <Icon size={15} strokeWidth={active ? 2.3 : 1.9} />
             {label}

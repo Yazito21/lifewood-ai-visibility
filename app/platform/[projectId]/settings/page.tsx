@@ -67,12 +67,12 @@ export default function SettingsPage(){
 
       <div className="mt-8 space-y-8 pb-8">
         {message && (
-          <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          <div className="flex items-center gap-2 rounded-xl border platform-notice-success px-4 py-3 text-sm">
             <Check size={16}/>{message}
           </div>
         )}
         {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div className="rounded-xl border platform-notice-error px-4 py-3 text-sm">
             {error}
           </div>
         )}
@@ -160,9 +160,9 @@ export default function SettingsPage(){
                       <div className="flex items-center justify-between">
                         <div>
                           <h4 className="font-semibold">{label}</h4>
-                          <p className="mt-1 text-xs text-[#66736c]">{c?.enabled&&c.last4?"Configured · ••••"+c.last4:"Not configured"}</p>
+                          <p className="mt-1 text-xs text-[var(--muted-foreground)]">{c?.enabled&&c.last4?"Configured · ••••"+c.last4:"Not configured"}</p>
                         </div>
-                        {c?.enabled && <span className="rounded-full bg-[#eaf5ef] px-2.5 py-1 text-xs font-bold text-[var(--green)]">Active</span>}
+                        {c?.enabled && <span className="rounded-full bg-[var(--soft)] px-2.5 py-1 text-xs font-bold text-[var(--green)]">Active</span>}
                       </div>
 
                       {canEdit && (
@@ -173,8 +173,8 @@ export default function SettingsPage(){
                               {show[id]?<EyeOff size={16}/>:<Eye size={16}/>}
                             </button>
                           </div>
-                          <button onClick={()=>saveKey(id)} disabled={!keys[id]?.trim()||busy} className="rounded-xl bg-[#0d5b3a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">Save</button>
-                          {c?.enabled && <button onClick={()=>removeKey(id)} className="rounded-xl border border-red-200 px-3 py-2.5 text-[#a13f35]"><Trash2 size={16}/></button>}
+                          <button onClick={()=>saveKey(id)} disabled={!keys[id]?.trim()||busy} className="rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-[var(--primary-foreground)] disabled:opacity-40">Save</button>
+                          {c?.enabled && <button onClick={()=>removeKey(id)} className="rounded-xl border border-red-200 px-3 py-2.5 text-[var(--danger)]"><Trash2 size={16}/></button>}
                         </div>
                       )}
                     </div>

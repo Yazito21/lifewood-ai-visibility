@@ -14,7 +14,7 @@ function locationName(value: string) {
 
 export function TrackingDataScope({ trackingLocation, scope, onScopeChange }: Props) {
   return (
-    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-white/80 p-3">
+    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-[var(--card)] p-3 text-[var(--card-foreground)]">
       <div>
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Reporting dataset</p>
         <p className="mt-1 text-sm font-semibold">{scope === "legacy" ? "Legacy / Location Unknown" : "Current location: " + locationName(trackingLocation)}</p>
