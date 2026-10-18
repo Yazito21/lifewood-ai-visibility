@@ -49,21 +49,58 @@ function containsTerm(text: string, terms: string[]) {
   return terms.some((term) => term.trim().length > 1 && normalized.includes(term.trim().toLocaleLowerCase()));
 }
 
-function matchingSpans(text: string, terms: string[]) {
-  const clean = [...new Set(terms.map((term) => term.trim()).filter((term) => term.length > 1))]
+type MatchSummary = { count: number; firstStart: number | null };
+const compiledMatcherCache = new Map<string, RegExp>();
+const responseMatchCache = new WeakMap<object, Map<string, MatchSummary>>();
+
+function normalizedTerms(terms: string[]) {
+  return [...new Set(terms.map((term) => term.trim()).filter((term) => term.length > 1))]
     .sort((a, b) => b.length - a.length);
-  if (!clean.length) return [] as Array<{ start: number; end: number }>;
-  const regex = new RegExp("(?<![A-Za-z0-9])(?:" + clean.map(escapeRegex).join("|") + ")(?![A-Za-z0-9])", "gi");
-  const spans: Array<{ start: number; end: number }> = [];
-  for (const match of text.matchAll(regex)) {
-    const start = match.index ?? 0;
-    spans.push({ start, end: start + match[0].length });
+}
+
+function matcherFor(cleanTerms: string[]) {
+  const key = cleanTerms.join("\\u0000");
+  let matcher = compiledMatcherCache.get(key);
+  if (!matcher) {
+    matcher = new RegExp("(?<![A-Za-z0-9])(?:" + cleanTerms.map(escapeRegex).join("|") + ")(?![A-Za-z0-9])", "gi");
+    compiledMatcherCache.set(key, matcher);
   }
-  return spans;
+  return matcher;
+}
+
+function summarizeTermMatches(text: string, terms: string[]): MatchSummary {
+  const clean = normalizedTerms(terms);
+  if (!clean.length) return { count: 0, firstStart: null };
+  const matcher = matcherFor(clean);
+  let count = 0;
+  let firstStart: number | null = null;
+  for (const match of text.matchAll(matcher)) {
+    const start = match.index ?? 0;
+    if (firstStart === null) firstStart = start;
+    count += 1;
+  }
+  return { count, firstStart };
+}
+
+// A response is analysed for every topic and for the overall metrics. Cache the
+// match summary per response/entity so large runs do not repeatedly rescan the
+// same response text for the same aliases.
+function cachedTermMatches(result: object, text: string, terms: string[]): MatchSummary {
+  const key = normalizedTerms(terms).join("\\u0000");
+  let responseCache = responseMatchCache.get(result);
+  if (!responseCache) {
+    responseCache = new Map<string, MatchSummary>();
+    responseMatchCache.set(result, responseCache);
+  }
+  const cached = responseCache.get(key);
+  if (cached) return cached;
+  const summary = summarizeTermMatches(text, terms);
+  responseCache.set(key, summary);
+  return summary;
 }
 
 function countTermMentions(text: string, terms: string[]) {
-  return matchingSpans(text, terms).length;
+  return summarizeTermMatches(text, terms).count;
 }
 
 
@@ -517,7 +554,7 @@ Deno.serve(async (req: Request) => {
 
     function analyzeSubset(subset: Array<Record<string, unknown>>) {
       const brandResponseCount = subset.filter((result) =>
-        countTermMentions(String(result.response_text ?? ""), brandTerms) > 0
+        cachedTermMatches(result, String(result.response_text ?? ""), brandTerms).count > 0
       ).length;
       const visibilityScore = subset.length ? Math.round(brandResponseCount / subset.length * 1000) / 10 : 0;
 
@@ -533,14 +570,14 @@ Deno.serve(async (req: Request) => {
         const text = String(result.response_text ?? "");
         const firstPositions = new Map<string, number>();
         for (const entity of entities) {
-          const spans = matchingSpans(text, entity.aliases);
-          mentionCounts.set(entity.key, (mentionCounts.get(entity.key) ?? 0) + spans.length);
-          if (spans.length) {
+          const matches = cachedTermMatches(result, text, entity.aliases);
+          mentionCounts.set(entity.key, (mentionCounts.get(entity.key) ?? 0) + matches.count);
+          if (matches.count > 0) {
             presenceCounts.set(entity.key, (presenceCounts.get(entity.key) ?? 0) + 1);
-            firstPositions.set(entity.key, spans[0].start);
+            firstPositions.set(entity.key, matches.firstStart ?? 0);
           }
         }
-        totalBrandMentions += entities.reduce((sum, entity) => sum + countTermMentions(text, entity.aliases), 0);
+        totalBrandMentions += entities.reduce((sum, entity) => sum + cachedTermMatches(result, text, entity.aliases).count, 0);
         if (firstPositions.has(brandKey)) {
           const ordered = [...firstPositions.entries()].sort((a, b) => a[1] - b[1]);
           const targetPosition = ordered.findIndex(([key]) => key === brandKey) + 1;
