@@ -9,7 +9,8 @@ security definer
 set search_path = public
 as $$
 declare
-  updated_count integer;
+  updated_count integer := 0;
+  current_count integer := 0;
 begin
   with response_counts as (
     select
@@ -34,7 +35,8 @@ begin
     and tr.status = 'running'
     and tr.started_at < now() - interval '10 minutes';
 
-  get diagnostics updated_count = row_count;
+  get diagnostics current_count = row_count;
+  updated_count := updated_count + current_count;
 
   -- Runs with no persisted responses also need to be closed.
   update public.tracking_runs tr
@@ -50,7 +52,8 @@ begin
       select 1 from public.ai_responses ar where ar.run_id = tr.id
     );
 
-  get diagnostics updated_count = updated_count + row_count;
+  get diagnostics current_count = row_count;
+  updated_count := updated_count + current_count;
   return updated_count;
 end;
 $$;
