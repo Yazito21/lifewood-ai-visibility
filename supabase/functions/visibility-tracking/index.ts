@@ -336,9 +336,14 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
   for (let offset = 0; offset < succeeded.length; offset += 10) {
     const batch = succeeded.slice(offset, offset + 10);
     try {
-      const response = await fetch("https://api.openai.com/v1/responses", {
+      const extractionController = new AbortController();
+      const extractionTimeout = setTimeout(() => extractionController.abort(), 30000);
+      let response: Response;
+      try {
+        response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKeys.chatgpt },
+        signal: extractionController.signal,
         body: JSON.stringify({
           model: "gpt-4o-mini",
           temperature: 0,
@@ -355,7 +360,8 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
             }))) }] },
           ],
         }),
-      });
+        });
+      } finally { clearTimeout(extractionTimeout); }
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(payload?.error?.message ?? "Entity extraction failed").slice(0, 250));
       const output = (Array.isArray(payload?.output) ? payload.output : [])
@@ -376,7 +382,8 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
           const responseText = String(batch.find((r) => String(r.prompt_id) === String(item.response_id))?.response_text ?? "");
           const groundedNames = [String(e.name ?? ""), ...(Array.isArray(e.aliases) ? e.aliases.map(String) : [])]
             .map((name) => name.trim()).filter((name) => name.length > 1);
-          return typeof e.name === "string" && e.name.trim().length > 1 && groundedNames.some((name) =>
+          return typeof e.name === "string" && e.name.trim().length > 1 &&
+            responseText.toLocaleLowerCase().includes(e.name.trim().toLocaleLowerCase()) && groundedNames.some((name) =>
               responseText.toLocaleLowerCase().includes(name.toLocaleLowerCase())) &&
             typeof e.evidence === "string" && e.evidence.trim().length > 0 &&
             responseText.toLocaleLowerCase().includes(String(e.evidence).trim().toLocaleLowerCase());
@@ -387,6 +394,9 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
           evidence: String(entity.evidence).trim(),
         }));
         byId.set(String(item.response_id), entities);
+      }
+      if (byId.size !== allowedIds.size || [...allowedIds].some((id) => !byId.has(id))) {
+        throw new Error("ENTITY_EXTRACTION_MISSING_RESPONSE");
       }
       for (const result of batch) {
         result.response_analysis = {
@@ -995,15 +1005,26 @@ Deno.serve(async (req: Request) => {
       const averagePosition = targetPositionSamples > 0
         ? Math.round(targetPositionTotal / targetPositionSamples * 100) / 100
         : null;
-      const visibilityRank = entities.length <= 1 ? null : 1 + [...presenceCounts.entries()]
-        .filter(([key, count]) => key !== brandKey && count > brandResponseCount).length;
-      const shareOfVoiceRank = 1 + [...mentionCounts.entries()]
-        .filter(([key, count]) => key !== brandKey && count > brandMentions).length;
+      const observedCompetitorKeys = entities.slice(1)
+        .filter((entity) => subset.some((result) => {
+          if (cachedTermMatches(result, String(result.response_text ?? ""), entity.aliases).count > 0) return true;
+          const citations = Array.isArray(result.citations) ? result.citations as Array<Record<string, unknown>> : [];
+          return citations.some((citation) =>
+            normalizedHostLabel(String(citation.domain ?? citation.url ?? "")) === entity.key
+          );
+        }))
+        .map((entity) => entity.key);
+      const visibilityRank = observedCompetitorKeys.length
+        ? 1 + observedCompetitorKeys.filter((key) => (presenceCounts.get(key) ?? 0) > brandResponseCount).length
+        : null;
+      const shareOfVoiceRank = observedCompetitorKeys.length
+        ? 1 + observedCompetitorKeys.filter((key) => (mentionCounts.get(key) ?? 0) > brandMentions).length
+        : null;
       const competitorAveragePositions = [...positionTotals.entries()]
         .filter(([key]) => key !== brandKey)
         .map(([key, total]) => ({ key, average: (positionSamples.get(key) ?? 0) ? total / (positionSamples.get(key) ?? 1) : null }))
         .filter((item) => item.average !== null) as Array<{ key: string; average: number }>;
-      const averagePositionRank = averagePosition === null
+      const averagePositionRank = averagePosition === null || competitorAveragePositions.length === 0
         ? null
         : 1 + competitorAveragePositions.filter((item) => item.average! < averagePosition).length;
 
