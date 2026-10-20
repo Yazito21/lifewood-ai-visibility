@@ -249,6 +249,11 @@ export default function DashboardPage() {
           <p className="mt-1">{scope === "legacy" ? "Try a wider date range to inspect older location-unknown records." : "Historical location-unknown data is kept separate to protect the accuracy of this report. Run tracking at the selected location to establish or refresh its baseline, or switch to Legacy data to inspect older records."}</p>
         </div>}
 
+        {!loading && metrics.length > 0 && cardTopics.every((topic) => (competitorCounts[topic] ?? 0) === 0) && <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <p className="font-semibold">Direct competitor baseline is being initialized.</p>
+          <p className="mt-1">A successful tracking run will classify direct competitors by business line and backfill available historical observations. Rank cards will appear once that baseline is available.</p>
+        </div>}
+
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest ranking, score and movement within the selected period.</p></div>
@@ -257,7 +262,7 @@ export default function DashboardPage() {
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
               {cardTopics.map((topic) => {
-                const snapshot = latestByTopic.get(topic); const currentRank = periodRanks[topic] ?? snapshot?.visibility_rank ?? null; const previousRank = snapshot?.previousRank ?? null;
+                const snapshot = latestByTopic.get(topic); const denominator = competitorCounts[topic] ?? 0; const currentRank = denominator > 0 ? (periodRanks[topic] ?? snapshot?.visibility_rank ?? null) : null; const previousRank = snapshot?.previousRank ?? null;
                 const change = currentRank !== null && previousRank !== null ? previousRank - currentRank : null;
                 return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (topic === "Overall" ? "platform-card-overall" : "")}>
                   <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (topic === "Overall" ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>{snapshot?.metric_date ?? "No data"}</span></div>
