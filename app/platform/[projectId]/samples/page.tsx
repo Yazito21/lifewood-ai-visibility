@@ -181,7 +181,7 @@ export default function SamplesPage() {
       Frequency: p.frequency, "Distinct Prompts": p.prompts.size, "Page Title": p.title, Domain: p.domain, URL: p.url,
       Engines: [...p.engines].join(", "), "Tracked Brand Page": p.brandRelated ? "Yes" : "No",
     }))), "Page Frequency");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.competitors), "Competitors");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.competitors), "Non-brand citation domains");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.results.flatMap((r) =>
       (r.response_analysis?.entities ?? []).map((entity) => ({
         Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Topic: r.topic,
@@ -269,9 +269,9 @@ export default function SamplesPage() {
                 </div>
               </div>
               <div className="rounded-xl bg-[var(--soft)] p-4">
-                <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Estimated request count</div>
+                <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Prompt requests</div>
                 <div className="mt-1 text-3xl font-semibold">{selected.length * selectedEngines.length}</div>
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Each prompt-engine combination makes one API request. API charges may apply.</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Each prompt-engine combination makes one answer request. Entity extraction adds separate analysis requests, so total API usage and charges may be higher.</p>
               </div>
               <button onClick={runSample} disabled={running || loadingPrompts || !selected.length || !selectedEngines.length} className="inline-flex w-full items-center justify-center gap-2 platform-btn platform-btn-primary disabled:opacity-50">
                 {running ? <RefreshCw size={16} className="animate-spin"/> : <Play size={16}/>}
@@ -289,7 +289,7 @@ export default function SamplesPage() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="ops-kpi"><div className="ops-kpi-label">Visibility score</div><div className="ops-kpi-value">{payload.summary.visibility_score.toFixed(1)}%</div><div className="ops-kpi-meta">Across selected prompts</div></div>
-            <div className="ops-kpi"><div className="ops-kpi-label">Visibility rank</div><div className="ops-kpi-value">{payload.summary.visibility_rank == null ? "—" : "#" + payload.summary.visibility_rank}</div><div className="ops-kpi-meta">{payload.summary.visibility_rank == null ? "Unavailable: no competitor evidence observed" : "Estimated from observed competitor evidence"}</div></div>
+            <div className="ops-kpi"><div className="ops-kpi-label">Visibility rank</div><div className="ops-kpi-value">—</div><div className="ops-kpi-meta">Not calculated in sample mode; full tracking validates direct competitors</div></div>
             <div className="ops-kpi"><div className="ops-kpi-label">Completed</div><div className="ops-kpi-value">{payload.summary.completed}</div><div className="ops-kpi-meta">Successful responses</div></div>
             <div className="ops-kpi"><div className="ops-kpi-label">Failed</div><div className="ops-kpi-value">{payload.summary.failed}</div><div className="ops-kpi-meta">Failed prompt requests</div></div>
           </div>
@@ -334,13 +334,13 @@ export default function SamplesPage() {
             })()}
           </div>
           <div className="ops-card overflow-hidden sample-table-card">
-            <div className="p-5"><h3 className="font-semibold">Observed competitor domains</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Non-brand domains found in response URLs; these are heuristic observations.</p>
+            <div className="p-5"><h3 className="font-semibold">Non-brand citation domains</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Non-brand domains found in annotated citation URLs. These are observations, not a verified direct-competitor list.</p>
               <div className="sample-table-tools mt-4">
                 <label className="sample-search"><Search size={16} aria-hidden="true"/><input value={competitorsSearch} onChange={(e) => { setCompetitorsSearch(e.target.value); setCompetitorsExpanded(false); }} placeholder="Search competitors…" aria-label="Search competitor domains"/></label>
                 <span className="text-xs text-[var(--muted-foreground)]">Showing {visibleCompetitors.length} of {filteredCompetitors.length} matching rows</span>
               </div>
             </div>
-            <div className="sample-table-wrap overflow-x-auto"><table className="platform-table sample-data-table min-w-[500px]"><thead><tr><th>Domain</th><th>Prompt citations</th></tr></thead><tbody>
+            <div className="sample-table-wrap overflow-x-auto"><table className="platform-table sample-data-table min-w-[500px]"><thead><tr><th>Domain</th><th>Prompts with citation</th></tr></thead><tbody>
               {visibleCompetitors.map((c) => <tr key={c.domain}><td>{c.domain}</td><td>{c.mentions}</td></tr>)}
               {!filteredCompetitors.length && <tr><td colSpan={2} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No competitor domains found.</td></tr>}
             </tbody></table></div>
