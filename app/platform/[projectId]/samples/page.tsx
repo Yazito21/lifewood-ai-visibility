@@ -24,7 +24,7 @@ type SampleResult = {
   };
 };
 type SamplePayload = {
-  summary: { total_prompts: number; completed: number; failed: number; visibility_score: number; visibility_rank: number | null };
+  summary: { total_prompts: number; completed: number; failed: number; visibility_score: number | null; visibility_rank: number | null };
   results: SampleResult[];
   citations: SampleResult["citations"];
   competitors: { domain: string; mentions: number }[];
@@ -288,7 +288,7 @@ export default function SamplesPage() {
             <button onClick={downloadExcel} className="inline-flex items-center justify-center gap-2 platform-btn platform-btn-primary"><Download size={16}/> Download Excel</button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="ops-kpi"><div className="ops-kpi-label">Visibility score</div><div className="ops-kpi-value">{payload.summary.visibility_score.toFixed(1)}%</div><div className="ops-kpi-meta">Across selected prompts</div></div>
+            <div className="ops-kpi"><div className="ops-kpi-label">Visibility score</div><div className="ops-kpi-value">{payload.summary.visibility_score == null ? "—" : payload.summary.visibility_score.toFixed(1) + "%"}</div><div className="ops-kpi-meta">{payload.summary.completed ? "Across successful responses" : "Unavailable: no successful responses"}</div></div>
             <div className="ops-kpi"><div className="ops-kpi-label">Visibility rank</div><div className="ops-kpi-value">—</div><div className="ops-kpi-meta">Not calculated in sample mode; full tracking validates direct competitors</div></div>
             <div className="ops-kpi"><div className="ops-kpi-label">Completed</div><div className="ops-kpi-value">{payload.summary.completed}</div><div className="ops-kpi-meta">Successful responses</div></div>
             <div className="ops-kpi"><div className="ops-kpi-label">Failed</div><div className="ops-kpi-value">{payload.summary.failed}</div><div className="ops-kpi-meta">Failed prompt requests</div></div>
