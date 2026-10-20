@@ -693,7 +693,7 @@ Deno.serve(async (req: Request) => {
         last_seen_date: (() => {
           const discoveredLast = historicalLastSeen.get(item.topic + "|" + item.domain) ?? day;
           const existingLast = String(existing?.last_seen_date ?? "");
-          return [discoveredLast, existingLast, day].filter(Boolean).sort().at(-1) ?? day;
+          return [discoveredLast, existingLast].filter(Boolean).sort().at(-1) ?? day;
         })(),
       };
     });
@@ -754,33 +754,39 @@ Deno.serve(async (req: Request) => {
       }
 
       const historicalObservationRows: Array<Record<string, unknown>> = [];
+      const historicalDates = [...new Set([...historicalGroups.keys()].map((key) => key.split("|")[0]))].sort();
       for (const [groupKey, group] of historicalGroups) {
-        const [date, groupTopic] = groupKey.split("|");
-        const topicsToProcess = groupTopic === "Overall" ? ["Overall"] : [groupTopic, "Overall"];
-        for (const topic of topicsToProcess) {
-          const subset = topic === "Overall"
-            ? [...historicalGroups.entries()].filter(([key]) => key.startsWith(date + "|")).flatMap(([, values]) => values)
-            : group;
-          const dedupedSubset = [...new Map(subset.map((item, index) => [String(index) + "|" + item.topic + "|" + item.text, item])).values()];
-          const seenKeys = new Set<string>();
-          for (const entity of entitiesByTopic.get(topic) ?? []) {
-            if (seenKeys.has(entity.key)) continue;
-            seenKeys.add(entity.key);
-            const presenceCount = dedupedSubset.filter((response) => cachedTermMatches(
-              response, response.text, entity.aliases
-            ).count > 0).length;
-            const citationCount = topic === "Overall"
-              ? [...historicalCitationCounts.entries()].filter(([key]) => {
-                  const [citationDate, , domain] = key.split("|");
-                  return citationDate === date && domain === entity.domain;
-                }).reduce((sum, [, count]) => sum + count, 0)
-              : historicalCitationCounts.get([date, topic, entity.domain].join("|")) ?? 0;
-            historicalObservationRows.push({
-              project_id: projectId, competitor_id: entity.id, metric_date: date,
-              tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
-              presence_count: presenceCount, response_count: dedupedSubset.length, citation_count: citationCount,
-            });
-          }
+        const [date, topic] = groupKey.split("|");
+        for (const entity of entitiesByTopic.get(topic) ?? []) {
+          const presenceCount = group.filter((response) => cachedTermMatches(
+            response, response.text, entity.aliases
+          ).count > 0).length;
+          const citationCount = historicalCitationCounts.get([date, topic, entity.domain].join("|")) ?? 0;
+          historicalObservationRows.push({
+            project_id: projectId, competitor_id: entity.id, metric_date: date,
+            tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
+            presence_count: presenceCount, response_count: group.length, citation_count: citationCount,
+          });
+        }
+      }
+      // Overall is the union of the brand's business lines; count each competitor once per date.
+      for (const date of historicalDates) {
+        const subset = [...historicalGroups.entries()]
+          .filter(([key]) => key.startsWith(date + "|"))
+          .flatMap(([, values]) => values);
+        for (const entity of entitiesByTopic.get("Overall") ?? []) {
+          const presenceCount = subset.filter((response) => cachedTermMatches(
+            response, response.text, entity.aliases
+          ).count > 0).length;
+          const citationCount = [...historicalCitationCounts.entries()].filter(([key]) => {
+            const [citationDate, , domain] = key.split("|");
+            return citationDate === date && domain === entity.domain;
+          }).reduce((sum, [, count]) => sum + count, 0);
+          historicalObservationRows.push({
+            project_id: projectId, competitor_id: entity.id, metric_date: date,
+            tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
+            presence_count: presenceCount, response_count: subset.length, citation_count: citationCount,
+          });
         }
       }
       for (let offset = 0; offset < historicalObservationRows.length; offset += 500) {
