@@ -5,7 +5,9 @@ import { useParams } from "next/navigation";
 import { CalendarDays, ChevronDown, ChevronRight, Download, ExternalLink, FileText, Search } from "lucide-react";
 import * as XLSX from "xlsx";
 import { ProjectShell } from "@/components/project-shell";
+import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
+import { malaysiaDateString, shiftDateString, malaysiaDayStart, malaysiaDayEndExclusive } from "@/lib/reporting-date";
 
 type ResponseRow = {
   id: string;
@@ -30,12 +32,12 @@ const providerLabels: Record<string, string> = {
 };
 
 function dateValue(date: Date) {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
+  return malaysiaDateString(date);
 }
 function formatDate(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString(undefined, {
+    timeZone: "Asia/Kuala_Lumpur",
     year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
@@ -55,16 +57,15 @@ function responseText(row: ResponseRow) {
 export default function ResponsesPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const today = useMemo(() => dateValue(new Date()), []);
-  const sevenDaysAgo = useMemo(() => {
-    const date = new Date();
-    date.setDate(date.getDate() - 6);
-    return dateValue(date);
-  }, []);
+  const sevenDaysAgo = useMemo(() => shiftDateString(today, -6), [today]);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState(today);
   const [provider, setProvider] = useState<string[]>([]);
   const [status, setStatus] = useState("all");
   const [topicOptions, setTopicOptions] = useState<string[]>([]);
+  const [hasUnclassifiedLegacy, setHasUnclassifiedLegacy] = useState(false);
+  const [trackingLocation, setTrackingLocation] = useState("MY");
+  const [scope, setScope] = useState<"current" | "legacy">("current");
   const [topics, setTopics] = useState<string[]>([]);
   const [searched, setSearched] = useState(false);
   const [search, setSearch] = useState("");
@@ -79,44 +80,75 @@ export default function ResponsesPage() {
     setLoading(true);
     setSearched(true);
     setError("");
-    const start = new Date(fromDate + "T00:00:00");
-    const end = new Date(toDate + "T00:00:00");
+    const start = malaysiaDayStart(fromDate);
+    const end = malaysiaDayStart(toDate);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
       setError("Choose a valid date range. The start date must be on or before the end date.");
       setRows([]);
       setLoading(false);
       return;
     }
-    const endExclusive = new Date(end);
-    endExclusive.setDate(endExclusive.getDate() + 1);
-    const { data, error: queryError } = await supabase
-      .from("ai_responses")
-      .select("id,prompt_id,llm_provider,captured_at,prompt_snapshot,raw_response,response_text,response_status,error_message,run_id,tracking_location,brand_name_snapshot,project_snapshot")
-      .eq("project_id", projectId)
-      .in("llm_provider", provider)
-      .gte("captured_at", start.toISOString())
-      .lt("captured_at", endExclusive.toISOString())
-      .order("captured_at", { ascending: false })
-      .limit(5000);
+    const endExclusive = malaysiaDayEndExclusive(toDate);
+    const result: ResponseRow[] = [];
+    let queryError: { message: string } | null = null;
+    for (let offset = 0; ; offset += 1000) {
+      const { data: batch, error: batchError } = await supabase
+        .from("ai_responses")
+        .select("id,prompt_id,llm_provider,captured_at,prompt_snapshot,raw_response,response_text,response_status,error_message,run_id,tracking_location,brand_name_snapshot,project_snapshot")
+        .eq("project_id", projectId)
+        .eq("tracking_location", scope === "legacy" ? "LEGACY" : trackingLocation)
+        .in("llm_provider", provider)
+        .gte("captured_at", start.toISOString())
+        .lt("captured_at", endExclusive.toISOString())
+        .order("captured_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(offset, offset + 999);
+      if (batchError) { queryError = batchError; break; }
+      const batchRows = (batch ?? []) as ResponseRow[];
+      result.push(...batchRows);
+      if (batchRows.length < 1000) break;
+    }
     if (queryError) {
       setError(queryError.message);
       setRows([]);
     } else {
-      const result = (data ?? []) as ResponseRow[];
       const ids = [...new Set(result.map((r) => r.prompt_id).filter((id): id is string => Boolean(id)))];
       const topicByPrompt = new Map<string, string>();
       if (ids.length) {
-        const { data: promptRows } = await supabase.from("prompts").select("*").in("id", ids);
-        for (const prompt of (promptRows ?? []) as Array<Record<string, unknown>>) topicByPrompt.set(String(prompt.id), String(prompt.topic_name || prompt.topic || ""));
+        const { data: promptRows, error: promptLookupError } = await supabase.from("prompts")
+          .select("id,topic").eq("project_id", projectId).in("id", ids);
+        if (promptLookupError) setError(promptLookupError.message);
+        for (const prompt of (promptRows ?? []) as Array<Record<string, unknown>>) topicByPrompt.set(String(prompt.id), String(prompt.topic ?? ""));
       }
-      setRows(result.filter((r) => r.prompt_id ? topics.includes(topicByPrompt.get(r.prompt_id) || "") : topics.includes("")));
+      setRows(result.filter((r) => r.prompt_id
+        ? topics.includes(topicByPrompt.get(r.prompt_id) || "")
+        : topics.includes("Unclassified legacy prompts")));
     }
     setPage(1);
     setExpanded([]);
     setLoading(false);
-  }, [projectId, fromDate, toDate, topics, provider]);
+  }, [projectId, fromDate, toDate, topics, provider, scope, trackingLocation]);
 
-  useEffect(() => { void supabase.from("prompts").select("*").eq("project_id", projectId).limit(2000).then(({data}) => { if (data) setTopicOptions([...new Set((data as Array<Record<string, unknown>>).map((p) => String(p.topic_name || p.topic || "")).filter(Boolean))].sort()); }); }, [projectId]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadFilters() {
+      const [{ data: project }, { data: promptRows }, { count: unclassifiedCount }] = await Promise.all([
+        supabase.from("projects").select("tracking_market").eq("id", projectId).single(),
+        supabase.from("prompts").select("id,topic").eq("project_id", projectId).limit(2000),
+        supabase.from("ai_responses").select("id", { count: "exact", head: true })
+          .eq("project_id", projectId).eq("tracking_location", "LEGACY").is("prompt_id", null),
+      ]);
+      if (cancelled) return;
+      setTrackingLocation(project?.tracking_market ?? "MY");
+      setTopicOptions([...new Set((promptRows ?? []).map((p) => String((p as Record<string, unknown>).topic ?? "")).filter(Boolean))].sort());
+      setHasUnclassifiedLegacy((unclassifiedCount ?? 0) > 0);
+    }
+    void loadFilters();
+    return () => { cancelled = true; };
+  }, [projectId]);
+  const visibleTopicOptions = scope === "legacy" && hasUnclassifiedLegacy
+    ? [...topicOptions, "Unclassified legacy prompts"]
+    : topicOptions;
 
   const filtered = useMemo(() => rows.filter((row) => {
     if (provider.length && !provider.includes(row.llm_provider)) return false;
@@ -161,6 +193,7 @@ export default function ResponsesPage() {
           <p className="page-description mt-2">Browse the full AI answers captured by tracking runs, inspect the raw provider payload, and export responses for a selected period.</p>
         </header>
 
+        <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={(nextScope) => { setScope(nextScope); setRows([]); setSearched(false); setError(""); }} />
 
         <section className="ops-card p-5 sm:p-6">
           <h2 className="mb-4 text-sm font-semibold">Filter responses</h2>
@@ -173,7 +206,7 @@ export default function ResponsesPage() {
             </label>
           </div>
           <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">Topics</p><div className="flex flex-wrap gap-2">
-            {topicOptions.map((topic) => <label key={topic} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs"><input type="checkbox" checked={topics.includes(topic)} onChange={(e) => setTopics((s) => e.target.checked ? [...s, topic] : s.filter((x) => x !== topic))} className="accent-emerald-600"/>{topic}</label>)}
+            {visibleTopicOptions.map((topic) => <label key={topic} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs"><input type="checkbox" checked={topics.includes(topic)} onChange={(e) => setTopics((s) => e.target.checked ? [...s, topic] : s.filter((x) => x !== topic))} className="accent-emerald-600"/>{topic}</label>)}
             {!topicOptions.length && <span className="text-xs text-[var(--muted-foreground)]">No topics found.</span>}
           </div></div>
           <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">AI engines</p><div className="flex flex-wrap gap-2">
@@ -200,7 +233,7 @@ export default function ResponsesPage() {
                 const isOpen = expanded.includes(group.key);
                 const byDate = new Map<string, ResponseRow[]>();
                 for (const response of group.responses) {
-                  const dateKey = response.captured_at.slice(0, 10);
+                  const dateKey = dateValue(new Date(response.captured_at));
                   byDate.set(dateKey, [...(byDate.get(dateKey) || []), response]);
                 }
                 return <article key={group.key} className="min-w-0">

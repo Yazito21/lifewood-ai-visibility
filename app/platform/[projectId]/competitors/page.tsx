@@ -5,14 +5,12 @@ import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
+import { malaysiaDateString, shiftDateString } from "@/lib/reporting-date";
 import { brandDisplayName } from "@/lib/brand-display";
 
 type CompetitorRow = { brand_name: string; website: string | null; visibility_score: number | null; citations: number };
 const LLMS = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "claude"];
 const labels: Record<string, string> = { chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", google_ai_overview: "Google AI Overview", claude: "Claude" };
-function localDateString(date = new Date()) {
-  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
-}
 
 export default function CompetitorsPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -21,24 +19,24 @@ export default function CompetitorsPage() {
   const [scope, setScope] = useState<"current" | "legacy">("current");
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
-  const [llms, setLlms] = useState<string[]>([]);
+  const [llms, setLlms] = useState<string[]>(["chatgpt"]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState(localDateString());
+  const [customEnd, setCustomEnd] = useState(malaysiaDateString());
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [hasDirectRegistry, setHasDirectRegistry] = useState(true);
+  const [hasUnclassifiedLegacyResponses, setHasUnclassifiedLegacyResponses] = useState(false);
   const [error, setError] = useState("");
 
   const start = useMemo(() => {
-    if (period === "Custom") return customStart || localDateString();
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
+    const today = malaysiaDateString();
+    if (period === "Custom") return customStart || today;
     const days = period === "Today" ? 0 : period === "Last 2 Days" ? 1 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : period === "All Time" ? 36500 : 6;
-    date.setDate(date.getDate() - days);
-    return localDateString(date);
+    return shiftDateString(today, -days);
   }, [period, customStart]);
-  const end = period === "Custom" ? customEnd : localDateString();
+  const end = period === "Custom" ? customEnd : malaysiaDateString();
 
   useEffect(() => {
     let cancelled = false;
@@ -47,7 +45,23 @@ export default function CompetitorsPage() {
       setError("");
       const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
       const location = project?.tracking_market ?? "MY";
+      const [{ count: registryCount, error: registryError }, { count: unclassifiedCount, error: mappingError }] = await Promise.all([
+        supabase.from("direct_competitors").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+        supabase.from("ai_responses").select("id", { count: "exact", head: true })
+          .eq("project_id", projectId).eq("tracking_location", "LEGACY").is("prompt_id", null),
+      ]);
+      setHasDirectRegistry((registryCount ?? 0) > 0);
+      setHasUnclassifiedLegacyResponses((unclassifiedCount ?? 0) > 0);
       const dataLocation = scope === "legacy" ? "LEGACY" : location;
+      if (!llms.length) {
+        if (cancelled) return;
+        setTopics(project?.topics ?? []);
+        setTrackingLocation(location);
+        if (projectError) setError(projectError.message);
+        setAggregated([]);
+        setLoading(false);
+        return;
+      }
       const allRows: CompetitorRow[] = [];
       let fetchError: { message: string } | null = null;
       for (let offset = 0; ; offset += 1000) {
@@ -63,7 +77,7 @@ export default function CompetitorsPage() {
       if (cancelled) return;
       setTopics(project?.topics ?? []);
       setTrackingLocation(location);
-      if (projectError || fetchError) setError((projectError || fetchError)?.message ?? "Unable to load competitor data.");
+      if (projectError || registryError || mappingError || fetchError) setError((projectError || registryError || mappingError || fetchError)?.message ?? "Unable to load competitor data.");
       setAggregated(allRows);
       setLoading(false);
     }
@@ -87,6 +101,8 @@ export default function CompetitorsPage() {
     <h2 className="page-title mt-1">Direct Competitors</h2>
     <p className="page-description mt-2">Only direct competitors relevant to the tracked brand’s business line, deduplicated across the selected reporting period. Publishers, directories and unrelated businesses are excluded.</p>
     <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
+    {!loading && !hasDirectRegistry && <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">The direct-competitor baseline has not been classified for this project. The historical competitor table is not used as a substitute because it contains broad citation mentions, not verified direct competitors.</div>}
+    {!loading && scope === "legacy" && hasUnclassifiedLegacyResponses && hasDirectRegistry && <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">Some legacy responses no longer have a prompt-to-topic link. Topic-specific competitor observations for those dates are unavailable and excluded from averages; the page uses only dates with mapped prompt data.</div>}
     <div className="mt-8 ops-filter-panel">
       <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{["Today", "Last 2 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"].map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
       </div>
@@ -114,7 +130,7 @@ export default function CompetitorsPage() {
               <td className="px-3 py-3">{row.website ? <a href={row.website} target="_blank" rel="noreferrer" title={row.website} className="break-all text-[var(--green)] hover:underline">{row.website}</a> : "—"}</td>
               <td className="px-3 py-3 font-semibold">{row.visibility_score != null ? row.visibility_score.toFixed(1) + "%" : "—"}</td><td className="px-3 py-3">{row.citations}</td>
             </tr>)}
-            {!loading && !searchResults.length && <tr><td colSpan={5} className="px-3 py-10 text-center text-sm text-[#66736c]">{searchTerm ? "No competitors match your search." : "No direct competitors were observed for this topic and period."}</td></tr>}
+            {!loading && !searchResults.length && <tr><td colSpan={5} className="px-3 py-10 text-center text-sm text-[#66736c]">{searchTerm ? "No competitors match your search." : !hasDirectRegistry ? "No verified direct-competitor baseline exists for this project yet. Historical competitor mentions are kept separate because they may include publishers, directories and unrelated websites." : "No direct competitors were observed for this topic and period."}</td></tr>}
           </tbody>
         </table>
       </div>

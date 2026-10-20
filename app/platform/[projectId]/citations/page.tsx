@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
+import { malaysiaDateString, shiftDateString } from "@/lib/reporting-date";
 import { brandDisplayName } from "@/lib/brand-display";
 
 type AggregatedRow = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
@@ -78,22 +79,20 @@ export default function CitationsPage() {
   const [allPages, setAllPages] = useState<AggregatedRow[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
-  const [llms, setLlms] = useState<string[]>([]);
+  const [llms, setLlms] = useState<string[]>(["chatgpt"]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState(new Date().toISOString().slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(malaysiaDateString());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const start = useMemo(() => {
-    if (period === "Custom") return customStart || new Date().toISOString().slice(0, 10);
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
+    const today = malaysiaDateString();
+    if (period === "Custom") return customStart || today;
     const days = period === "Today" ? 0 : period === "Last 2 Days" ? 1 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : period === "All Time" ? 36500 : 6;
-    date.setDate(date.getDate() - days);
-    return date.toISOString().slice(0, 10);
+    return shiftDateString(today, -days);
   }, [period, customStart]);
-  const end = period === "Custom" ? customEnd : new Date().toISOString().slice(0, 10);
+  const end = period === "Custom" ? customEnd : malaysiaDateString();
 
   useEffect(() => {
     let cancelled = false;
@@ -103,6 +102,16 @@ export default function CitationsPage() {
       const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
       const location = project?.tracking_market ?? "MY";
       const dataLocation = scope === "legacy" ? "LEGACY" : location;
+      if (!llms.length) {
+        if (cancelled) return;
+        setTopics(project?.topics ?? []);
+        setTrackingLocation(location);
+        if (projectError) setError(projectError.message);
+        setBrandPages([]);
+        setAllPages([]);
+        setLoading(false);
+        return;
+      }
       async function loadAllCitationRows(brandRelatedOnly: boolean) {
         const allRows: AggregatedRow[] = [];
         for (let offset = 0; ; offset += 1000) {

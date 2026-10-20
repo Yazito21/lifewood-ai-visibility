@@ -5,7 +5,7 @@ import { useState } from "react";
 export type ChartPoint = { label: string; value: number | null };
 
 function dateLabel(date: string) {
-  return new Date(date + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(date + "T00:00:00+08:00").toLocaleDateString(undefined, { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric" });
 }
 
 function datesBetween(start: string, end: string) {
@@ -39,8 +39,17 @@ export function MetricChart({
 }) {
   const [activeDate, setActiveDate] = useState<string | null>(null);
   const valueByDate = new Map(data.map((point) => [point.label, point.value]));
-  const observedDates = data.map((point) => point.label).filter((label) => /^\d{4}-\d{2}-\d{2}$/.test(label)).sort();
-  const start = dateRange?.start || observedDates[0];
+  const observedDates = data
+    .filter((point) => point.value !== null && Number.isFinite(point.value))
+    .map((point) => point.label)
+    .filter((label) => /^\d{4}-\d{2}-\d{2}$/.test(label))
+    .sort();
+  const requestedStart = dateRange?.start || observedDates[0];
+  // Start at the first real observation for this specific series, not at another
+  // topic's earlier date. Missing dates after the first observation remain gaps.
+  const start = requestedStart && observedDates[0] && observedDates[0] > requestedStart
+    ? observedDates[0]
+    : requestedStart;
   const end = dateRange?.end || observedDates[observedDates.length - 1];
   const axisDates = start && end ? datesBetween(start, end) : observedDates;
   const allPoints = axisDates.map((date) => ({ label: date, value: valueByDate.get(date) ?? null }));
@@ -60,12 +69,18 @@ export function MetricChart({
     const y = invert ? top + normalized * plotH : top + (1 - normalized) * plotH;
     return { x, y, ...point };
   });
-  // Draw one continuous trend through observed values. A missing database row has no marker,
-  // but it should not make the rest of the recorded data look like disconnected chart segments.
-  const observedPoints = points.filter((point) => point.value !== null && Number.isFinite(point.value));
-  const path = observedPoints.map((point, index) =>
-    (index === 0 ? "M" : "L") + point.x.toFixed(1) + " " + point.y.toFixed(1)
-  ).join(" ");
+  // Break the line whenever a date has no recorded value. Connecting across a gap
+  // would imply a trend for a day when no tracking data exists.
+  let drawingSegment = false;
+  const path = points.map((point) => {
+    if (point.value === null || !Number.isFinite(point.value)) {
+      drawingSegment = false;
+      return "";
+    }
+    const command = drawingSegment ? "L" : "M";
+    drawingSegment = true;
+    return command + point.x.toFixed(1) + " " + point.y.toFixed(1);
+  }).filter(Boolean).join(" ");
   const active = activeDate === null ? null : points.find((point) => point.label === activeDate && point.value !== null) ?? null;
   const yAxisTitle = format === "percent" ? (title.toLowerCase().includes("share of voice") ? "Share of voice (%)" : "Visibility (%)") : /position/i.test(title) ? "Average position" : /rank/i.test(title) ? "Rank" : "Value";
   const tickValues = Array.from({ length: 5 }, (_, i) => invert ? (max * i) / 4 : max - (max * i) / 4);
