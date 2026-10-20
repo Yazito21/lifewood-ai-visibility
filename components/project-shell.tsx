@@ -24,7 +24,7 @@ const baseNav = [
   ["Dashboard", "", LayoutDashboard],
   ["Analytics", "/analytics", BarChart3],
   ["Citations", "/citations", BookOpen],
-  ["Leaderboard", "/competitors", Users],
+  ["Competitors", "/competitors", Users],
   ["Prompts", "/prompts", Activity],
   ["Responses", "/responses", MessageSquareText],
   ["Samples", "/samples", FlaskConical],
