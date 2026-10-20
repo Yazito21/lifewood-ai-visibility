@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, FolderKanban, LogOut, Plus, ShieldCheck, Trash2, X, Trophy } from "lucide-react";
-import Link from "next/link";
+import { ArrowRight, FolderKanban, LogOut, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -95,7 +94,6 @@ export default function ProjectsPage(){
           <p className="page-description mt-2">Your cross-project overview of AI visibility workspaces, tracked brands and daily intelligence.</p>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
-          <Link href="/leaderboard" className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/15"><Trophy size={17}/> Platform Leaderboard</Link>
           {canCreate&&<button onClick={()=>setCreating(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-3 text-sm font-semibold text-[var(--primary-foreground)] transition hover:opacity-90"><Plus size={17}/> New project</button>}
           <button onClick={signOut} className="platform-btn sm:hidden"><LogOut size={16}/> Log out</button>
         </div>
