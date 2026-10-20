@@ -7,6 +7,7 @@ import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
+import { malaysiaDateString, shiftDateString } from "@/lib/reporting-date";
 
 type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null };
 type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
@@ -14,17 +15,11 @@ type CompetitorCount = { topic: string; metric_date: string; competitor_count: n
 type RankSnapshot = Metric & { previousRank: number | null };
 
 const periods = ["Today", "Last 2 days", "Last 3 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"];
-function localDateString(date = new Date()) {
-  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
-}
-
-
 function dateStart(period: string, customStart: string) {
-  if (period === "Custom") return customStart || localDateString();
-  const now = new Date(); const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = malaysiaDateString();
+  if (period === "Custom") return customStart || today;
   const days = period === "Today" ? 0 : period === "Last 2 days" ? 1 : period === "Last 3 Days" ? 2 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : 36500;
-  d.setDate(d.getDate() - days);
-  return localDateString(d);
+  return shiftDateString(today, -days);
 }
 
 
@@ -40,7 +35,7 @@ export default function DashboardPage() {
   const [topics, setTopics] = useState<string[]>([]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState(localDateString());
+  const [customEnd, setCustomEnd] = useState(malaysiaDateString());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tracking, setTracking] = useState(false);
@@ -73,7 +68,7 @@ export default function DashboardPage() {
       : [];
     setTopics(topicList);
     const start = dateStart(period, customStart);
-    const end = period === "Custom" ? customEnd : localDateString();
+    const end = period === "Custom" ? customEnd : malaysiaDateString();
     const [{ data: chartRows, error: metricsError }, { data: competitorRows, error: competitorError }] = await Promise.all([
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").eq("tracking_location", dataLocation).gte("metric_date", start).lte("metric_date", end).order("metric_date"),
       supabase.rpc("get_direct_competitor_metrics_for_period", { p_project_id: projectId, p_start_date: start, p_end_date: end, p_tracking_location: dataLocation }),
@@ -143,7 +138,7 @@ export default function DashboardPage() {
     setExporting(true); setError(""); setTrackingMessage("");
     try {
       const startDate = period === "All Time" ? "1900-01-01" : dateStart(period, customStart);
-      const endDate = period === "Custom" ? customEnd : localDateString();
+      const endDate = period === "Custom" ? customEnd : malaysiaDateString();
       if (!startDate || !endDate || startDate > endDate) throw new Error("Select a valid date range before exporting.");
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("Your session has expired. Please sign in again.");
@@ -214,7 +209,7 @@ export default function DashboardPage() {
     const requestedStart = period === "All Time" ? (firstTrackedDate ?? dateStart(period, customStart)) : dateStart(period, customStart);
     return {
       start: firstTrackedDate && firstTrackedDate > requestedStart ? firstTrackedDate : requestedStart,
-      end: period === "Custom" ? customEnd : localDateString(),
+      end: period === "Custom" ? customEnd : malaysiaDateString(),
     };
   }, [period, customStart, customEnd, metrics]);
   const latestByTopic = useMemo(() => {
@@ -270,10 +265,11 @@ export default function DashboardPage() {
             <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking || exporting || scope === "legacy"} title={scope === "legacy" ? "Switch to current location to run tracking." : undefined} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
+          {!loading && cardTopics.some((topic) => !(competitorCounts[topic] > 0)) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">A verified direct-competitor denominator is unavailable for one or more topics in this dataset. Where available, the displayed rank uses the stored daily metric and is shown without a denominator.</div>}
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
               {cardTopics.map((topic) => {
-                const snapshot = latestByTopic.get(topic); const denominator = competitorCounts[topic] ?? 0; const currentRank = denominator > 0 ? (periodRanks[topic] ?? snapshot?.visibility_rank ?? null) : null; const previousRank = snapshot?.previousRank ?? null;
+                const snapshot = latestByTopic.get(topic); const denominator = competitorCounts[topic] ?? 0; const currentRank = denominator > 0 ? (periodRanks[topic] ?? snapshot?.visibility_rank ?? null) : (snapshot?.visibility_rank ?? null); const previousRank = snapshot?.previousRank ?? null;
                 const change = currentRank !== null && previousRank !== null ? previousRank - currentRank : null;
                 return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (topic === "Overall" ? "platform-card-overall" : "")}>
                   <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (topic === "Overall" ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>{snapshot?.metric_date ?? "No data"}</span></div>
