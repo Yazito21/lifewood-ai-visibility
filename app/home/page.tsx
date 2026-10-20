@@ -35,7 +35,8 @@ export default function ProjectsPage(){
     if(ids.length){
       const {data:metrics}=await supabase.from("visibility_daily").select("project_id,tracking_location,visibility_rank,visibility_score,metric_date").eq("llm_provider","Overall").in("project_id",ids).order("metric_date",{ascending:false});
       const map:Record<string,{rank:number|null;score:number|null}>={};
-      for(const m of metrics??[]){const project=(data??[]).find(x=>x.id===m.project_id);if(project&&m.tracking_location===project.tracking_market&&!map[m.project_id]) map[m.project_id]={rank:m.visibility_rank,score:m.visibility_score};}
+      const projectById=new Map((data??[]).map(project=>[project.id,project]));
+      for(const m of metrics??[]){const project=projectById.get(m.project_id);if(project&&m.tracking_location===project.tracking_market&&!map[m.project_id]) map[m.project_id]={rank:m.visibility_rank,score:m.visibility_score};}
       setLatest(map);
     } else setLatest({});
     setLoading(false);
