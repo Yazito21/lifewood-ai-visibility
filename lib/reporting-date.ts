@@ -24,7 +24,7 @@ export function malaysiaDateString(date = new Date()) {
 }
 
 export function shiftDateString(dateString: string, days: number) {
-  const match = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(dateString);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateString);
   if (!match) return malaysiaDateString();
   const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   date.setUTCDate(date.getUTCDate() + days);
