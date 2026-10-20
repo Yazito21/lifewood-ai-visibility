@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
-import { malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
+import { malaysiaDateString, shiftDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 import { brandDisplayName } from "@/lib/brand-display";
 
 type DirectCompetitor = {
