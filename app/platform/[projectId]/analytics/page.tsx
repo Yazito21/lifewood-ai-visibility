@@ -73,20 +73,20 @@ export default function AnalyticsPage(){
     <section className="mt-8 platform-card overflow-hidden">
       <div className="platform-card-header">
         <h3 className="text-lg font-semibold">Answer Engine Snapshot</h3>
-        <p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest mean visibility score across the selected topics for each engine.</p>
+        <p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest overall visibility score for each selected engine, using the dedicated Overall metric.</p>
       </div>
       <div className="p-5">
         <h3 className="text-sm font-semibold">LLM latest values</h3>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {LLMS.filter(l=>selectedLlms.includes(l)).map(l=>{
-            const rs=filtered.filter(r=>r.llm_provider===l&&r.visibility_score!=null).sort((a,b)=>b.metric_date.localeCompare(a.metric_date));
-            const latestDate=rs[0]?.metric_date;
-            const latestValues=rs.filter(r=>r.metric_date===latestDate&&r.visibility_score!=null).map(r=>Number(r.visibility_score));
-            const mean=latestValues.length?latestValues.reduce((sum,value)=>sum+value,0)/latestValues.length:null;
+            const rs=rows.filter(r=>r.llm_provider===l&&r.topic==="Overall"&&r.visibility_score!=null).sort((a,b)=>b.metric_date.localeCompare(a.metric_date));
+            const latest=rs[0];
+            const latestDate=latest?.metric_date;
+            const score=latest?.visibility_score;
             return <div key={l} className="rounded-xl border border-[var(--line)] bg-[var(--muted)] p-4">
               <div className="text-xs font-bold text-[#66736c]">{labels[l]}</div>
-              <div className="mt-2 text-2xl font-semibold">{mean!==null?mean.toFixed(1)+"%":"—"}</div>
-              <div className="text-xs text-[#66736c]">mean visibility score</div>
+              <div className="mt-2 text-2xl font-semibold">{score!=null?score.toFixed(1)+"%":"—"}</div>
+              <div className="text-xs text-[#66736c]">overall visibility score</div>
               <div className="mt-1 text-[10px] text-[#66736c]">{latestDate??"No data"}</div>
             </div>
           })}
