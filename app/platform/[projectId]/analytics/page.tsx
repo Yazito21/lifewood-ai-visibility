@@ -29,7 +29,7 @@ export default function AnalyticsPage(){
     <header className="page-heading">
       <p className="page-eyebrow">Analytics</p>
       <h1 className="page-title mt-1">Detailed analytics</h1>
-      <p className="page-description mt-2">Compare visibility, share of voice and average position by answer engine for the selected reporting dataset.</p>
+      <p className="page-description mt-2">Compare visibility, share of voice and average position by answer engine for the selected reporting dataset. Gaps indicate dates without recorded values.</p>
       <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
     </header>
 
