@@ -167,7 +167,7 @@ export default function PlatformLeaderboardPage() {
         if (selectedTopic !== "All") query = query.eq("topic", selectedTopic);
         const { data, error: queryError } = await query;
         if (queryError) throw queryError;
-        const batch = (data ?? []) as T[];
+        const batch = (data ?? []) as unknown as T[];
         all.push(...batch);
         if (batch.length < 1000) break;
       }
