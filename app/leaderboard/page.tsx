@@ -77,12 +77,12 @@ function locationLabel(value: string | null | undefined) {
   return value;
 }
 function collectMetrics(competitors: CompetitorSnapshot[], citations: CitationSnapshot[], selectedLocation: string) {
-  const map = new Map<string, { brand_name: string; website: string | null; locations: Set<string>; visibility: number[]; citations: number }>();
+  const map = new Map<string, { brand_name: string; website: string | null; locations: Set<string>; visibility: number[]; citations: number; sourceCitations: number }>();
   function ensure(key: string, name: string | null | undefined, website: string | null | undefined, location: string | null | undefined) {
     if (!key) return null;
     let item = map.get(key);
     if (!item) {
-      item = { brand_name: name?.trim() || hostFromUrl(website) || key, website: rootWebsite(website), locations: new Set<string>(), visibility: [], citations: 0 };
+      item = { brand_name: name?.trim() || hostFromUrl(website) || key, website: rootWebsite(website), locations: new Set<string>(), visibility: [], citations: 0, sourceCitations: 0 };
       map.set(key, item);
     }
     if (name && name.trim().length > item.brand_name.length) item.brand_name = name.trim();
@@ -102,7 +102,7 @@ function collectMetrics(competitors: CompetitorSnapshot[], citations: CitationSn
     const website = rootWebsite(row.url);
     const key = keyFor(row.brand_name, website);
     const item = ensure(key, row.brand_name || hostFromUrl(website), website, row.tracking_location);
-    if (item) item.citations += number(row.frequency) || 1;
+    if (item) item.sourceCitations += number(row.frequency) || 1;
   }
   return [...map.entries()].map(([key, value]) => ({
     key,
@@ -110,7 +110,7 @@ function collectMetrics(competitors: CompetitorSnapshot[], citations: CitationSn
     website: value.website,
     location: [...value.locations].sort().join(", ") || "Unknown",
     visibility: value.visibility.length ? value.visibility.reduce((sum, v) => sum + v, 0) / value.visibility.length : null,
-    citations: value.citations,
+    citations: value.sourceCitations > 0 ? value.sourceCitations : value.citations,
   }));
 }
 function ranked(rows: BrandMetric[]) {
@@ -249,14 +249,14 @@ export default function PlatformLeaderboardPage() {
             <td className="whitespace-nowrap px-3 py-3"><span className="font-semibold">{row.rank}</span>{row.previousRank === null && previousRange ? <span className="ml-2 text-xs font-medium text-[#87918b]">New</span> : <Change value={row.previousRank === null ? null : row.previousRank - row.rank} lowerIsBetter />}</td>
             <td className="px-3 py-3 font-semibold">{brandDisplayName(row.brand_name, row.website)}</td>
             <td className="max-w-[260px] px-3 py-3">{row.website ? <a href={row.website} target="_blank" rel="noreferrer" title={row.website} className="break-all text-[var(--green)] hover:underline">{row.website}</a> : "—"}</td>
-            <td className="px-3 py-3 text-sm text-[#66736c]">{row.location === "Unknown" ? "Not available" : row.location}</td>
+            <td className="px-3 py-3 text-sm text-[#66736c]" title="The current records do not include verified brand address data">Not available</td>
             <td className="whitespace-nowrap px-3 py-3"><span className="font-semibold">{row.visibility === null ? "—" : row.visibility.toFixed(1) + "%"}</span><Change value={row.visibility === null || row.previousVisibility === null ? null : row.visibility - row.previousVisibility} suffix=" pp" /></td>
             <td className="whitespace-nowrap px-3 py-3"><span className="font-semibold">{row.citations.toLocaleString()}</span><Change value={row.previousCitations === null ? null : row.citations - row.previousCitations} /></td>
           </tr>)}
           {!loading && !filtered.length && <tr><td colSpan={6} className="px-3 py-10 text-center text-sm text-[#66736c]">{term ? "No brands match your search." : "No brands found for these filters."}</td></tr>}</tbody>
         </table></div>
         {!loading && filtered.length > 10 && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] pt-4"><p className="text-sm text-[#66736c]">Showing {visible.length.toLocaleString()} of {filtered.length.toLocaleString()} brands</p><button type="button" onClick={() => setExpanded((value) => !value)} className="ops-filter-btn">{expanded ? "Show first 10" : `Show all ${filtered.length.toLocaleString()} brands`}</button></div>}
-        <p className="mt-4 text-xs text-[#87918b]">The current source records do not consistently store each brand’s state or country; location shows the tracked dataset location, or Not available. A dash means a visibility score was not recorded for that brand in the selected data.</p>
+        <p className="mt-4 text-xs text-[#87918b]">Location filters select the tracking market used to collect the responses; verified state/country addresses for each brand are not stored yet. A dash means a visibility score was not recorded for that brand in the selected data.</p>
       </section>
     </div>
   </main>;
