@@ -182,7 +182,7 @@ async function callChatGPT(apiKey: string, prompt: string, project: Record<strin
         include: ["web_search_call.action.sources"],
         temperature: 0.2,
         input: [
-          { role: "system", content: [{ type: "input_text", text: system + (brand ? "\\nTracked brand context (use only if relevant): " + brand + (description ? " — " + description : "") + (domains ? ". Official domains: " + domains : "") : "") }] },
+          { role: "system", content: [{ type: "input_text", text: system + (brand ? "\nTracked brand context (use only if relevant): " + brand + (description ? " — " + description : "") + (domains ? ". Official domains: " + domains : "") : "") }] },
           { role: "user", content: [{ type: "input_text", text: prompt }] },
         ],
       }),
@@ -208,7 +208,7 @@ async function callChatGPT(apiKey: string, prompt: string, project: Record<strin
       }
     }
     const uniqueCitations = [...new Map(citations.filter(c => c.url.startsWith("http://") || c.url.startsWith("https://")).map(c => [c.url, c])).values()];
-    return { text: textParts.join("\\n\\n"), raw: payload, model: payload?.model ?? "gpt-4o-mini", citations: uniqueCitations };
+    return { text: textParts.join("\n\n"), raw: payload, model: payload?.model ?? "gpt-4o-mini", citations: uniqueCitations };
   } finally { clearTimeout(timeout); }
 }
 
@@ -328,7 +328,84 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
     }
   }
   await Promise.all(Array.from({ length: Math.min(5, tasks.length) }, () => worker()));
-  return results.filter((r): r is Record<string,unknown> => Boolean(r));
+  const completed = results.filter((r): r is Record<string,unknown> => Boolean(r));
+  // Entity extraction is deliberately separate from citation parsing: many AI answers
+  // mention providers without linking to them. Keep the provider payload untouched.
+  const succeeded = completed.filter((r) => r.status === "completed" && String(r.response_text ?? "").trim());
+  for (let offset = 0; offset < succeeded.length; offset += 10) {
+    const batch = succeeded.slice(offset, offset + 10);
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKeys.chatgpt },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          temperature: 0,
+          max_output_tokens: 6000,
+          input: [
+            { role: "system", content: [{ type: "input_text", text:
+              "Extract explicitly mentioned real-world organizations, brands, clinics, service providers, publishers, directories, and other named entities from each supplied AI response. Do not infer entities that are not stated. Do not treat generic service categories as entities. Preserve the exact name and provide only aliases grounded in the response. Evidence must be a short verbatim excerpt. Return ONLY a JSON array with one object per response_id, shaped as {response_id, entities:[{name,aliases,entity_type,evidence}]}. entity_type must be one of company, clinic, service_provider, publisher, directory, government, other. Include entities whether or not a URL is cited. Never infer an official domain or competitor status."
+            }] },
+            { role: "user", content: [{ type: "input_text", text: JSON.stringify(batch.map((r, i) => ({
+              response_id: String(r.prompt_id),
+              topic: String(r.topic ?? "General"),
+              prompt: String(r.prompt ?? ""),
+              response: String(r.response_text ?? "").slice(0, 9000),
+            }))) }] },
+          ],
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(payload?.error?.message ?? "Entity extraction failed").slice(0, 250));
+      const output = (Array.isArray(payload?.output) ? payload.output : [])
+        .flatMap((item: Record<string, unknown>) => item.type === "message" && Array.isArray(item.content)
+          ? item.content.filter((content: Record<string, unknown>) => content.type === "output_text").map((content: Record<string, unknown>) => String(content.text ?? ""))
+          : []).join("\n").trim();
+      const jsonText = output.match(/\[[\s\S]*\]/)?.[0];
+      if (!jsonText) throw new Error("ENTITY_EXTRACTION_INVALID_JSON");
+      const parsed = JSON.parse(jsonText);
+      if (!Array.isArray(parsed)) throw new Error("ENTITY_EXTRACTION_INVALID_SHAPE");
+      const allowedIds = new Set(batch.map((r) => String(r.prompt_id)));
+      const byId = new Map<string, Array<Record<string, unknown>>>();
+      for (const item of parsed) {
+        if (!item || typeof item !== "object" || !allowedIds.has(String(item.response_id)) || !Array.isArray(item.entities)) continue;
+        const entities = item.entities.filter((entity: unknown) => {
+          if (!entity || typeof entity !== "object") return false;
+          const e = entity as Record<string, unknown>;
+          return typeof e.name === "string" && e.name.trim().length > 1 &&
+            typeof e.evidence === "string" && e.evidence.trim().length > 0 &&
+            String(batch.find((r) => String(r.prompt_id) === String(item.response_id))?.response_text ?? "")
+              .toLocaleLowerCase().includes(String(e.evidence).trim().toLocaleLowerCase());
+        }).map((entity: Record<string, unknown>) => ({
+          name: String(entity.name).trim(),
+          aliases: [...new Set((Array.isArray(entity.aliases) ? entity.aliases : []).map(String).map((s: string) => s.trim()).filter((s: string) => s.length > 1))],
+          entity_type: ["company","clinic","service_provider","publisher","directory","government","other"].includes(String(entity.entity_type)) ? String(entity.entity_type) : "other",
+          evidence: String(entity.evidence).trim(),
+        }));
+        byId.set(String(item.response_id), entities);
+      }
+      for (const result of batch) {
+        result.response_analysis = {
+          status: "completed",
+          entities: byId.get(String(result.prompt_id)) ?? [],
+          extraction_model: payload?.model ?? "gpt-4o-mini",
+          extracted_at: new Date().toISOString(),
+        };
+      }
+    } catch (error) {
+      // Preserve raw results and make extraction failure explicit; never silently
+      // represent a failed entity extraction as a successful empty result.
+      for (const result of batch) result.response_analysis = {
+        status: "failed",
+        entities: [],
+        error: (error instanceof Error ? error.message : String(error)).slice(0, 250),
+      };
+    }
+  }
+  for (const result of completed) {
+    if (!result.response_analysis) result.response_analysis = { status: "not_run", entities: [] };
+  }
+  return completed;
 }
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -526,6 +603,7 @@ Deno.serve(async (req: Request) => {
       prompt_snapshot: r.prompt, raw_response: r.raw_response ?? { error: r.error_message }, response_text: r.response_text ?? null,
       response_status: r.status, error_message: r.error_message ?? null, run_id: runId,
       project_snapshot: { brand_domains: project.brand_domains ?? [], brand_terms: project.brand_terms ?? [], topics: project.topics ?? [], tracking_locations: project.tracking_locations ?? [project.tracking_market ?? "MY"], tracking_location: r.tracking_location ?? null },
+      response_analysis: r.response_analysis ?? { status: "not_run", entities: [] },
       brand_name_snapshot: String(project.brand_name ?? ""),
     }));
     const { error: rawError } = await admin.from("ai_responses").insert(rawRows);
