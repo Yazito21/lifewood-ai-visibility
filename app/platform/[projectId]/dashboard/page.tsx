@@ -7,20 +7,15 @@ import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
-import { malaysiaDateString, shiftDateString } from "@/lib/reporting-date";
+import { malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 
 type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null };
 type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
 type CompetitorCount = { topic: string; metric_date: string; competitor_count: number; visibility_rank: number };
 type RankSnapshot = Metric & { previousRank: number | null };
 
-const periods = ["Today", "Last 2 days", "Last 3 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"];
-function dateStart(period: string, customStart: string) {
-  const today = malaysiaDateString();
-  if (period === "Custom") return customStart || today;
-  const days = period === "Today" ? 0 : period === "Last 2 days" ? 1 : period === "Last 3 Days" ? 2 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : 36500;
-  return shiftDateString(today, -days);
-}
+const periods = REPORTING_PERIODS;
+function dateStart(period: string, customStart: string, customEnd = "") { return reportingDateRange(period, customStart, customEnd).start; }
 
 
 
@@ -67,7 +62,7 @@ export default function DashboardPage() {
       ? project.topics.filter((topic: unknown): topic is string => typeof topic === "string")
       : [];
     setTopics(topicList);
-    const start = dateStart(period, customStart);
+    const start = dateStart(period, customStart, customEnd);
     const end = period === "Custom" ? customEnd : malaysiaDateString();
     const [{ data: chartRows, error: metricsError }, { data: competitorRows, error: competitorError }] = await Promise.all([
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").eq("tracking_location", dataLocation).gte("metric_date", start).lte("metric_date", end).order("metric_date"),
