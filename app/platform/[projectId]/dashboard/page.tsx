@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, ExternalLink, RefreshCw, Play, Download } from "lucide-react";
+import { CalendarDays, ExternalLink, RefreshCw, Play, Download, Database } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
@@ -44,13 +44,28 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tracking, setTracking] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [canRunTracking, setCanRunTracking] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState("");
 
   async function load() {
     setLoading(true); setError("");
-    const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
+    const [{ data: project, error: projectError }, { data: authResult }] = await Promise.all([
+      supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single(),
+      supabase.auth.getUser(),
+    ]);
+    const currentUser = authResult.user;
+    if (currentUser) {
+      const [{ data: profile }, { data: member }] = await Promise.all([
+        supabase.from("profiles").select("role").eq("id", currentUser.id).maybeSingle(),
+        supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", currentUser.id).maybeSingle(),
+      ]);
+      setCanRunTracking(profile?.role === "superadmin" || profile?.role === "admin" ||
+        member?.role === "superadmin" || member?.role === "admin");
+    } else {
+      setCanRunTracking(false);
+    }
     const location = project?.tracking_market ?? "MY";
     const dataLocation = scope === "legacy" ? "LEGACY" : location;
     setTrackingLocation(location);
@@ -102,6 +117,32 @@ export default function DashboardPage() {
     setCompetitorCounts(counts);
     setPeriodRanks(ranks);
     setLoading(false);
+  }
+
+  async function backfillCompetitors() {
+    setBackfilling(true); setTrackingMessage(""); setError("");
+    try {
+      const { data, error } = await supabase.functions.invoke("backfill-direct-competitors", {
+        body: { project_id: projectId },
+      });
+      if (error) {
+        let message = error.message;
+        if (error.context instanceof Response) {
+          try {
+            const payload = await error.context.clone().json();
+            message = payload?.message || payload?.error || message;
+          } catch { /* use SDK message */ }
+        }
+        throw new Error(message);
+      }
+      if (data?.error) throw new Error(data.message || data.error);
+      setTrackingMessage("Historical competitor baseline rebuilt from " +
+        Number(data.stored_responses_reused ?? 0).toLocaleString() + " stored responses and " +
+        Number(data.stored_citations_reused ?? 0).toLocaleString() + " citations. No tracking run was started.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setBackfilling(false); }
   }
 
   async function runTracking() {
@@ -251,14 +292,15 @@ export default function DashboardPage() {
 
         {!loading && metrics.length > 0 && cardTopics.every((topic) => (competitorCounts[topic] ?? 0) === 0) && <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
           <p className="font-semibold">Direct competitor baseline is being initialized.</p>
-          <p className="mt-1">A successful tracking run will classify direct competitors by business line and backfill available historical observations. Rank cards will appear once that baseline is available.</p>
+          <p className="mt-1">Use “Rebuild Competitor History” to classify the competitors in your stored responses and citations. This does not start a new tracking run.</p>
         </div>}
 
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest ranking, score and movement within the selected period.</p></div>
-            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking || exporting || scope === "legacy"} title={scope === "legacy" ? "Switch to current location to run tracking." : undefined} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
+            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={backfillCompetitors} disabled={backfilling || tracking || exporting || loading} className="platform-btn disabled:opacity-50">{backfilling ? <RefreshCw size={14} className="animate-spin" /> : <Database size={14} />}{backfilling ? "Rebuilding History…" : "Rebuild Competitor History"}</button>}{canRunTracking && <button onClick={runTracking} disabled={tracking || backfilling || exporting || scope === "legacy"} title={scope === "legacy" ? "Switch to current location to run tracking." : undefined} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || backfilling || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || backfilling || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
+          {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
               {cardTopics.map((topic) => {
