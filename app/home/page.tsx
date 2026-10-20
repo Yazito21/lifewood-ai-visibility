@@ -5,7 +5,7 @@ import { ArrowRight, FolderKanban, LogOut, Plus, ShieldCheck, Trash2, X } from "
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-type Project={id:string;brand_name:string;brand_description:string|null;brand_logo_url:string|null};
+type Project={id:string;brand_name:string;brand_description:string|null;brand_logo_url:string|null;tracking_market:string};
 
 export default function ProjectsPage(){
   const router=useRouter();
@@ -28,14 +28,14 @@ export default function ProjectsPage(){
     const {data:profile,error:profileError}=await supabase.from("profiles").select("role").eq("id",user.id).single();
     if(profileError||!profile){setError("Your account profile could not be loaded.");setLoading(false);return}
     setRole(profile.role);
-    const {data,error}=await supabase.from("projects").select("id,brand_name,brand_description,brand_logo_url").order("brand_name");
+    const {data,error}=await supabase.from("projects").select("id,brand_name,brand_description,brand_logo_url,tracking_market").order("brand_name");
     if(error){setError(error.message);setLoading(false);return}
     setProjects(data??[]);
     const ids=(data??[]).map(x=>x.id);
     if(ids.length){
-      const {data:metrics}=await supabase.from("visibility_daily").select("project_id,visibility_rank,visibility_score,metric_date").eq("llm_provider","Overall").in("project_id",ids).order("metric_date",{ascending:false});
+      const {data:metrics}=await supabase.from("visibility_daily").select("project_id,tracking_location,visibility_rank,visibility_score,metric_date").eq("llm_provider","Overall").in("project_id",ids).order("metric_date",{ascending:false});
       const map:Record<string,{rank:number|null;score:number|null}>={};
-      for(const m of metrics??[]){if(!map[m.project_id]) map[m.project_id]={rank:m.visibility_rank,score:m.visibility_score};}
+      for(const m of metrics??[]){const project=(data??[]).find(x=>x.id===m.project_id);if(project&&m.tracking_location===project.tracking_market&&!map[m.project_id]) map[m.project_id]={rank:m.visibility_rank,score:m.visibility_score};}
       setLatest(map);
     } else setLatest({});
     setLoading(false);
