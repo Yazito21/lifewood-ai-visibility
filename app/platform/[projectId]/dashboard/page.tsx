@@ -10,7 +10,7 @@ import { supabase } from "@/lib/supabase";
 
 type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null };
 type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
-type CompetitorCount = { topic: string; metric_date: string; competitor_count: number };
+type CompetitorCount = { topic: string; metric_date: string; competitor_count: number; visibility_rank: number };
 type RankSnapshot = Metric & { previousRank: number | null };
 
 const periods = ["Today", "Last 2 days", "Last 3 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"];
@@ -22,7 +22,7 @@ function localDateString(date = new Date()) {
 function dateStart(period: string, customStart: string) {
   if (period === "Custom") return customStart || localDateString();
   const now = new Date(); const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const days = period === "Today" ? 0 : period === "Last 2 days" ? 1 : period === "Last 3 Days" ? 2 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : 3650;
+  const days = period === "Today" ? 0 : period === "Last 2 days" ? 1 : period === "Last 3 Days" ? 2 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : 36500;
   d.setDate(d.getDate() - days);
   return localDateString(d);
 }
@@ -36,6 +36,7 @@ export default function DashboardPage() {
   const [scope, setScope] = useState<"current" | "legacy">("current");
   const [citationsByTopic, setCitationsByTopic] = useState<Record<string, AggregatedCitation[]>>({});
   const [competitorCounts, setCompetitorCounts] = useState<Record<string, number>>({});
+  const [periodRanks, setPeriodRanks] = useState<Record<string, number>>({});
   const [topics, setTopics] = useState<string[]>([]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
@@ -61,7 +62,7 @@ export default function DashboardPage() {
     const end = period === "Custom" ? customEnd : localDateString();
     const [{ data: chartRows, error: metricsError }, { data: competitorRows, error: competitorError }] = await Promise.all([
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").eq("tracking_location", dataLocation).gte("metric_date", start).lte("metric_date", end).order("metric_date"),
-      supabase.rpc("get_competitor_counts_for_period", { p_project_id: projectId, p_start_date: start, p_end_date: end, p_tracking_location: dataLocation }),
+      supabase.rpc("get_direct_competitor_metrics_for_period", { p_project_id: projectId, p_start_date: start, p_end_date: end, p_tracking_location: dataLocation }),
     ]);
 
     // Aggregate citations in Postgres, using the same RPC and brand-related filter as the Citations page.
@@ -93,10 +94,13 @@ export default function DashboardPage() {
     if (firstError) setError(firstError.message || "Unable to load dashboard data.");
     setMetrics(chartRows ?? []); setCitationsByTopic(citations);
     const counts: Record<string, number> = {};
+    const ranks: Record<string, number> = {};
     for (const row of (competitorRows ?? []) as CompetitorCount[]) {
       counts[row.topic] = Number(row.competitor_count) || 0;
+      ranks[row.topic] = Number(row.visibility_rank) || 1;
     }
     setCompetitorCounts(counts);
+    setPeriodRanks(ranks);
     setLoading(false);
   }
 
@@ -253,7 +257,7 @@ export default function DashboardPage() {
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
               {cardTopics.map((topic) => {
-                const snapshot = latestByTopic.get(topic); const currentRank = snapshot?.visibility_rank ?? null; const previousRank = snapshot?.previousRank ?? null;
+                const snapshot = latestByTopic.get(topic); const currentRank = periodRanks[topic] ?? snapshot?.visibility_rank ?? null; const previousRank = snapshot?.previousRank ?? null;
                 const change = currentRank !== null && previousRank !== null ? previousRank - currentRank : null;
                 return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (topic === "Overall" ? "platform-card-overall" : "")}>
                   <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (topic === "Overall" ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>{snapshot?.metric_date ?? "No data"}</span></div>
