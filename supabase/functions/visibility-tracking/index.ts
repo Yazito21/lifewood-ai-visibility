@@ -617,11 +617,13 @@ Deno.serve(async (req: Request) => {
           const domain = normalizedHostLabel(String(citation.url ?? ""));
           const date = String(citation.metric_date ?? "");
           if (!domain || !date) continue;
-          const dateKey = topic + "|" + domain;
-          const first = historicalFirstSeen.get(dateKey);
-          const last = historicalLastSeen.get(dateKey);
-          if (!first || date < first) historicalFirstSeen.set(dateKey, date);
-          if (!last || date > last) historicalLastSeen.set(dateKey, date);
+          for (const entityTopic of new Set([topic, "Overall"])) {
+            const dateKey = entityTopic + "|" + domain;
+            const first = historicalFirstSeen.get(dateKey);
+            const last = historicalLastSeen.get(dateKey);
+            if (!first || date < first) historicalFirstSeen.set(dateKey, date);
+            if (!last || date > last) historicalLastSeen.set(dateKey, date);
+          }
           if (!citation.is_brand_related && !isGenericCitationDomain(domain) &&
             !ownedDomains.some((owned) => domain === owned || domain.endsWith("." + owned))) {
             const topicCandidates = classifierCandidatesByTopic.get(topic) ?? new Map();
