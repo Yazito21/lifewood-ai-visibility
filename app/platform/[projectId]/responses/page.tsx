@@ -193,7 +193,7 @@ export default function ResponsesPage() {
           <p className="page-description mt-2">Browse the full AI answers captured by tracking runs, inspect the raw provider payload, and export responses for a selected period.</p>
         </header>
 
-        <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
+        <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={(nextScope) => { setScope(nextScope); setRows([]); setSearched(false); setError(""); }} />
 
         <section className="ops-card p-5 sm:p-6">
           <h2 className="mb-4 text-sm font-semibold">Filter responses</h2>
