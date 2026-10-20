@@ -568,7 +568,7 @@ Deno.serve(async (req: Request) => {
       const brandCount = succeeded.filter((r) => r.brand_mentioned).length;
       const competitors = new Map<string, number>();
       for (const result of succeeded) for (const host of result.competitor_hosts as string[]) competitors.set(host, (competitors.get(host) ?? 0) + 1);
-      const brandRank = 1 + [...competitors.values()].filter((count) => count > brandCount).length;
+      const brandRank = competitors.size ? 1 + [...competitors.values()].filter((count) => count > brandCount).length : null;
       const allCitations = succeeded.flatMap((r) => (r.citations as Array<Record<string,unknown>>).map((c) => ({ ...c, topic: r.topic, prompt: r.prompt, prompt_number: r.prompt_number, provider: r.provider })));
       return json({
         mode, project: { brand_name: project.brand_name }, providers: providerIds,
@@ -681,6 +681,35 @@ Deno.serve(async (req: Request) => {
           page_name: String(citation.page_name ?? ""),
           citations: (previous?.citations ?? 0) + 1,
         });
+      }
+      // Search-result sources are not citations, but can help identify the domain
+      // of an entity that the answer explicitly mentions. Only use a source when
+      // its title/domain clearly matches an extracted entity name or alias.
+      const extractedEntities = Array.isArray((result.response_analysis as Record<string, unknown> | undefined)?.entities)
+        ? (result.response_analysis as Record<string, unknown>).entities as Array<Record<string, unknown>>
+        : [];
+      const researchSources = Array.isArray(result.research_sources)
+        ? result.research_sources as Array<Record<string, unknown>>
+        : [];
+      for (const entity of extractedEntities) {
+        const names = [String(entity.name ?? ""), ...(Array.isArray(entity.aliases) ? entity.aliases.map(String) : [])]
+          .map((name) => name.trim().toLocaleLowerCase()).filter((name) => name.length > 2);
+        if (!names.length) continue;
+        for (const source of researchSources) {
+          const url = String(source.url ?? "");
+          const domain = normalizedHostLabel(String(url));
+          const sourceLabel = (String(source.title ?? "") + " " + domain.replace(/[._-]+/g, " ")).toLocaleLowerCase();
+          if (!domain || isGenericCitationDomain(domain) ||
+            ownedDomains.some((owned) => domain === owned || domain.endsWith("." + owned)) ||
+            !names.some((name) => sourceLabel.includes(name) || name.includes(domain.split(".")[0].replace(/[-_]+/g, " ")))) continue;
+          const previous = topicCandidates.get(domain);
+          topicCandidates.set(domain, {
+            domain,
+            brand_name: String(entity.name),
+            page_name: String(source.title ?? titleFromUrl(url)),
+            citations: (previous?.citations ?? 0) + 1,
+          });
+        }
       }
       classifierCandidatesByTopic.set(resultTopic, topicCandidates);
     }
@@ -962,7 +991,7 @@ Deno.serve(async (req: Request) => {
       const averagePosition = targetPositionSamples > 0
         ? Math.round(targetPositionTotal / targetPositionSamples * 100) / 100
         : null;
-      const visibilityRank = 1 + [...presenceCounts.entries()]
+      const visibilityRank = entities.length <= 1 ? null : 1 + [...presenceCounts.entries()]
         .filter(([key, count]) => key !== brandKey && count > brandResponseCount).length;
       const shareOfVoiceRank = 1 + [...mentionCounts.entries()]
         .filter(([key, count]) => key !== brandKey && count > brandMentions).length;
