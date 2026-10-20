@@ -108,7 +108,7 @@ UPDATE public.visibility_daily vd
 SET visibility_rank = NULL,
     share_of_voice_rank = NULL,
     average_position_rank = NULL
-WHERE vd.llm_provider = 'Overall'
+WHERE vd.llm_provider IN ('Overall', 'chatgpt')
   AND NOT EXISTS (
     SELECT 1
     FROM public.direct_competitors dc
