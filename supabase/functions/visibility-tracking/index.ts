@@ -211,6 +211,72 @@ async function callChatGPT(apiKey: string, prompt: string, project: Record<strin
     return { text: textParts.join("\\n\\n"), raw: payload, model: payload?.model ?? "gpt-4o-mini", citations: uniqueCitations };
   } finally { clearTimeout(timeout); }
 }
+
+type ClassifiedCompetitor = { domain: string; brand_name: string; aliases: string[] };
+
+async function classifyDirectCompetitors(
+  apiKey: string,
+  project: Record<string, unknown>,
+  topic: string,
+  candidates: Array<{ domain: string; brand_name: string; page_name: string; citations: number }>,
+): Promise<ClassifiedCompetitor[]> {
+  if (!candidates.length) return [];
+  const unique = [...new Map(candidates.map((item) => [item.domain, item])).values()];
+  const chunks: typeof unique[] = [];
+  for (let i = 0; i < unique.length; i += 100) chunks.push(unique.slice(i, i + 100));
+  const accepted: ClassifiedCompetitor[] = [];
+  for (const chunk of chunks) {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0,
+        max_output_tokens: 3500,
+        input: [
+          { role: "system", content: [{ type: "input_text", text:
+            "You classify cited websites as direct business competitors. Return ONLY a valid JSON array. Include a website only when it represents a real company/provider offering the same or a closely substitutable service as the tracked brand in the specified business line/topic. Exclude publishers, journals, reference/education sites, government/health authorities, directories, review sites, marketplaces, general informational websites, customers, suppliers, and unrelated businesses. For a clinic, include other clinics/providers offering comparable clinical services, not health publishers such as Healthline or PubMed. For an AI data company, include AI data collection, annotation, AI content, or AEO/GEO service providers relevant to the topic, not AI news sites or general technology publishers. Use only domains supplied in the candidate list; never invent competitors. Output objects shaped as {domain, brand_name, aliases}, where aliases is an array of short names or alternate spellings grounded in the supplied candidate. If uncertain, exclude the candidate."
+          }] },
+          { role: "user", content: [{ type: "input_text", text: JSON.stringify({
+            tracked_brand: project.brand_name,
+            tracked_brand_description: project.brand_description,
+            tracked_brand_domains: project.brand_domains,
+            business_line_topic: topic,
+            candidates: chunk,
+          }) }] },
+        ],
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(String(payload?.error?.message ?? "Competitor classification failed").slice(0, 300));
+    const output = (Array.isArray(payload?.output) ? payload.output : [])
+      .flatMap((item: Record<string, unknown>) => item.type === "message" && Array.isArray(item.content)
+        ? item.content.filter((content: Record<string, unknown>) => content.type === "output_text").map((content: Record<string, unknown>) => String(content.text ?? ""))
+        : []).join("\n").trim();
+    const jsonText = output.match(/\[[\s\S]*\]/)?.[0];
+    if (!jsonText) continue;
+    let parsed: unknown;
+    try { parsed = JSON.parse(jsonText); } catch { continue; }
+    if (!Array.isArray(parsed)) continue;
+    const allowed = new Map(chunk.map((item) => [item.domain, item]));
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const raw = item as Record<string, unknown>;
+      const domain = normalizedHostLabel(String(raw.domain ?? ""));
+      const candidate = allowed.get(domain);
+      if (!candidate || !domain || isGenericCitationDomain(domain)) continue;
+      const name = String(raw.brand_name ?? candidate.brand_name ?? "").trim();
+      if (!name) continue;
+      const aliases = [...new Set([
+        name, domain, domain.split(".")[0].replace(/[-_]+/g, " "),
+        ...(Array.isArray(raw.aliases) ? raw.aliases.map(String) : []),
+      ].map((value) => value.trim()).filter((value) => value.length > 1))];
+      accepted.push({ domain, brand_name: name, aliases });
+    }
+  }
+  return [...new Map(accepted.map((item) => [item.domain, item])).values()];
+}
+
 async function processPrompts(prompts: Array<Record<string, unknown>>, providers: string[], project: Record<string, unknown>, apiKeys: Record<string,string>, trackingLocations: string[]) {
   const tasks: Array<{ provider: string; prompt: Record<string,unknown>; trackingLocation: string }> = [];
   for (const provider of providers) {
@@ -449,6 +515,9 @@ Deno.serve(async (req: Request) => {
       if (citationsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: citationsDeleteError.message }, 500);
       const { error: competitorsDeleteError } = await admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
       if (competitorsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorsDeleteError.message }, 500);
+      // Remove only the replaceable daily observations; keep the append-only competitor registry intact.
+      const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
+      if (directObservationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: directObservationDeleteError.message }, 500);
       const { error: metricsDeleteError } = await admin.from("visibility_daily").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
       if (metricsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsDeleteError.message }, 500);
     }
@@ -496,63 +565,270 @@ Deno.serve(async (req: Request) => {
       const { error } = await admin.from("citations").upsert(citationRows, { onConflict: "project_id,metric_date,topic,llm_provider,url,tracking_location" });
       if (error) console.error("CITATIONS_WRITE_FAILED", error.message);
     }
-    const competitorRows = [
-      ...[...competitorMap.entries()].map(([host, count]) => ({
-        project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0], topic: "Overall", llm_provider: "chatgpt",
-        brand_name: host, website: "https://" + host,
-        visibility_score: Math.round(count / Math.max(succeeded.length, 1) * 1000) / 10,
-        citation_count: count,
-      })),
-      ...[...competitorTopicMap.entries()].map(([key, count]) => {
-        const [topic, host] = JSON.parse(key) as [string, string];
-        const topicPromptCount = succeeded.filter((r) => String(r.topic ?? "General") === topic).length;
+
+    // Bootstrap the append-only registry from existing citation history exactly once.
+    // This lets historical reporting periods continue to work after the new model is deployed.
+    const { data: registryProbe, error: registryProbeError } = await admin
+      .from("direct_competitors").select("id").eq("project_id", projectId).limit(1);
+    if (registryProbeError) throw new Error("DIRECT_COMPETITOR_REGISTRY_READ_FAILED: " + registryProbeError.message);
+    const needsCompetitorBootstrap = !(registryProbe ?? []).length;
+    const historicalFirstSeen = new Map<string, string>();
+    const historicalLastSeen = new Map<string, string>();
+    const historicalCitationCounts = new Map<string, number>();
+
+    // Classify citation candidates against the tracked brand's business line.
+    // The registry is append-only: new domains are added, aliases are enriched,
+    // and existing competitors are never removed when a later run omits them.
+    const classifierCandidatesByTopic = new Map<string, Map<string, { domain: string; brand_name: string; page_name: string; citations: number }>>();
+    const ownedDomains = (Array.isArray(project.brand_domains) ? project.brand_domains : [])
+      .map((value) => normalizedHostLabel(String(value))).filter(Boolean);
+    for (const result of succeeded) {
+      const resultTopic = String(result.topic ?? "General");
+      const topicCandidates = classifierCandidatesByTopic.get(resultTopic) ?? new Map();
+      for (const citation of result.citations as Array<Record<string, unknown>>) {
+        if (citation.is_brand_related) continue;
+        const domain = normalizedHostLabel(String(citation.domain ?? citation.url ?? ""));
+        if (!domain || isGenericCitationDomain(domain) ||
+          ownedDomains.some((owned) => domain === owned || domain.endsWith("." + owned))) continue;
+        const previous = topicCandidates.get(domain);
+        topicCandidates.set(domain, {
+          domain,
+          brand_name: String(citation.brand_name ?? titleFromUrl(String(citation.url ?? ""))),
+          page_name: String(citation.page_name ?? ""),
+          citations: (previous?.citations ?? 0) + 1,
+        });
+      }
+      classifierCandidatesByTopic.set(resultTopic, topicCandidates);
+    }
+
+    if (needsCompetitorBootstrap) {
+      for (let offset = 0; ; offset += 1000) {
+        const { data: historicalCitations, error: historyError } = await admin
+          .from("citations")
+          .select("topic,url,brand_name,page_name,is_brand_related,frequency,metric_date,tracking_location")
+          .eq("project_id", projectId)
+          .eq("tracking_location", trackingLocationsForRun[0])
+          .order("metric_date", { ascending: true })
+          .range(offset, offset + 999);
+        if (historyError) throw new Error("DIRECT_COMPETITOR_HISTORY_READ_FAILED: " + historyError.message);
+        const rows = historicalCitations ?? [];
+        for (const citation of rows as Array<Record<string, unknown>>) {
+          const topic = String(citation.topic ?? "General");
+          const domain = normalizedHostLabel(String(citation.url ?? ""));
+          const date = String(citation.metric_date ?? "");
+          if (!domain || !date) continue;
+          for (const entityTopic of new Set([topic, "Overall"])) {
+            const dateKey = entityTopic + "|" + domain;
+            const first = historicalFirstSeen.get(dateKey);
+            const last = historicalLastSeen.get(dateKey);
+            if (!first || date < first) historicalFirstSeen.set(dateKey, date);
+            if (!last || date > last) historicalLastSeen.set(dateKey, date);
+          }
+          if (!citation.is_brand_related && !isGenericCitationDomain(domain) &&
+            !ownedDomains.some((owned) => domain === owned || domain.endsWith("." + owned))) {
+            const topicCandidates = classifierCandidatesByTopic.get(topic) ?? new Map();
+            const previous = topicCandidates.get(domain);
+            topicCandidates.set(domain, {
+              domain,
+              brand_name: String(citation.brand_name ?? titleFromUrl(String(citation.url ?? ""))),
+              page_name: String(citation.page_name ?? ""),
+              citations: (previous?.citations ?? 0) + Number(citation.frequency ?? 1),
+            });
+            classifierCandidatesByTopic.set(topic, topicCandidates);
+          }
+          if (!citation.is_brand_related && !isGenericCitationDomain(domain)) {
+            const citationKey = [date, topic, domain].join("|");
+            historicalCitationCounts.set(citationKey, (historicalCitationCounts.get(citationKey) ?? 0) + Number(citation.frequency ?? 1));
+          }
+        }
+        if (rows.length < 1000) break;
+      }
+    }
+
+    const discoveredByTopic = new Map<string, Map<string, ClassifiedCompetitor>>();
+    for (const topic of topicNames) {
+      const candidates = [...(classifierCandidatesByTopic.get(topic)?.values() ?? [])];
+      try {
+        const classified = await classifyDirectCompetitors(apiKeys.chatgpt, project, topic, candidates);
+        discoveredByTopic.set(topic, new Map(classified.map((item) => [item.domain, item])));
+      } catch (classificationError) {
+        console.error("DIRECT_COMPETITOR_CLASSIFICATION_FAILED", topic,
+          classificationError instanceof Error ? classificationError.message : String(classificationError));
+        discoveredByTopic.set(topic, new Map());
+      }
+    }
+
+    const discoveredEntities = new Map<string, { topic: string; domain: string; brand_name: string; website: string; aliases: string[] }>();
+    for (const [topic, competitorsForTopic] of discoveredByTopic) {
+      for (const item of competitorsForTopic.values()) {
+        const topicsToSave = [topic, "Overall"];
+        for (const entityTopic of topicsToSave) {
+          const key = entityTopic + "|" + item.domain;
+          const previous = discoveredEntities.get(key);
+          discoveredEntities.set(key, {
+            topic: entityTopic, domain: item.domain,
+            brand_name: previous?.brand_name ?? item.brand_name,
+            website: "https://" + item.domain,
+            aliases: [...new Set([...(previous?.aliases ?? []), ...item.aliases])],
+          });
+        }
+      }
+    }
+
+    const { data: existingCompetitors, error: existingCompetitorsError } = await admin
+      .from("direct_competitors")
+      .select("id,topic,normalized_domain,brand_name,website,aliases,first_seen_date,last_seen_date")
+      .eq("project_id", projectId);
+    if (existingCompetitorsError) throw new Error("DIRECT_COMPETITOR_REGISTRY_READ_FAILED: " + existingCompetitorsError.message);
+    const existingByKey = new Map((existingCompetitors ?? []).map((item: Record<string, unknown>) =>
+      [String(item.topic) + "|" + String(item.normalized_domain), item]));
+    const registryUpserts = [...discoveredEntities.values()].map((item) => {
+      const existing = existingByKey.get(item.topic + "|" + item.domain) as Record<string, unknown> | undefined;
+      return {
+        project_id: projectId, topic: item.topic, normalized_domain: item.domain,
+        brand_name: item.brand_name, website: item.website,
+        aliases: [...new Set([
+          ...(Array.isArray(existing?.aliases) ? existing.aliases.map(String) : []),
+          ...item.aliases,
+        ])],
+        first_seen_date: String(existing?.first_seen_date ?? historicalFirstSeen.get(item.topic + "|" + item.domain) ?? day),
+        last_seen_date: (() => {
+          const discoveredLast = historicalLastSeen.get(item.topic + "|" + item.domain) ?? day;
+          const existingLast = String(existing?.last_seen_date ?? "");
+          return [discoveredLast, existingLast].filter(Boolean).sort().at(-1) ?? day;
+        })(),
+      };
+    });
+    if (registryUpserts.length) {
+      const { error } = await admin.from("direct_competitors").upsert(registryUpserts, {
+        onConflict: "project_id,topic,normalized_domain",
+      });
+      if (error) throw new Error("DIRECT_COMPETITOR_REGISTRY_WRITE_FAILED: " + error.message);
+    }
+    const { data: registryRows, error: registryReadError } = await admin
+      .from("direct_competitors")
+      .select("id,topic,normalized_domain,brand_name,website,aliases")
+      .eq("project_id", projectId)
+      .in("topic", ["Overall", ...topicNames]);
+    if (registryReadError) throw new Error("DIRECT_COMPETITOR_REGISTRY_READ_FAILED: " + registryReadError.message);
+
+    const entitiesByTopic = new Map<string, Array<{ id: string; key: string; domain: string; brand_name: string; website: string; aliases: string[] }>>();
+    for (const topic of ["Overall", ...topicNames]) {
+      const rows = (registryRows ?? []).filter((row: Record<string, unknown>) => String(row.topic) === topic);
+      entitiesByTopic.set(topic, rows.map((row: Record<string, unknown>) => ({
+        id: String(row.id), key: String(row.normalized_domain), domain: String(row.normalized_domain),
+        brand_name: String(row.brand_name), website: String(row.website ?? ""),
+        aliases: [...new Set([
+          String(row.brand_name ?? ""), String(row.normalized_domain ?? ""),
+          String(row.normalized_domain ?? "").split(".")[0].replace(/[-_]+/g, " "),
+          ...(Array.isArray(row.aliases) ? row.aliases.map(String) : []),
+        ].map((value) => value.trim()).filter((value) => value.length > 1))],
+      })));
+    }
+
+    if (needsCompetitorBootstrap) {
+      const { data: promptRows, error: promptRowsError } = await admin
+        .from("prompts").select("id,topic").eq("project_id", projectId);
+      if (promptRowsError) throw new Error("DIRECT_COMPETITOR_HISTORY_READ_FAILED: " + promptRowsError.message);
+      const promptTopicById = new Map((promptRows ?? []).map((row: Record<string, unknown>) => [String(row.id), String(row.topic ?? "General")]));
+      const historicalGroups = new Map<string, Array<{ topic: string; text: string }>>();
+      for (let offset = 0; ; offset += 1000) {
+        const { data: historicalResponses, error: responseHistoryError } = await admin
+          .from("ai_responses")
+          .select("prompt_id,captured_at,response_text,tracking_location")
+          .eq("project_id", projectId).eq("tracking_location", trackingLocationsForRun[0])
+          .eq("response_status", "completed").order("captured_at", { ascending: true })
+          .range(offset, offset + 999);
+        if (responseHistoryError) throw new Error("DIRECT_COMPETITOR_HISTORY_READ_FAILED: " + responseHistoryError.message);
+        const rows = historicalResponses ?? [];
+        for (const response of rows as Array<Record<string, unknown>>) {
+          const topic = promptTopicById.get(String(response.prompt_id)) ?? "General";
+          const parts = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
+          }).formatToParts(new Date(String(response.captured_at)));
+          const date = `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}-${parts.find((part) => part.type === "day")?.value}`;
+          const key = date + "|" + topic;
+          const group = historicalGroups.get(key) ?? [];
+          group.push({ topic, text: String(response.response_text ?? "") });
+          historicalGroups.set(key, group);
+        }
+        if (rows.length < 1000) break;
+      }
+
+      const historicalObservationRows: Array<Record<string, unknown>> = [];
+      const historicalDates = [...new Set([...historicalGroups.keys()].map((key) => key.split("|")[0]))].sort();
+      for (const [groupKey, group] of historicalGroups) {
+        const [date, topic] = groupKey.split("|");
+        for (const entity of entitiesByTopic.get(topic) ?? []) {
+          const presenceCount = group.filter((response) => cachedTermMatches(
+            response, response.text, entity.aliases
+          ).count > 0).length;
+          const citationCount = historicalCitationCounts.get([date, topic, entity.domain].join("|")) ?? 0;
+          historicalObservationRows.push({
+            project_id: projectId, competitor_id: entity.id, metric_date: date,
+            tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
+            presence_count: presenceCount, response_count: group.length, citation_count: citationCount,
+          });
+        }
+      }
+      // Overall is the union of the brand's business lines; count each competitor once per date.
+      for (const date of historicalDates) {
+        const subset = [...historicalGroups.entries()]
+          .filter(([key]) => key.startsWith(date + "|"))
+          .flatMap(([, values]) => values);
+        for (const entity of entitiesByTopic.get("Overall") ?? []) {
+          const presenceCount = subset.filter((response) => cachedTermMatches(
+            response, response.text, entity.aliases
+          ).count > 0).length;
+          const citationCount = [...historicalCitationCounts.entries()].filter(([key]) => {
+            const [citationDate, , domain] = key.split("|");
+            return citationDate === date && domain === entity.domain;
+          }).reduce((sum, [, count]) => sum + count, 0);
+          historicalObservationRows.push({
+            project_id: projectId, competitor_id: entity.id, metric_date: date,
+            tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
+            presence_count: presenceCount, response_count: subset.length, citation_count: citationCount,
+          });
+        }
+      }
+      for (let offset = 0; offset < historicalObservationRows.length; offset += 500) {
+        const batch = historicalObservationRows.slice(offset, offset + 500);
+        const { error: backfillError } = await admin.from("direct_competitor_observations").upsert(batch, {
+          onConflict: "competitor_id,metric_date,tracking_location,llm_provider",
+        });
+        if (backfillError) throw new Error("DIRECT_COMPETITOR_HISTORY_BACKFILL_FAILED: " + backfillError.message);
+      }
+    }
+
+    const competitorRows = ["Overall", ...topicNames].flatMap((topic) => {
+      const subset = succeeded.filter((result) => topic === "Overall" || String(result.topic ?? "General") === topic);
+      return (entitiesByTopic.get(topic) ?? []).map((entity) => {
+        const mentions = subset.filter((result) => cachedTermMatches(
+          result, String(result.response_text ?? ""), entity.aliases
+        ).count > 0).length;
+        const citationCount = subset.reduce((sum, result) => sum + (result.citations as Array<Record<string, unknown>>)
+          .filter((citation) => normalizedHostLabel(String(citation.domain ?? citation.url ?? "")) === entity.domain).length, 0);
         return {
-          project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0], topic, llm_provider: "chatgpt",
-          brand_name: host, website: "https://" + host,
-          visibility_score: Math.round(count / Math.max(topicPromptCount, 1) * 1000) / 10,
-          citation_count: count,
+          project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0],
+          topic, llm_provider: "chatgpt", brand_name: entity.brand_name, website: entity.website,
+          visibility_score: Math.round(mentions / Math.max(subset.length, 1) * 1000) / 10,
+          citation_count: citationCount,
         };
-      }),
-    ];
+      });
+    });
     if (competitorRows.length) {
-      const { error } = await admin.from("competitors").upsert(competitorRows, { onConflict: "project_id,metric_date,topic,llm_provider,brand_name,tracking_location" });
+      const { error } = await admin.from("competitors").upsert(competitorRows, {
+        onConflict: "project_id,metric_date,topic,llm_provider,brand_name,tracking_location",
+      });
       if (error) console.error("COMPETITORS_WRITE_FAILED", error.message);
     }
 
     const brandName = String(project.brand_name ?? "Brand");
     const brandTerms = [brandName, ...(Array.isArray(project.brand_terms) ? project.brand_terms.map(String) : [])].filter(Boolean);
-
-    // Build a conservative list of identifiable competing brands from the non-owned
-    // citation names/domains observed in this run. Mentions are matched against the
-    // answer text, not inferred from citation frequency.
-    const competitorAliases = new Map<string, Set<string>>();
-    for (const result of succeeded) {
-      for (const citation of result.citations as Array<Record<string, unknown>>) {
-        if (citation.is_brand_related) continue;
-        const label = String(citation.brand_name ?? "").trim();
-        const domain = normalizedHostLabel(String(citation.domain ?? citation.url ?? ""));
-        if (isGenericCitationDomain(domain)) continue;
-        const stem = domain.split(".")[0]?.replace(/[-_]+/g, " ") ?? "";
-        const key = (label || stem || domain).toLocaleLowerCase();
-        if (!key) continue;
-        const aliases = competitorAliases.get(key) ?? new Set<string>();
-        if (label.length > 1) aliases.add(label);
-        if (domain.length > 1) aliases.add(domain);
-        if (stem.length > 1) aliases.add(stem);
-        competitorAliases.set(key, aliases);
-      }
-    }
-    const competitorEntities = [...competitorAliases.entries()].map(([key, aliases]) => ({
-      key,
-      aliases: [...aliases].filter((alias) => !brandTerms.some((term) => term.toLowerCase() === alias.toLowerCase())),
-    })).filter((entity) => entity.aliases.length > 0);
     const brandKey = "__tracked_brand__";
-    const entities = [
-      { key: brandKey, aliases: brandTerms },
-      ...competitorEntities,
-    ];
 
-    function analyzeSubset(subset: Array<Record<string, unknown>>) {
+    function analyzeSubset(subset: Array<Record<string, unknown>>, topic: string) {
+      const entities = [{ key: brandKey, aliases: brandTerms }, ...(entitiesByTopic.get(topic) ?? [])];
       const brandResponseCount = subset.filter((result) =>
         cachedTermMatches(result, String(result.response_text ?? ""), brandTerms).count > 0
       ).length;
@@ -614,18 +890,35 @@ Deno.serve(async (req: Request) => {
         : 1 + competitorAveragePositions.filter((item) => item.average! < averagePosition).length;
 
       return {
-        visibility_score: visibilityScore,
-        visibility_rank: visibilityRank,
-        share_of_voice_score: shareOfVoice,
-        share_of_voice_rank: shareOfVoiceRank,
-        average_position: averagePosition,
-        average_position_rank: averagePositionRank,
+        metrics: {
+          visibility_score: visibilityScore,
+          visibility_rank: visibilityRank,
+          share_of_voice_score: shareOfVoice,
+          share_of_voice_rank: shareOfVoiceRank,
+          average_position: averagePosition,
+          average_position_rank: averagePositionRank,
+        },
+        competitorPresence: Object.fromEntries([...presenceCounts.entries()].filter(([key]) => key !== brandKey)),
       };
     }
 
     for (const topic of ["Overall", ...topicNames]) {
       const subset = succeeded.filter((r) => topic === "Overall" || r.topic === topic);
-      const metrics = analyzeSubset(subset);
+      const { metrics, competitorPresence } = analyzeSubset(subset, topic);
+      const observations = (entitiesByTopic.get(topic) ?? []).map((entity) => ({
+        project_id: projectId, competitor_id: entity.id, metric_date: day,
+        tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
+        presence_count: Number(competitorPresence[entity.key] ?? 0),
+        response_count: subset.length,
+        citation_count: subset.reduce((sum, result) => sum + (result.citations as Array<Record<string, unknown>>)
+          .filter((citation) => normalizedHostLabel(String(citation.domain ?? citation.url ?? "")) === entity.domain).length, 0),
+      }));
+      if (observations.length) {
+        const { error: observationError } = await admin.from("direct_competitor_observations").upsert(observations, {
+          onConflict: "competitor_id,metric_date,tracking_location,llm_provider",
+        });
+        if (observationError) throw new Error("DIRECT_COMPETITOR_OBSERVATION_WRITE_FAILED: " + observationError.message);
+      }
       const row = {
         project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0], topic, llm_provider: "Overall",
         ...metrics,
