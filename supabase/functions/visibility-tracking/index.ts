@@ -301,8 +301,10 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         const terms = [brandName, ...(Array.isArray(project.brand_terms) ? project.brand_terms.map(String) : [])].filter(Boolean);
         const brandMentioned = containsTerm(text, terms);
         const responseCitations = Array.isArray(answer.citations) ? answer.citations : [];
-        const fallbackUrls = urlsIn(text).map((url) => ({ url, title: "", source: "response_text_url" }));
-        const citationCandidates = [...responseCitations, ...fallbackUrls];
+        // Inline URLs are retained as a separate signal, not promoted to citations:
+        // a URL appearing in prose is not proof that the answer cited that page.
+        const mentionedUrls = urlsIn(text);
+        const citationCandidates = responseCitations;
         const domains = Array.isArray(project.brand_domains) ? project.brand_domains.map((d) => String(d).toLowerCase().replace("https://","").replace("http://","").replace("www.","").split("/")[0]) : [];
         const citations = [...new Map(citationCandidates.filter((c) => c.url.startsWith("http://") || c.url.startsWith("https://")).map((c) => [c.url, c])).values()].map((source) => {
           const url = String(source.url);
@@ -315,7 +317,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
           prompt_id: prompt.id, prompt_number: prompt.prompt_number, prompt: String(prompt.prompt ?? ""), tracking_location: trackingLocation,
           topic: String(prompt.topic ?? "General"), language: String(prompt.language ?? "English"),
           provider, status: "completed", response_text: text, raw_response: answer.raw,
-          brand_mentioned: brandMentioned, citations, research_sources: answer.researchSources ?? [], competitor_hosts: competitorHosts,
+          brand_mentioned: brandMentioned, citations, research_sources: answer.researchSources ?? [], mentioned_urls: mentionedUrls, competitor_hosts: competitorHosts,
           model: answer.model, started_at: started, completed_at: new Date().toISOString(), usage: answer.raw?.usage ?? null,
         };
       } catch (error) {
@@ -403,6 +405,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
           status: "completed",
           entities: byId.get(String(result.prompt_id)) ?? [],
           research_sources: Array.isArray(result.research_sources) ? result.research_sources : [],
+          mentioned_urls: Array.isArray(result.mentioned_urls) ? result.mentioned_urls : [],
           extraction_model: payload?.model ?? "gpt-4o-mini",
           extracted_at: new Date().toISOString(),
         };
@@ -414,6 +417,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         status: "failed",
         entities: [],
         research_sources: Array.isArray(result.research_sources) ? result.research_sources : [],
+        mentioned_urls: Array.isArray(result.mentioned_urls) ? result.mentioned_urls : [],
         error: (error instanceof Error ? error.message : String(error)).slice(0, 250),
       };
     }
