@@ -45,8 +45,7 @@ async function decrypt(ciphertext: string, aad: string) {
 }
 function escapeRegex(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function containsTerm(text: string, terms: string[]) {
-  const normalized = text.toLocaleLowerCase();
-  return terms.some((term) => term.trim().length > 1 && normalized.includes(term.trim().toLocaleLowerCase()));
+  return summarizeTermMatches(text, terms).count > 0;
 }
 
 type MatchSummary = { count: number; firstStart: number | null };
@@ -374,10 +373,13 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         const entities = item.entities.filter((entity: unknown) => {
           if (!entity || typeof entity !== "object") return false;
           const e = entity as Record<string, unknown>;
-          return typeof e.name === "string" && e.name.trim().length > 1 &&
+          const responseText = String(batch.find((r) => String(r.prompt_id) === String(item.response_id))?.response_text ?? "");
+          const groundedNames = [String(e.name ?? ""), ...(Array.isArray(e.aliases) ? e.aliases.map(String) : [])]
+            .map((name) => name.trim()).filter((name) => name.length > 1);
+          return typeof e.name === "string" && e.name.trim().length > 1 && groundedNames.some((name) =>
+              responseText.toLocaleLowerCase().includes(name.toLocaleLowerCase())) &&
             typeof e.evidence === "string" && e.evidence.trim().length > 0 &&
-            String(batch.find((r) => String(r.prompt_id) === String(item.response_id))?.response_text ?? "")
-              .toLocaleLowerCase().includes(String(e.evidence).trim().toLocaleLowerCase());
+            responseText.toLocaleLowerCase().includes(String(e.evidence).trim().toLocaleLowerCase());
         }).map((entity: Record<string, unknown>) => ({
           name: String(entity.name).trim(),
           aliases: [...new Set((Array.isArray(entity.aliases) ? entity.aliases : []).map(String).map((s: string) => s.trim()).filter((s: string) => s.length > 1))],
