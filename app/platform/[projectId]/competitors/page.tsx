@@ -219,12 +219,12 @@ export default function LeaderboardsPage() {
   }, [projectId, start, end, topic, llms, scope, previousRange]);
 
   const currentRows = useMemo(() => rankBrands([
-    aggregateOwn(currentOwnMetrics),
-    ...aggregateCompetitors(currentCompetitorObservations),
+    aggregateOwnRow(currentOwnMetrics, projectName, projectWebsite),
+    ...aggregateCompetitorRows(directCompetitors, currentCompetitorObservations),
   ]), [projectName, projectWebsite, currentOwnMetrics, directCompetitors, currentCompetitorObservations]);
   const previousRows = useMemo(() => rankBrands([
-    aggregateOwn(previousOwnMetrics),
-    ...aggregateCompetitors(previousCompetitorObservations),
+    aggregateOwnRow(previousOwnMetrics, projectName, projectWebsite),
+    ...aggregateCompetitorRows(directCompetitors, previousCompetitorObservations),
   ]), [projectName, projectWebsite, previousOwnMetrics, directCompetitors, previousCompetitorObservations]);
   const previousByKey = useMemo(() => new Map(previousRows.map((row) => [row.key, row])), [previousRows]);
   const rows: RankedBrand[] = currentRows.map((row) => {
