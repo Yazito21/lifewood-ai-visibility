@@ -21,7 +21,7 @@ export default function CompetitorsPage() {
   const [scope, setScope] = useState<"current" | "legacy">("current");
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
-  const [llms, setLlms] = useState<string[]>([]);
+  const [llms, setLlms] = useState<string[]>(["chatgpt"]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState(localDateString());
@@ -48,6 +48,15 @@ export default function CompetitorsPage() {
       const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
       const location = project?.tracking_market ?? "MY";
       const dataLocation = scope === "legacy" ? "LEGACY" : location;
+      if (!llms.length) {
+        if (cancelled) return;
+        setTopics(project?.topics ?? []);
+        setTrackingLocation(location);
+        if (projectError) setError(projectError.message);
+        setAggregated([]);
+        setLoading(false);
+        return;
+      }
       const allRows: CompetitorRow[] = [];
       let fetchError: { message: string } | null = null;
       for (let offset = 0; ; offset += 1000) {
