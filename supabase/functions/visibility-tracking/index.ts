@@ -1085,11 +1085,12 @@ Deno.serve(async (req: Request) => {
       ...(extractionFailures ? [String(extractionFailures) + " response analysis item(s) failed"] : []),
       ...(classificationFailures.length ? [String(classificationFailures.length) + " topic competitor classification(s) failed"] : []),
     ];
-    await admin.from("tracking_runs").update({
+    const { error: runStatusWriteError } = await admin.from("tracking_runs").update({
       status, completed_prompts: succeeded.length, failed_prompts: failed.length,
       error_message: runIssues.length ? runIssues.join("; ") + "." : null,
       completed_at: new Date().toISOString(),
     }).eq("id", runId);
+    if (runStatusWriteError) throw new Error("TRACKING_RUN_STATUS_WRITE_FAILED: " + runStatusWriteError.message);
     return json({
       mode, run_id: runId, status, total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
       analysis_failures: extractionFailures,
