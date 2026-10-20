@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import {
   Activity, ArrowLeft, BarChart3, BookOpen, LayoutDashboard,
-  Menu, Settings, ShieldCheck, Users, UsersRound, X, FlaskConical, MessageSquareText,
+  Menu, Settings, ShieldCheck, UsersRound, X, FlaskConical, MessageSquareText, Trophy,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -24,7 +24,7 @@ const baseNav = [
   ["Dashboard", "", LayoutDashboard],
   ["Analytics", "/analytics", BarChart3],
   ["Citations", "/citations", BookOpen],
-  ["Competitors", "/competitors", Users],
+  ["Leaderboard", "/leaderboard", Trophy],
   ["Prompts", "/prompts", Activity],
   ["Responses", "/responses", MessageSquareText],
   ["Samples", "/samples", FlaskConical],
@@ -125,7 +125,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
     <div className="w-full border-b border-[var(--border)] bg-[var(--card)] shadow-[0_2px_12px_rgba(19,48,32,0.06)]">
       <nav className="mx-auto flex w-full max-w-[1500px] justify-start gap-1 overflow-x-auto px-2 py-1.5 sm:justify-center sm:px-5 lg:px-8" aria-label="Project navigation">
         {nav.map(([label, segment, Icon]) => {
-          const href = `/platform/${projectId}${segment}`;
+          const href = segment === "/leaderboard" ? segment : `/platform/${projectId}${segment}`;
           const active = pathname === href || (segment !== "" && pathname.startsWith(`${href}/`));
           return <Link
             key={segment || "dashboard"}
