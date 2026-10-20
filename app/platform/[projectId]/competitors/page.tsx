@@ -66,7 +66,7 @@ function numberValue(value: number | string | null | undefined) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? number : 0;
 }
-function rankBrands(rows: BrandMetric[]) {
+function aggregateCompetitorRows(directCompetitors: DirectCompetitor[], observations: DirectObservation[]): BrandMetric[] {\n  const byId = new Map<string, DirectObservation[]>();\n  for (const observation of observations) {\n    const bucket = byId.get(observation.competitor_id) ?? [];\n    bucket.push(observation);\n    byId.set(observation.competitor_id, bucket);\n  }\n  return directCompetitors.map((competitor) => {\n    const records = byId.get(competitor.id) ?? [];\n    const scores = records.filter((row) => numberValue(row.response_count) > 0).map((row) => 100 * numberValue(row.presence_count) / numberValue(row.response_count));\n    return { key: competitor.normalized_domain, brand_name: competitor.brand_name || competitor.normalized_domain, website: rootWebsite(competitor.website || competitor.normalized_domain), visibility_score: scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : 0, citations: records.reduce((sum, row) => sum + numberValue(row.citation_count), 0) };\n  });\n}\nfunction aggregateOwnRow(metrics: OwnMetric[], projectName: string, projectWebsite: string | null): BrandMetric {\n  const scores = metrics.filter((row) => row.visibility_score !== null).map((row) => numberValue(row.visibility_score));\n  return { key: "__tracked_brand__", brand_name: projectName, website: projectWebsite, visibility_score: scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : 0, citations: metrics.reduce((sum, row) => sum + numberValue(row.citation_count), 0) };\n}\nfunction rankBrands(rows: BrandMetric[]) {
   return [...rows].sort((a, b) => b.visibility_score - a.visibility_score || b.citations - a.citations || a.brand_name.localeCompare(b.brand_name))
     .map((row, index) => ({ ...row, rank: index + 1 }));
 }
@@ -119,7 +119,7 @@ export default function LeaderboardsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    async function fetchCompetitorRegistry(location: string, selectedTopic: string) {
+    async function fetchCompetitorRegistry(selectedTopic: string) {
       const all: DirectCompetitor[] = [];
       for (let offset = 0; ; offset += 1000) {
         let query = supabase.from("direct_competitors").select("id,topic,normalized_domain,brand_name,website")
@@ -182,7 +182,7 @@ export default function LeaderboardsPage() {
         if (projectError) throw projectError;
         const location = scope === "legacy" ? "LEGACY" : (project?.tracking_market ?? "MY");
         const selectedTopic = topic === "All" ? "Overall" : topic;
-        const registry = await fetchCompetitorRegistry(location, selectedTopic);
+        const registry = await fetchCompetitorRegistry(selectedTopic);
         const ids = registry.map((row) => row.id);
         const currentRange = { start, end };
         const [currentObservations, currentOwn] = await Promise.all([
@@ -217,37 +217,6 @@ export default function LeaderboardsPage() {
     void load();
     return () => { cancelled = true; };
   }, [projectId, start, end, topic, llms, scope, previousRange]);
-
-  function aggregateCompetitors(observations: DirectObservation[]): BrandMetric[] {
-    const byId = new Map<string, DirectObservation[]>();
-    for (const observation of observations) {
-      const bucket = byId.get(observation.competitor_id) ?? [];
-      bucket.push(observation);
-      byId.set(observation.competitor_id, bucket);
-    }
-    return directCompetitors.map((competitor) => {
-      const records = byId.get(competitor.id) ?? [];
-      const scores = records.filter((row) => numberValue(row.response_count) > 0)
-        .map((row) => 100 * numberValue(row.presence_count) / numberValue(row.response_count));
-      return {
-        key: competitor.normalized_domain,
-        brand_name: competitor.brand_name || competitor.normalized_domain,
-        website: rootWebsite(competitor.website || competitor.normalized_domain),
-        visibility_score: scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : 0,
-        citations: records.reduce((sum, row) => sum + numberValue(row.citation_count), 0),
-      };
-    });
-  }
-  function aggregateOwn(metrics: OwnMetric[]): BrandMetric {
-    const scores = metrics.filter((row) => row.visibility_score !== null).map((row) => numberValue(row.visibility_score));
-    return {
-      key: "__tracked_brand__",
-      brand_name: projectName,
-      website: projectWebsite,
-      visibility_score: scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : 0,
-      citations: metrics.reduce((sum, row) => sum + numberValue(row.citation_count), 0),
-    };
-  }
 
   const currentRows = useMemo(() => rankBrands([
     aggregateOwn(currentOwnMetrics),
