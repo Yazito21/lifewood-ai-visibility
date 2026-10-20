@@ -96,6 +96,14 @@ function aggregateOwnRow(metrics: OwnMetric[], projectName: string, projectWebsi
     citations: metrics.reduce((sum, row) => sum + numberValue(row.citation_count), 0),
   };
 }
+function competitorsObservedInPeriod(directCompetitors: DirectCompetitor[], observations: DirectObservation[]) {
+  const activeIds = new Set(
+    observations
+      .filter((row) => numberValue(row.presence_count) > 0 || numberValue(row.citation_count) > 0)
+      .map((row) => row.competitor_id),
+  );
+  return directCompetitors.filter((competitor) => activeIds.has(competitor.id));
+}
 function rankBrands(rows: BrandMetric[]) {
   return [...rows].sort((a, b) => b.visibility_score - a.visibility_score || b.citations - a.citations || a.brand_name.localeCompare(b.brand_name))
     .map((row, index) => ({ ...row, rank: index + 1 }));
@@ -225,17 +233,21 @@ export default function LeaderboardsPage() {
         ]) : [[], []] as [DirectObservation[], OwnMetric[]];
         if (cancelled) return;
         const domains = (project?.brand_domains ?? []).map((value: string) => hostFromUrl(value)).filter(Boolean);
+        // Keep the full project registry here, but exclude the tracked brand itself.
+        // The period-specific leaderboard below is derived from competitors with
+        // at least one positive presence or citation observation in each date range.
         const filteredRegistry = registry.filter((row) => {
           const domain = row.normalized_domain || hostFromUrl(row.website);
           return domain && !domains.includes(domain) && row.brand_name.trim().toLocaleLowerCase() !== (project?.brand_name ?? "").trim().toLocaleLowerCase();
         });
+        const eligibleIds = new Set(filteredRegistry.map((competitor) => competitor.id));
         setProjectName(project?.brand_name ?? "Tracked brand");
         setProjectWebsite(rootWebsite(project?.brand_domains?.[0] ?? null));
         setTopics((project?.topics ?? []).filter((value: string) => value && value !== "Overall"));
         setTrackingLocation(project?.tracking_market ?? "MY");
         setDirectCompetitors(filteredRegistry);
-        setCurrentCompetitorObservations(currentObservations.filter((row) => filteredRegistry.some((competitor) => competitor.id === row.competitor_id)));
-        setPreviousCompetitorObservations(previousObservations.filter((row) => filteredRegistry.some((competitor) => competitor.id === row.competitor_id)));
+        setCurrentCompetitorObservations(currentObservations.filter((row) => eligibleIds.has(row.competitor_id)));
+        setPreviousCompetitorObservations(previousObservations.filter((row) => eligibleIds.has(row.competitor_id)));
         setCurrentOwnMetrics(currentOwn);
         setPreviousOwnMetrics(previousOwn);
       } catch (cause) {
@@ -248,14 +260,26 @@ export default function LeaderboardsPage() {
     return () => { cancelled = true; };
   }, [projectId, start, end, topic, llms, scope, previousRange]);
 
+  // Match the Dashboard denominator: only count distinct direct competitors
+  // observed during the selected period, location, topic, and engine filters.
+  // Build the previous-period ranking from its own active set so rank deltas
+  // compare like-for-like periods rather than today's registry against old data.
+  const currentActiveCompetitors = useMemo(
+    () => competitorsObservedInPeriod(directCompetitors, currentCompetitorObservations),
+    [directCompetitors, currentCompetitorObservations],
+  );
+  const previousActiveCompetitors = useMemo(
+    () => competitorsObservedInPeriod(directCompetitors, previousCompetitorObservations),
+    [directCompetitors, previousCompetitorObservations],
+  );
   const currentRows = useMemo(() => rankBrands([
     aggregateOwnRow(currentOwnMetrics, projectName, projectWebsite),
-    ...aggregateCompetitorRows(directCompetitors, currentCompetitorObservations),
-  ]), [projectName, projectWebsite, currentOwnMetrics, directCompetitors, currentCompetitorObservations]);
+    ...aggregateCompetitorRows(currentActiveCompetitors, currentCompetitorObservations),
+  ]), [projectName, projectWebsite, currentOwnMetrics, currentActiveCompetitors, currentCompetitorObservations]);
   const previousRows = useMemo(() => rankBrands([
     aggregateOwnRow(previousOwnMetrics, projectName, projectWebsite),
-    ...aggregateCompetitorRows(directCompetitors, previousCompetitorObservations),
-  ]), [projectName, projectWebsite, previousOwnMetrics, directCompetitors, previousCompetitorObservations]);
+    ...aggregateCompetitorRows(previousActiveCompetitors, previousCompetitorObservations),
+  ]), [projectName, projectWebsite, previousOwnMetrics, previousActiveCompetitors, previousCompetitorObservations]);
   const previousByKey = useMemo(() => new Map(previousRows.map((row) => [row.key, row])), [previousRows]);
   const rows: RankedBrand[] = currentRows.map((row) => {
     const previous = previousByKey.get(row.key);
