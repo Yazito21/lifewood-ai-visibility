@@ -5,7 +5,7 @@ import { useState } from "react";
 export type ChartPoint = { label: string; value: number | null };
 
 function dateLabel(date: string) {
-  return new Date(date + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(date + "T00:00:00+08:00").toLocaleDateString(undefined, { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric" });
 }
 
 function datesBetween(start: string, end: string) {
