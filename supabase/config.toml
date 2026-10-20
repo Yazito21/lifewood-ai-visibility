@@ -1,0 +1,16 @@
+# Keep Edge Function authentication settings reproducible across environments.
+# llm-key-management validates the caller and project role inside the function.
+[functions.admin-account-management]
+verify_jwt = true
+
+[functions.backfill-direct-competitors]
+verify_jwt = true
+
+[functions.export-raw-responses]
+verify_jwt = true
+
+[functions.llm-key-management]
+verify_jwt = false
+
+[functions.visibility-tracking]
+verify_jwt = true
