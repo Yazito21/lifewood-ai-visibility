@@ -764,7 +764,7 @@ Deno.serve(async (req: Request) => {
     for (const topic of topicNames) {
       const candidates = [...(classifierCandidatesByTopic.get(topic)?.values() ?? [])];
       try {
-        const classified = await classifyDirectCompetitors(apiKeys.chatgpt, project, topic, candidates);
+        const classified = await classifyDirectCompetitors(apiKey, project, topic, candidates);
         discoveredByTopic.set(topic, new Map(classified.map((item) => [item.domain, item])));
       } catch (classificationError) {
         console.error("DIRECT_COMPETITOR_CLASSIFICATION_FAILED", topic,
