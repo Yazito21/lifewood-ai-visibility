@@ -114,7 +114,7 @@ export default function CompetitorsPage() {
               <td className="px-3 py-3">{row.website ? <a href={row.website} target="_blank" rel="noreferrer" title={row.website} className="break-all text-[var(--green)] hover:underline">{row.website}</a> : "—"}</td>
               <td className="px-3 py-3 font-semibold">{row.visibility_score != null ? row.visibility_score.toFixed(1) + "%" : "—"}</td><td className="px-3 py-3">{row.citations}</td>
             </tr>)}
-            {!loading && !searchResults.length && <tr><td colSpan={6} className="px-3 py-10 text-center text-sm text-[#66736c]">{searchTerm ? "No competitors match your search." : "No direct competitors found for this period."}</td></tr>}
+            {!loading && !searchResults.length && <tr><td colSpan={6} className="px-3 py-10 text-center text-sm text-[#66736c]">{searchTerm ? "No competitors match your search." : "No direct competitors are recorded for this period yet. A successful tracking run will classify competitors and backfill available history."}</td></tr>}
           </tbody>
         </table>
       </div>
