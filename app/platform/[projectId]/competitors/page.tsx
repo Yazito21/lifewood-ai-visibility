@@ -5,14 +5,12 @@ import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
+import { malaysiaDateString, shiftDateString } from "@/lib/reporting-date";
 import { brandDisplayName } from "@/lib/brand-display";
 
 type CompetitorRow = { brand_name: string; website: string | null; visibility_score: number | null; citations: number };
 const LLMS = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "claude"];
 const labels: Record<string, string> = { chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", google_ai_overview: "Google AI Overview", claude: "Claude" };
-function localDateString(date = new Date()) {
-  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
-}
 
 export default function CompetitorsPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -24,21 +22,19 @@ export default function CompetitorsPage() {
   const [llms, setLlms] = useState<string[]>(["chatgpt"]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState(localDateString());
+  const [customEnd, setCustomEnd] = useState(malaysiaDateString());
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const start = useMemo(() => {
-    if (period === "Custom") return customStart || localDateString();
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
+    const today = malaysiaDateString();
+    if (period === "Custom") return customStart || today;
     const days = period === "Today" ? 0 : period === "Last 2 Days" ? 1 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : period === "All Time" ? 36500 : 6;
-    date.setDate(date.getDate() - days);
-    return localDateString(date);
+    return shiftDateString(today, -days);
   }, [period, customStart]);
-  const end = period === "Custom" ? customEnd : localDateString();
+  const end = period === "Custom" ? customEnd : malaysiaDateString();
 
   useEffect(() => {
     let cancelled = false;
