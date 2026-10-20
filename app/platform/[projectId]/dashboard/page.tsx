@@ -40,21 +40,11 @@ export default function DashboardPage() {
 
   async function load() {
     setLoading(true); setError("");
-    const [{ data: project, error: projectError }, { data: authResult }] = await Promise.all([
-      supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single(),
-      supabase.auth.getUser(),
-    ]);
-    const currentUser = authResult.user;
-    if (currentUser) {
-      const [{ data: profile }, { data: member }] = await Promise.all([
-        supabase.from("profiles").select("role").eq("id", currentUser.id).maybeSingle(),
-        supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", currentUser.id).maybeSingle(),
-      ]);
-      setCanRunTracking(profile?.role === "superadmin" || profile?.role === "admin" ||
-        member?.role === "superadmin" || member?.role === "admin");
-    } else {
-      setCanRunTracking(false);
-    }
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .select("topics,tracking_market")
+      .eq("id", projectId)
+      .single();
     const location = project?.tracking_market ?? "MY";
     const dataLocation = scope === "legacy" ? "LEGACY" : location;
     setTrackingLocation(location);
