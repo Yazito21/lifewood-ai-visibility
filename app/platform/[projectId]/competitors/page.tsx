@@ -141,7 +141,7 @@ export default function LeaderboardsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const start = useMemo(() => getPeriodStart(period, customStart), [period, customStart]);
+  const start = useMemo(() => getPeriodStart(period, customStart, customEnd), [period, customStart, customEnd]);
   const end = period === "Custom" ? customEnd : malaysiaDateString();
   const previousRange = useMemo<DateRange | null>(() => {
     if (period === "All Time" || !start || !end || end < start) return null;
