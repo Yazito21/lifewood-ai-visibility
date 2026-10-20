@@ -7,10 +7,17 @@ CREATE OR REPLACE FUNCTION public.get_direct_competitor_metrics_for_period(
   p_tracking_location text DEFAULT NULL::text
 )
 RETURNS TABLE(topic text, metric_date date, visibility_rank integer, competitor_count bigint)
-LANGUAGE sql
+LANGUAGE plpgsql
 STABLE
-SET search_path TO 'public'
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
 AS $function$
+BEGIN
+  IF auth.uid() IS NULL OR NOT public.is_project_member(p_project_id) THEN
+    RAISE EXCEPTION 'Not authorized to access this project' USING ERRCODE = '42501';
+  END IF;
+
+  RETURN QUERY
   WITH chosen_location AS (
     SELECT coalesce(p_tracking_location, p.tracking_market, 'LEGACY') AS location
     FROM public.projects p
@@ -29,21 +36,21 @@ AS $function$
   brand_scores AS (
     SELECT vd.topic, vd.metric_date,
            coalesce(vd.visibility_score, 0)::numeric AS brand_score,
-           coalesce((
-             SELECT max(o.response_count)
-             FROM public.direct_competitors dc
-             JOIN public.direct_competitor_observations o
-               ON o.competitor_id = dc.id
-              AND o.project_id = vd.project_id
-              AND o.metric_date = vd.metric_date
-              AND o.tracking_location = cl.location
-              AND o.llm_provider = 'chatgpt'
-             WHERE dc.project_id = vd.project_id
-               AND dc.topic = vd.topic
-           ), 0)::integer AS response_count
+           coalesce(obs.response_count, 0)::integer AS response_count
     FROM public.visibility_daily vd
     JOIN latest l ON l.topic = vd.topic AND l.metric_date = vd.metric_date
     CROSS JOIN chosen_location cl
+    LEFT JOIN LATERAL (
+      SELECT max(o.response_count) AS response_count
+      FROM public.direct_competitors dc
+      JOIN public.direct_competitor_observations o
+        ON o.competitor_id = dc.id
+       AND o.project_id = p_project_id
+       AND o.metric_date = vd.metric_date
+       AND o.tracking_location = cl.location
+       AND o.llm_provider = 'chatgpt'
+      WHERE dc.project_id = p_project_id AND dc.topic = vd.topic
+    ) obs ON true
     WHERE vd.project_id = p_project_id
       AND vd.llm_provider = 'Overall'
       AND vd.tracking_location = cl.location
@@ -51,11 +58,11 @@ AS $function$
   period_entities AS (
     SELECT DISTINCT dc.id, dc.topic, dc.normalized_domain, l.metric_date
     FROM public.direct_competitors dc
-    JOIN public.direct_competitor_observations o ON o.competitor_id = dc.id
+    JOIN public.direct_competitor_observations o
+      ON o.competitor_id = dc.id AND o.project_id = p_project_id
     JOIN latest l ON l.topic = dc.topic
     CROSS JOIN chosen_location cl
     WHERE dc.project_id = p_project_id
-      AND o.project_id = p_project_id
       AND o.tracking_location = cl.location
       AND o.llm_provider = 'chatgpt'
       AND o.metric_date BETWEEN p_start_date AND p_end_date
@@ -67,9 +74,10 @@ AS $function$
     FROM period_entities pe
     LEFT JOIN public.direct_competitor_observations latest_obs
       ON latest_obs.competitor_id = pe.id
-      AND latest_obs.metric_date = pe.metric_date
-      AND latest_obs.tracking_location = (SELECT location FROM chosen_location)
-      AND latest_obs.llm_provider = 'chatgpt'
+     AND latest_obs.project_id = p_project_id
+     AND latest_obs.metric_date = pe.metric_date
+     AND latest_obs.tracking_location = (SELECT location FROM chosen_location)
+     AND latest_obs.llm_provider = 'chatgpt'
   ),
   ranked AS (
     SELECT bs.topic, bs.metric_date,
@@ -89,6 +97,7 @@ AS $function$
          ELSE (r.direct_competitor_count + 1)::bigint
     END AS competitor_count
   FROM ranked r;
+END;
 $function$;
 
 GRANT EXECUTE ON FUNCTION public.get_direct_competitor_metrics_for_period(uuid, date, date, text) TO authenticated;
