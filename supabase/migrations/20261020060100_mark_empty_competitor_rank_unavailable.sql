@@ -105,7 +105,9 @@ GRANT EXECUTE ON FUNCTION public.get_direct_competitor_metrics_for_period(uuid, 
 -- Correct historical dashboard points that were previously stored as rank 1
 -- despite having no direct-competitor observations for that topic/date/location.
 UPDATE public.visibility_daily vd
-SET visibility_rank = NULL
+SET visibility_rank = NULL,
+    share_of_voice_rank = NULL,
+    average_position_rank = NULL
 WHERE vd.llm_provider = 'Overall'
   AND NOT EXISTS (
     SELECT 1
