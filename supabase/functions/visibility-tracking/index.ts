@@ -760,6 +760,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const discoveredByTopic = new Map<string, Map<string, ClassifiedCompetitor>>();
+    const classificationFailures: string[] = [];
     for (const topic of topicNames) {
       const candidates = [...(classifierCandidatesByTopic.get(topic)?.values() ?? [])];
       try {
@@ -768,6 +769,7 @@ Deno.serve(async (req: Request) => {
       } catch (classificationError) {
         console.error("DIRECT_COMPETITOR_CLASSIFICATION_FAILED", topic,
           classificationError instanceof Error ? classificationError.message : String(classificationError));
+        classificationFailures.push(topic);
         discoveredByTopic.set(topic, new Map());
       }
     }
@@ -1048,12 +1050,13 @@ Deno.serve(async (req: Request) => {
         const extractionFailures = succeeded.filter((result) =>
       (result.response_analysis as Record<string, unknown> | undefined)?.status !== "completed"
     ).length;
-    const status = failed.length === 0 && extractionFailures === 0
+    const status = failed.length === 0 && extractionFailures === 0 && classificationFailures.length === 0
       ? "completed"
       : succeeded.length ? "partial" : "failed";
     const runIssues = [
       ...(failed.length ? [String(failed.length) + " prompt(s) failed"] : []),
       ...(extractionFailures ? [String(extractionFailures) + " response analysis item(s) failed"] : []),
+      ...(classificationFailures.length ? [String(classificationFailures.length) + " topic competitor classification(s) failed"] : []),
     ];
     await admin.from("tracking_runs").update({
       status, completed_prompts: succeeded.length, failed_prompts: failed.length,
@@ -1063,8 +1066,9 @@ Deno.serve(async (req: Request) => {
     return json({
       mode, run_id: runId, status, total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
       analysis_failures: extractionFailures,
+      classification_failures: classificationFailures,
       visibility_score: succeeded.length ? Math.round(succeeded.filter((r) => r.brand_mentioned).length / succeeded.length * 1000) / 10 : 0,
-      message: extractionFailures ? "Tracking completed with response-analysis failures; inspect the run before using derived metrics." : "ChatGPT tracking run finished.",
+      message: extractionFailures || classificationFailures.length ? "Tracking completed with analysis/classification failures; inspect the run before using derived metrics." : "ChatGPT tracking run finished.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
