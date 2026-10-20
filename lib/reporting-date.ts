@@ -1,3 +1,17 @@
+export const REPORTING_PERIODS = [
+  "Today",
+  "Last 2 Days",
+  "Last 3 Days",
+  "Last 7 Days",
+  "Last 14 Days",
+  "Last 30 Days",
+  "Last 90 Days",
+  "All Time",
+  "Custom",
+] as const;
+
+export type ReportingPeriod = (typeof REPORTING_PERIODS)[number];
+
 export function malaysiaDateString(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kuala_Lumpur",
@@ -15,6 +29,34 @@ export function shiftDateString(dateString: string, days: number) {
   const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+/** Shared inclusive date boundaries for every project reporting page.
+ * Preset periods include today and the previous N-1 calendar days in MYT.
+ */
+export function reportingDateRange(
+  period: string,
+  customStart = "",
+  customEnd = "",
+  today = malaysiaDateString(),
+) {
+  if (period === "Custom") {
+    const start = customStart || today;
+    const end = customEnd || today;
+    return { start: start <= end ? start : end, end: start <= end ? end : start };
+  }
+  if (period === "All Time") return { start: "1900-01-01", end: today };
+  const daysBack: Record<string, number> = {
+    Today: 0,
+    "Last 2 Days": 1,
+    "Last 3 Days": 2,
+    "Last 7 Days": 6,
+    "Last 14 Days": 13,
+    "Last 30 Days": 29,
+    "Last 90 Days": 89,
+  };
+  const days = daysBack[period] ?? 6;
+  return { start: shiftDateString(today, -days), end: today };
 }
 
 export function malaysiaDayStart(dateString: string) {

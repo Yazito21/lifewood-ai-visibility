@@ -7,20 +7,15 @@ import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
-import { malaysiaDateString, shiftDateString } from "@/lib/reporting-date";
+import { malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 
 type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null };
 type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
 type CompetitorCount = { topic: string; metric_date: string; competitor_count: number; visibility_rank: number };
 type RankSnapshot = Metric & { previousRank: number | null };
 
-const periods = ["Today", "Last 2 days", "Last 3 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"];
-function dateStart(period: string, customStart: string) {
-  const today = malaysiaDateString();
-  if (period === "Custom") return customStart || today;
-  const days = period === "Today" ? 0 : period === "Last 2 days" ? 1 : period === "Last 3 Days" ? 2 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : 36500;
-  return shiftDateString(today, -days);
-}
+const periods = REPORTING_PERIODS;
+function dateStart(period: string, customStart: string, customEnd = "") { return reportingDateRange(period, customStart, customEnd).start; }
 
 
 
@@ -67,7 +62,7 @@ export default function DashboardPage() {
       ? project.topics.filter((topic: unknown): topic is string => typeof topic === "string")
       : [];
     setTopics(topicList);
-    const start = dateStart(period, customStart);
+    const start = dateStart(period, customStart, customEnd);
     const end = period === "Custom" ? customEnd : malaysiaDateString();
     const [{ data: chartRows, error: metricsError }, { data: competitorRows, error: competitorError }] = await Promise.all([
       supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").eq("tracking_location", dataLocation).gte("metric_date", start).lte("metric_date", end).order("metric_date"),
@@ -265,7 +260,7 @@ export default function DashboardPage() {
             <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking || exporting || scope === "legacy"} title={scope === "legacy" ? "Switch to current location to run tracking." : undefined} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
-          {!loading && cardTopics.some((topic) => !(competitorCounts[topic] > 0)) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">A verified direct-competitor denominator is unavailable for one or more topics in this dataset. Where available, the displayed rank uses the stored daily metric and is shown without a denominator.</div>}
+          {!loading && cardTopics.some((topic) => !(competitorCounts[topic] > 0) || competitorCounts[topic] === 1) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">One or more topics have no classified direct competitors yet. Their rank currently includes only the tracked brand; competitor rankings will become meaningful once direct-competitor observations are available.</div>}
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
               {cardTopics.map((topic) => {

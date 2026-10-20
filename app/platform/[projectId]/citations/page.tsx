@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
-import { malaysiaDateString, shiftDateString } from "@/lib/reporting-date";
+import { malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 import { brandDisplayName } from "@/lib/brand-display";
 
 type AggregatedRow = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
@@ -86,13 +86,7 @@ export default function CitationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const start = useMemo(() => {
-    const today = malaysiaDateString();
-    if (period === "Custom") return customStart || today;
-    const days = period === "Today" ? 0 : period === "Last 2 Days" ? 1 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : period === "All Time" ? 36500 : 6;
-    return shiftDateString(today, -days);
-  }, [period, customStart]);
-  const end = period === "Custom" ? customEnd : malaysiaDateString();
+  const { start, end } = useMemo(() => reportingDateRange(period, customStart, customEnd), [period, customStart, customEnd]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,7 +145,7 @@ export default function CitationsPage() {
     <p className="page-description mt-2">Cumulative cited-page frequency for the selected reporting dataset.</p>
     <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
     <div className="mt-8 ops-filter-panel">
-      <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{["Today", "Last 2 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"].map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
+      <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{REPORTING_PERIODS.map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
       </div>
       <div className="ops-filter-row"><span className="ops-filter-label">Topic</span><button onClick={() => setTopic("All")} className={`ops-filter-pill ${topic === "All" ? "is-active" : ""}`}>All</button>{topics.map((value) => <button key={value} onClick={() => setTopic(value)} className={`ops-filter-pill ${topic === value ? "is-active" : ""}`}>{value}</button>)}</div>
       <div className="ops-filter-row"><span className="ops-filter-label">Engines</span>{LLMS.map((engine) => <button key={engine} onClick={() => setLlms((current) => current.includes(engine) ? current.filter((item) => item !== engine) : [...current, engine])} className={`ops-filter-pill ${llms.includes(engine) ? "is-active" : ""}`}>{labels[engine]}</button>)}</div>
