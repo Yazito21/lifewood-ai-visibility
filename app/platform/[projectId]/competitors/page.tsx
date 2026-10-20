@@ -31,7 +31,7 @@ export default function CompetitorsPage() {
   const [error, setError] = useState("");
 
   const start = useMemo(() => {
-    if (period === "Custom") return customStart || new Date().toISOString().slice(0, 10);
+    if (period === "Custom") return customStart || localDateString();
     const date = new Date();
     date.setHours(0, 0, 0, 0);
     const days = period === "Today" ? 0 : period === "Last 2 Days" ? 1 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : period === "All Time" ? 36500 : 6;
