@@ -26,6 +26,7 @@ export default function CompetitorsPage() {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [hasDirectRegistry, setHasDirectRegistry] = useState(true);
   const [error, setError] = useState("");
 
   const start = useMemo(() => {
@@ -43,6 +44,9 @@ export default function CompetitorsPage() {
       setError("");
       const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
       const location = project?.tracking_market ?? "MY";
+      const { count: registryCount, error: registryError } = await supabase.from("direct_competitors")
+        .select("id", { count: "exact", head: true }).eq("project_id", projectId);
+      setHasDirectRegistry((registryCount ?? 0) > 0);
       const dataLocation = scope === "legacy" ? "LEGACY" : location;
       if (!llms.length) {
         if (cancelled) return;
@@ -68,7 +72,7 @@ export default function CompetitorsPage() {
       if (cancelled) return;
       setTopics(project?.topics ?? []);
       setTrackingLocation(location);
-      if (projectError || fetchError) setError((projectError || fetchError)?.message ?? "Unable to load competitor data.");
+      if (projectError || registryError || fetchError) setError((projectError || registryError || fetchError)?.message ?? "Unable to load competitor data.");
       setAggregated(allRows);
       setLoading(false);
     }
@@ -92,6 +96,7 @@ export default function CompetitorsPage() {
     <h2 className="page-title mt-1">Direct Competitors</h2>
     <p className="page-description mt-2">Only direct competitors relevant to the tracked brand’s business line, deduplicated across the selected reporting period. Publishers, directories and unrelated businesses are excluded.</p>
     <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
+    {!loading && !hasDirectRegistry && <div className="mt-5 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">The direct-competitor baseline has not been classified for this project. The historical competitor table is not used as a substitute because it contains broad citation mentions, not verified direct competitors.</div>}
     <div className="mt-8 ops-filter-panel">
       <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{["Today", "Last 2 Days", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days", "All Time", "Custom"].map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
       </div>
@@ -119,7 +124,7 @@ export default function CompetitorsPage() {
               <td className="px-3 py-3">{row.website ? <a href={row.website} target="_blank" rel="noreferrer" title={row.website} className="break-all text-[var(--green)] hover:underline">{row.website}</a> : "—"}</td>
               <td className="px-3 py-3 font-semibold">{row.visibility_score != null ? row.visibility_score.toFixed(1) + "%" : "—"}</td><td className="px-3 py-3">{row.citations}</td>
             </tr>)}
-            {!loading && !searchResults.length && <tr><td colSpan={5} className="px-3 py-10 text-center text-sm text-[#66736c]">{searchTerm ? "No competitors match your search." : "No direct competitors were observed for this topic and period."}</td></tr>}
+            {!loading && !searchResults.length && <tr><td colSpan={5} className="px-3 py-10 text-center text-sm text-[#66736c]">{searchTerm ? "No competitors match your search." : !hasDirectRegistry ? "No verified direct-competitor baseline exists for this project yet. Historical competitor mentions are kept separate because they may include publishers, directories and unrelated websites." : "No direct competitors were observed for this topic and period."}</td></tr>}
           </tbody>
         </table>
       </div>
