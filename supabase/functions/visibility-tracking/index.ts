@@ -645,7 +645,7 @@ Deno.serve(async (req: Request) => {
     const citationRows = [...citationsMap.values()];
     if (citationRows.length) {
       const { error } = await admin.from("citations").upsert(citationRows, { onConflict: "project_id,metric_date,topic,llm_provider,url,tracking_location" });
-      if (error) console.error("CITATIONS_WRITE_FAILED", error.message);
+      if (error) throw new Error("CITATIONS_WRITE_FAILED: " + error.message);
     }
 
     // Bootstrap the append-only registry from existing citation history exactly once.
@@ -934,7 +934,7 @@ Deno.serve(async (req: Request) => {
       const { error } = await admin.from("competitors").upsert(competitorRows, {
         onConflict: "project_id,metric_date,topic,llm_provider,brand_name,tracking_location",
       });
-      if (error) console.error("COMPETITORS_WRITE_FAILED", error.message);
+      if (error) throw new Error("COMPETITORS_WRITE_FAILED: " + error.message);
     }
 
     const brandName = String(project.brand_name ?? "Brand");
@@ -1039,22 +1039,32 @@ Deno.serve(async (req: Request) => {
         citation_count: subset.reduce((sum, r) => sum + (r.citations as unknown[]).length, 0),
       };
       const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
-      if (error) console.error("METRICS_WRITE_FAILED", topic, error.message);
+      if (error) throw new Error("METRICS_WRITE_FAILED for " + topic + ": " + error.message);
       const providerRow = { ...row, llm_provider: "chatgpt" };
       const { error: providerError } = await admin.from("visibility_daily").upsert(providerRow, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
-      if (providerError) console.error("PROVIDER_METRICS_WRITE_FAILED", topic, providerError.message);
+      if (providerError) throw new Error("PROVIDER_METRICS_WRITE_FAILED for " + topic + ": " + providerError.message);
     }
 
-        const status = failed.length === 0 ? "completed" : succeeded.length ? "partial" : "failed";
+        const extractionFailures = succeeded.filter((result) =>
+      (result.response_analysis as Record<string, unknown> | undefined)?.status !== "completed"
+    ).length;
+    const status = failed.length === 0 && extractionFailures === 0
+      ? "completed"
+      : succeeded.length ? "partial" : "failed";
+    const runIssues = [
+      ...(failed.length ? [String(failed.length) + " prompt(s) failed"] : []),
+      ...(extractionFailures ? [String(extractionFailures) + " response analysis item(s) failed"] : []),
+    ];
     await admin.from("tracking_runs").update({
       status, completed_prompts: succeeded.length, failed_prompts: failed.length,
-      error_message: failed.length ? String(failed.length) + " prompt(s) failed." : null,
+      error_message: runIssues.length ? runIssues.join("; ") + "." : null,
       completed_at: new Date().toISOString(),
     }).eq("id", runId);
     return json({
       mode, run_id: runId, status, total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
+      analysis_failures: extractionFailures,
       visibility_score: succeeded.length ? Math.round(succeeded.filter((r) => r.brand_mentioned).length / succeeded.length * 1000) / 10 : 0,
-      message: "ChatGPT tracking run finished.",
+      message: extractionFailures ? "Tracking completed with response-analysis failures; inspect the run before using derived metrics." : "ChatGPT tracking run finished.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
