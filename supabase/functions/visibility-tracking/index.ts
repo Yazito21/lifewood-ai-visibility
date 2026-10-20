@@ -569,9 +569,11 @@ Deno.serve(async (req: Request) => {
     // Bootstrap the append-only registry from existing citation history exactly once.
     // This lets historical reporting periods continue to work after the new model is deployed.
     const { data: registryProbe, error: registryProbeError } = await admin
-      .from("direct_competitors").select("id").eq("project_id", projectId).limit(1);
+      .from("direct_competitors").select("topic").eq("project_id", projectId);
     if (registryProbeError) throw new Error("DIRECT_COMPETITOR_REGISTRY_READ_FAILED: " + registryProbeError.message);
-    const needsCompetitorBootstrap = !(registryProbe ?? []).length;
+    const existingRegistryTopics = new Set((registryProbe ?? []).map((row: Record<string, unknown>) => String(row.topic)));
+    const bootstrapTopics = new Set(["Overall", ...topicNames].filter((topic) => !existingRegistryTopics.has(topic)));
+    const needsCompetitorBootstrap = bootstrapTopics.size > 0;
     const historicalFirstSeen = new Map<string, string>();
     const historicalLastSeen = new Map<string, string>();
     const historicalCitationCounts = new Map<string, number>();
@@ -625,6 +627,7 @@ Deno.serve(async (req: Request) => {
             if (!last || date > last) historicalLastSeen.set(dateKey, date);
           }
           if (!citation.is_brand_related && !isGenericCitationDomain(domain) &&
+            (bootstrapTopics.has(topic) || bootstrapTopics.has("Overall")) &&
             !ownedDomains.some((owned) => domain === owned || domain.endsWith("." + owned))) {
             const topicCandidates = classifierCandidatesByTopic.get(topic) ?? new Map();
             const previous = topicCandidates.get(domain);
