@@ -281,7 +281,7 @@ export default function DashboardPage() {
         </section>
 
         <section className="space-y-4">
-          <div><p className="page-eyebrow">Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Daily Trends</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Daily visibility score and ranking across the selected period.</p></div>
+          <div><p className="page-eyebrow">Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Daily Trends</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Daily visibility scores and ranks. Gaps indicate dates with no recorded data; values are not interpolated.</p></div>
           <div className="space-y-5">
             {cardTopics.map((topic) => <div key={topic} className="grid min-w-0 gap-5 xl:grid-cols-2"><MetricChart data={chart(topic, "visibility_score")} title={topic + " — Daily Visibility Score"} format="percent" dateRange={chartDateRange} tone={topic === "Overall" ? "overall" : "default"} /><MetricChart data={chart(topic, "visibility_rank")} title={topic + " — Daily Visibility Rank"} invert dateRange={chartDateRange} tone={topic === "Overall" ? "overall" : "default"} /></div>)}
           </div>
