@@ -255,10 +255,10 @@ async function classifyDirectCompetitors(
         ? item.content.filter((content: Record<string, unknown>) => content.type === "output_text").map((content: Record<string, unknown>) => String(content.text ?? ""))
         : []).join("\n").trim();
     const jsonText = output.match(/\[[\s\S]*\]/)?.[0];
-    if (!jsonText) continue;
+    if (!jsonText) throw new Error("COMPETITOR_CLASSIFICATION_INVALID_JSON");
     let parsed: unknown;
-    try { parsed = JSON.parse(jsonText); } catch { continue; }
-    if (!Array.isArray(parsed)) continue;
+    try { parsed = JSON.parse(jsonText); } catch { throw new Error("COMPETITOR_CLASSIFICATION_INVALID_JSON"); }
+    if (!Array.isArray(parsed)) throw new Error("COMPETITOR_CLASSIFICATION_INVALID_SHAPE");
     const allowed = new Map(chunk.map((item) => [item.domain, item]));
     for (const item of parsed) {
       if (!item || typeof item !== "object") continue;
