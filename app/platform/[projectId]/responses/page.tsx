@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
+import { malaysiaDateString, shiftDateString, malaysiaDayStart, malaysiaDayEndExclusive } from "@/lib/reporting-date";
 
 type ResponseRow = {
   id: string;
@@ -31,12 +32,12 @@ const providerLabels: Record<string, string> = {
 };
 
 function dateValue(date: Date) {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
+  return malaysiaDateString(date);
 }
 function formatDate(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString(undefined, {
+    timeZone: "Asia/Kuala_Lumpur",
     year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
   });
 }
@@ -56,11 +57,7 @@ function responseText(row: ResponseRow) {
 export default function ResponsesPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const today = useMemo(() => dateValue(new Date()), []);
-  const sevenDaysAgo = useMemo(() => {
-    const date = new Date();
-    date.setDate(date.getDate() - 6);
-    return dateValue(date);
-  }, []);
+  const sevenDaysAgo = useMemo(() => shiftDateString(today, -6), [today]);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState(today);
   const [provider, setProvider] = useState<string[]>([]);
@@ -83,16 +80,15 @@ export default function ResponsesPage() {
     setLoading(true);
     setSearched(true);
     setError("");
-    const start = new Date(fromDate + "T00:00:00");
-    const end = new Date(toDate + "T00:00:00");
+    const start = malaysiaDayStart(fromDate);
+    const end = malaysiaDayStart(toDate);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
       setError("Choose a valid date range. The start date must be on or before the end date.");
       setRows([]);
       setLoading(false);
       return;
     }
-    const endExclusive = new Date(end);
-    endExclusive.setDate(endExclusive.getDate() + 1);
+    const endExclusive = malaysiaDayEndExclusive(toDate);
     const result: ResponseRow[] = [];
     let queryError: { message: string } | null = null;
     for (let offset = 0; ; offset += 1000) {
