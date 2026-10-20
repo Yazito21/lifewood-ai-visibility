@@ -191,7 +191,7 @@ Deno.serve(async (req: Request) => {
       if (row.is_brand_related || isGenericCitationDomain(domain) || ownedDomains.some((owned) => domain === owned || domain.endsWith("." + owned))) continue;
       const topicCandidates = candidatesByTopic.get(topic) ?? new Map<string, Candidate>();
       const old = topicCandidates.get(domain);
-      topicCandidates.set(domain, { domain, brand_name: String(row.brand_name || titleFromUrl(String(row.url ?? "")),
+      topicCandidates.set(domain, { domain, brand_name: String(row.brand_name || titleFromUrl(String(row.url ?? ""))),
         page_name: String(row.page_name ?? ""), citations: (old?.citations ?? 0) + Number(row.frequency ?? 1) });
       candidatesByTopic.set(topic, topicCandidates);
     }
