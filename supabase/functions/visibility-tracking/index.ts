@@ -566,6 +566,16 @@ Deno.serve(async (req: Request) => {
       if (error) console.error("CITATIONS_WRITE_FAILED", error.message);
     }
 
+    // Bootstrap the append-only registry from existing citation history exactly once.
+    // This lets historical reporting periods continue to work after the new model is deployed.
+    const { data: registryProbe, error: registryProbeError } = await admin
+      .from("direct_competitors").select("id").eq("project_id", projectId).limit(1);
+    if (registryProbeError) throw new Error("DIRECT_COMPETITOR_REGISTRY_READ_FAILED: " + registryProbeError.message);
+    const needsCompetitorBootstrap = !(registryProbe ?? []).length;
+    const historicalFirstSeen = new Map<string, string>();
+    const historicalLastSeen = new Map<string, string>();
+    const historicalCitationCounts = new Map<string, number>();
+
     // Classify citation candidates against the tracked brand's business line.
     // The registry is append-only: new domains are added, aliases are enriched,
     // and existing competitors are never removed when a later run omits them.
@@ -589,6 +599,48 @@ Deno.serve(async (req: Request) => {
         });
       }
       classifierCandidatesByTopic.set(resultTopic, topicCandidates);
+    }
+
+    if (needsCompetitorBootstrap) {
+      for (let offset = 0; ; offset += 1000) {
+        const { data: historicalCitations, error: historyError } = await admin
+          .from("citations")
+          .select("topic,url,brand_name,page_name,is_brand_related,frequency,metric_date,tracking_location")
+          .eq("project_id", projectId)
+          .eq("tracking_location", trackingLocationsForRun[0])
+          .order("metric_date", { ascending: true })
+          .range(offset, offset + 999);
+        if (historyError) throw new Error("DIRECT_COMPETITOR_HISTORY_READ_FAILED: " + historyError.message);
+        const rows = historicalCitations ?? [];
+        for (const citation of rows as Array<Record<string, unknown>>) {
+          const topic = String(citation.topic ?? "General");
+          const domain = normalizedHostLabel(String(citation.url ?? ""));
+          const date = String(citation.metric_date ?? "");
+          if (!domain || !date) continue;
+          const dateKey = topic + "|" + domain;
+          const first = historicalFirstSeen.get(dateKey);
+          const last = historicalLastSeen.get(dateKey);
+          if (!first || date < first) historicalFirstSeen.set(dateKey, date);
+          if (!last || date > last) historicalLastSeen.set(dateKey, date);
+          if (!citation.is_brand_related && !isGenericCitationDomain(domain) &&
+            !ownedDomains.some((owned) => domain === owned || domain.endsWith("." + owned))) {
+            const topicCandidates = classifierCandidatesByTopic.get(topic) ?? new Map();
+            const previous = topicCandidates.get(domain);
+            topicCandidates.set(domain, {
+              domain,
+              brand_name: String(citation.brand_name ?? titleFromUrl(String(citation.url ?? ""))),
+              page_name: String(citation.page_name ?? ""),
+              citations: (previous?.citations ?? 0) + Number(citation.frequency ?? 1),
+            });
+            classifierCandidatesByTopic.set(topic, topicCandidates);
+          }
+          if (!citation.is_brand_related && !isGenericCitationDomain(domain)) {
+            const citationKey = [date, topic, domain].join("|");
+            historicalCitationCounts.set(citationKey, (historicalCitationCounts.get(citationKey) ?? 0) + Number(citation.frequency ?? 1));
+          }
+        }
+        if (rows.length < 1000) break;
+      }
     }
 
     const discoveredByTopic = new Map<string, Map<string, ClassifiedCompetitor>>();
@@ -637,8 +689,12 @@ Deno.serve(async (req: Request) => {
           ...(Array.isArray(existing?.aliases) ? existing.aliases.map(String) : []),
           ...item.aliases,
         ])],
-        first_seen_date: String(existing?.first_seen_date ?? day),
-        last_seen_date: day > String(existing?.last_seen_date ?? "") ? day : String(existing?.last_seen_date ?? day),
+        first_seen_date: String(existing?.first_seen_date ?? historicalFirstSeen.get(item.topic + "|" + item.domain) ?? day),
+        last_seen_date: (() => {
+          const discoveredLast = historicalLastSeen.get(item.topic + "|" + item.domain) ?? day;
+          const existingLast = String(existing?.last_seen_date ?? "");
+          return [discoveredLast, existingLast, day].filter(Boolean).sort().at(-1) ?? day;
+        })(),
       };
     });
     if (registryUpserts.length) {
@@ -666,6 +722,74 @@ Deno.serve(async (req: Request) => {
           ...(Array.isArray(row.aliases) ? row.aliases.map(String) : []),
         ].map((value) => value.trim()).filter((value) => value.length > 1))],
       })));
+    }
+
+    if (needsCompetitorBootstrap) {
+      const { data: promptRows, error: promptRowsError } = await admin
+        .from("prompts").select("id,topic").eq("project_id", projectId);
+      if (promptRowsError) throw new Error("DIRECT_COMPETITOR_HISTORY_READ_FAILED: " + promptRowsError.message);
+      const promptTopicById = new Map((promptRows ?? []).map((row: Record<string, unknown>) => [String(row.id), String(row.topic ?? "General")]));
+      const historicalGroups = new Map<string, Array<{ topic: string; text: string }>>();
+      for (let offset = 0; ; offset += 1000) {
+        const { data: historicalResponses, error: responseHistoryError } = await admin
+          .from("ai_responses")
+          .select("prompt_id,captured_at,response_text,tracking_location")
+          .eq("project_id", projectId).eq("tracking_location", trackingLocationsForRun[0])
+          .eq("response_status", "completed").order("captured_at", { ascending: true })
+          .range(offset, offset + 999);
+        if (responseHistoryError) throw new Error("DIRECT_COMPETITOR_HISTORY_READ_FAILED: " + responseHistoryError.message);
+        const rows = historicalResponses ?? [];
+        for (const response of rows as Array<Record<string, unknown>>) {
+          const topic = promptTopicById.get(String(response.prompt_id)) ?? "General";
+          const parts = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
+          }).formatToParts(new Date(String(response.captured_at)));
+          const date = `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}-${parts.find((part) => part.type === "day")?.value}`;
+          const key = date + "|" + topic;
+          const group = historicalGroups.get(key) ?? [];
+          group.push({ topic, text: String(response.response_text ?? "") });
+          historicalGroups.set(key, group);
+        }
+        if (rows.length < 1000) break;
+      }
+
+      const historicalObservationRows: Array<Record<string, unknown>> = [];
+      for (const [groupKey, group] of historicalGroups) {
+        const [date, groupTopic] = groupKey.split("|");
+        const topicsToProcess = groupTopic === "Overall" ? ["Overall"] : [groupTopic, "Overall"];
+        for (const topic of topicsToProcess) {
+          const subset = topic === "Overall"
+            ? [...historicalGroups.entries()].filter(([key]) => key.startsWith(date + "|")).flatMap(([, values]) => values)
+            : group;
+          const dedupedSubset = [...new Map(subset.map((item, index) => [String(index) + "|" + item.topic + "|" + item.text, item])).values()];
+          const seenKeys = new Set<string>();
+          for (const entity of entitiesByTopic.get(topic) ?? []) {
+            if (seenKeys.has(entity.key)) continue;
+            seenKeys.add(entity.key);
+            const presenceCount = dedupedSubset.filter((response) => cachedTermMatches(
+              response, response.text, entity.aliases
+            ).count > 0).length;
+            const citationCount = topic === "Overall"
+              ? [...historicalCitationCounts.entries()].filter(([key]) => {
+                  const [citationDate, , domain] = key.split("|");
+                  return citationDate === date && domain === entity.domain;
+                }).reduce((sum, [, count]) => sum + count, 0)
+              : historicalCitationCounts.get([date, topic, entity.domain].join("|")) ?? 0;
+            historicalObservationRows.push({
+              project_id: projectId, competitor_id: entity.id, metric_date: date,
+              tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
+              presence_count: presenceCount, response_count: dedupedSubset.length, citation_count: citationCount,
+            });
+          }
+        }
+      }
+      for (let offset = 0; offset < historicalObservationRows.length; offset += 500) {
+        const batch = historicalObservationRows.slice(offset, offset + 500);
+        const { error: backfillError } = await admin.from("direct_competitor_observations").upsert(batch, {
+          onConflict: "competitor_id,metric_date,tracking_location,llm_provider",
+        });
+        if (backfillError) throw new Error("DIRECT_COMPETITOR_HISTORY_BACKFILL_FAILED: " + backfillError.message);
+      }
     }
 
     const competitorRows = ["Overall", ...topicNames].flatMap((topic) => {
