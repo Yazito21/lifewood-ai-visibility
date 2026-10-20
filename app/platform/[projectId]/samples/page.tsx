@@ -24,7 +24,7 @@ type SampleResult = {
   };
 };
 type SamplePayload = {
-  summary: { total_prompts: number; completed: number; failed: number; visibility_score: number | null; visibility_rank: number | null };
+  summary: { total_prompts: number; completed: number; failed: number; analysis_failures: number; visibility_score: number | null; visibility_rank: number | null };
   results: SampleResult[];
   citations: SampleResult["citations"];
   competitors: { domain: string; mentions: number }[];
@@ -141,6 +141,7 @@ export default function SamplesPage() {
       Run: runNumber, Brand: payload.project?.brand_name ?? "",
       Engines: selectedEngines.join(", "), Prompts: payload.summary.total_prompts,
       Completed: payload.summary.completed, Failed: payload.summary.failed,
+      "Entity Analysis Failures": payload.summary.analysis_failures,
       "Visibility Score (%)": payload.summary.visibility_score,
       "Visibility Rank": payload.summary.visibility_rank,
       "Generated At": new Date().toISOString(),
@@ -283,6 +284,7 @@ export default function SamplesPage() {
         </section>
 
         {payload && <section className="space-y-5">
+          {payload.summary.analysis_failures > 0 && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">{payload.summary.analysis_failures} successful response(s) could not be analysed completely. Raw responses are still available, but review the extraction status and evidence before relying on entity-derived findings.</div>}
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
             <div><p className="page-eyebrow">Run {runNumber} · Results</p><h2 className="mt-1 text-xl font-semibold">Sample visibility results</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Generated just now · not stored in platform analytics</p></div>
             <button onClick={downloadExcel} className="inline-flex items-center justify-center gap-2 platform-btn platform-btn-primary"><Download size={16}/> Download Excel</button>
