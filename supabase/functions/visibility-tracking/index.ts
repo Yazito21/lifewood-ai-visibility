@@ -581,6 +581,9 @@ Deno.serve(async (req: Request) => {
     // Sample mode returns data only to this request. It does not create runs or write result data.
     if (mode === "sample") {
       const brandCount = succeeded.filter((r) => r.brand_mentioned).length;
+      const analysisFailures = succeeded.filter((r) =>
+        (r.response_analysis as Record<string, unknown> | undefined)?.status !== "completed"
+      ).length;
       const competitors = new Map<string, number>();
       for (const result of succeeded) for (const host of result.competitor_hosts as string[]) competitors.set(host, (competitors.get(host) ?? 0) + 1);
       // Sample mode only surfaces observed non-brand citation domains; it does not
@@ -588,7 +591,7 @@ Deno.serve(async (req: Request) => {
       const allCitations = succeeded.flatMap((r) => (r.citations as Array<Record<string,unknown>>).map((c) => ({ ...c, topic: r.topic, prompt: r.prompt, prompt_number: r.prompt_number, provider: r.provider })));
       return json({
         mode, project: { brand_name: project.brand_name }, providers: providerIds,
-        summary: { total_prompts: results.length, completed: succeeded.length, failed: failed.length, visibility_score: succeeded.length ? Math.round(brandCount / succeeded.length * 1000) / 10 : null, visibility_rank: null },
+        summary: { total_prompts: results.length, completed: succeeded.length, failed: failed.length, analysis_failures: analysisFailures, visibility_score: succeeded.length ? Math.round(brandCount / succeeded.length * 1000) / 10 : null, visibility_rank: null },
         results, citations: allCitations,
         competitors: [...competitors.entries()].map(([domain, count]) => ({ domain, mentions: count })).sort((a,b)=>b.mentions-a.mentions),
       });
