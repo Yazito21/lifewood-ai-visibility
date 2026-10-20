@@ -92,3 +92,22 @@ AS $function$
 $function$;
 
 GRANT EXECUTE ON FUNCTION public.get_direct_competitor_metrics_for_period(uuid, date, date, text) TO authenticated;
+
+-- Correct historical dashboard points that were previously stored as rank 1
+-- despite having no direct-competitor observations for that topic/date/location.
+UPDATE public.visibility_daily vd
+SET visibility_rank = NULL
+WHERE vd.llm_provider = 'Overall'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM public.direct_competitors dc
+    JOIN public.direct_competitor_observations o
+      ON o.competitor_id = dc.id
+     AND o.project_id = vd.project_id
+     AND o.metric_date = vd.metric_date
+     AND o.tracking_location = vd.tracking_location
+     AND o.llm_provider = 'chatgpt'
+    WHERE dc.project_id = vd.project_id
+      AND dc.topic = vd.topic
+      AND (o.presence_count > 0 OR o.citation_count > 0)
+  );
