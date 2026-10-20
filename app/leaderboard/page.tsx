@@ -158,7 +158,7 @@ export default function PlatformLeaderboardPage() {
 
   useEffect(() => {
     let cancelled = false;
-    async function loadRows<T extends Record<string, unknown>>(table: "competitors" | "citations", columns: string, from: string, to: string, selectedTopic: string, selectedEngines: string[]) {
+    async function loadRows<T>(table: "competitors" | "citations", columns: string, from: string, to: string, selectedTopic: string, selectedEngines: string[]) {
       if (!selectedEngines.length) return [] as T[];
       const all: T[] = [];
       for (let offset = 0; ; offset += 1000) {
