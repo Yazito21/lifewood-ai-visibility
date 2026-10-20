@@ -584,11 +584,12 @@ Deno.serve(async (req: Request) => {
       const brandCount = succeeded.filter((r) => r.brand_mentioned).length;
       const competitors = new Map<string, number>();
       for (const result of succeeded) for (const host of result.competitor_hosts as string[]) competitors.set(host, (competitors.get(host) ?? 0) + 1);
-      const brandRank = competitors.size ? 1 + [...competitors.values()].filter((count) => count > brandCount).length : null;
+      // Sample mode only surfaces observed non-brand citation domains; it does not
+      // run the full verified direct-competitor ranking pipeline. Never fabricate a rank.
       const allCitations = succeeded.flatMap((r) => (r.citations as Array<Record<string,unknown>>).map((c) => ({ ...c, topic: r.topic, prompt: r.prompt, prompt_number: r.prompt_number, provider: r.provider })));
       return json({
         mode, project: { brand_name: project.brand_name }, providers: providerIds,
-        summary: { total_prompts: results.length, completed: succeeded.length, failed: failed.length, visibility_score: Math.round(brandCount / total * 1000) / 10, visibility_rank: brandRank },
+        summary: { total_prompts: results.length, completed: succeeded.length, failed: failed.length, visibility_score: Math.round(brandCount / total * 1000) / 10, visibility_rank: null },
         results, citations: allCitations,
         competitors: [...competitors.entries()].map(([domain, count]) => ({ domain, mentions: count })).sort((a,b)=>b.mentions-a.mentions),
       });
