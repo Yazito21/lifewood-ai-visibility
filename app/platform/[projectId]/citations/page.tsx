@@ -81,7 +81,7 @@ export default function CitationsPage() {
   const [allPages, setAllPages] = useState<AggregatedRow[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
-  const [llms, setLlms] = useState<string[]>([]);
+  const [llms, setLlms] = useState<string[]>(["chatgpt"]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState(localDateString());
@@ -106,6 +106,16 @@ export default function CitationsPage() {
       const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
       const location = project?.tracking_market ?? "MY";
       const dataLocation = scope === "legacy" ? "LEGACY" : location;
+      if (!llms.length) {
+        if (cancelled) return;
+        setTopics(project?.topics ?? []);
+        setTrackingLocation(location);
+        if (projectError) setError(projectError.message);
+        setBrandPages([]);
+        setAllPages([]);
+        setLoading(false);
+        return;
+      }
       async function loadAllCitationRows(brandRelatedOnly: boolean) {
         const allRows: AggregatedRow[] = [];
         for (let offset = 0; ; offset += 1000) {
