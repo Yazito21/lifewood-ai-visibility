@@ -11,7 +11,7 @@ import { malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib
 
 type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null };
 type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
-type CompetitorCount = { topic: string; metric_date: string; competitor_count: number; visibility_rank: number };
+type CompetitorCount = { topic: string; metric_date: string; competitor_count: number; visibility_rank: number | null };
 type RankSnapshot = Metric & { previousRank: number | null };
 
 const periods = REPORTING_PERIODS;
@@ -91,7 +91,7 @@ export default function DashboardPage() {
     const ranks: Record<string, number> = {};
     for (const row of (competitorRows ?? []) as CompetitorCount[]) {
       counts[row.topic] = Number(row.competitor_count) || 0;
-      ranks[row.topic] = Number(row.visibility_rank) || 1;
+      if (row.visibility_rank !== null && row.visibility_rank !== undefined && Number.isFinite(Number(row.visibility_rank))) ranks[row.topic] = Number(row.visibility_rank);
     }
     setCompetitorCounts(counts);
     setPeriodRanks(ranks);
@@ -250,7 +250,7 @@ export default function DashboardPage() {
             <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking || exporting || scope === "legacy"} title={scope === "legacy" ? "Switch to current location to run tracking." : undefined} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
-          {!loading && cardTopics.some((topic) => !(competitorCounts[topic] > 0) || competitorCounts[topic] === 1) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">One or more topics have no classified direct competitors yet. Their rank currently includes only the tracked brand; competitor rankings will become meaningful once direct-competitor observations are available.</div>}
+          {!loading && cardTopics.some((topic) => !(competitorCounts[topic] > 1)) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">One or more topics have no verified direct competitors in the selected period. Their competitive rank is unavailable; this is not a first-place result.</div>}
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
               {cardTopics.map((topic) => {
