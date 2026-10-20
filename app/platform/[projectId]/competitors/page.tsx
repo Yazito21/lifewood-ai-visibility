@@ -10,6 +10,9 @@ import { brandDisplayName } from "@/lib/brand-display";
 type CompetitorRow = { brand_name: string; website: string | null; visibility_score: number | null; citations: number };
 const LLMS = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "claude"];
 const labels: Record<string, string> = { chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", google_ai_overview: "Google AI Overview", claude: "Claude" };
+function localDateString(date = new Date()) {
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+}
 
 export default function CompetitorsPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -21,7 +24,7 @@ export default function CompetitorsPage() {
   const [llms, setLlms] = useState<string[]>([]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState(new Date().toISOString().slice(0, 10));
+  const [customEnd, setCustomEnd] = useState(localDateString());
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -33,9 +36,9 @@ export default function CompetitorsPage() {
     date.setHours(0, 0, 0, 0);
     const days = period === "Today" ? 0 : period === "Last 2 Days" ? 1 : period === "Last 7 Days" ? 6 : period === "Last 14 Days" ? 13 : period === "Last 30 Days" ? 29 : period === "Last 90 Days" ? 89 : period === "All Time" ? 36500 : 6;
     date.setDate(date.getDate() - days);
-    return date.toISOString().slice(0, 10);
+    return localDateString(date);
   }, [period, customStart]);
-  const end = period === "Custom" ? customEnd : new Date().toISOString().slice(0, 10);
+  const end = period === "Custom" ? customEnd : localDateString();
 
   useEffect(() => {
     let cancelled = false;
