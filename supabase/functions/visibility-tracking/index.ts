@@ -194,6 +194,7 @@ async function callChatGPT(apiKey: string, prompt: string, project: Record<strin
     }
     const textParts: string[] = [];
     const citations: Array<{ url: string; title: string; source: string }> = [];
+    const researchSources: Array<{ url: string; title: string; source: string }> = [];
     for (const item of (Array.isArray(payload?.output) ? payload.output : [])) {
       if (item?.type === "message" && Array.isArray(item.content)) {
         for (const content of item.content) {
@@ -204,11 +205,12 @@ async function callChatGPT(apiKey: string, prompt: string, project: Record<strin
         }
       }
       if (item?.type === "web_search_call" && Array.isArray(item?.action?.sources)) {
-        for (const source of item.action.sources) if (typeof source?.url === "string") citations.push({ url: source.url, title: String(source.title ?? ""), source: "web_search_source" });
+        for (const source of item.action.sources) if (typeof source?.url === "string") researchSources.push({ url: source.url, title: String(source.title ?? ""), source: "web_search_source" });
       }
     }
     const uniqueCitations = [...new Map(citations.filter(c => c.url.startsWith("http://") || c.url.startsWith("https://")).map(c => [c.url, c])).values()];
-    return { text: textParts.join("\n\n"), raw: payload, model: payload?.model ?? "gpt-4o-mini", citations: uniqueCitations };
+    const uniqueResearchSources = [...new Map(researchSources.filter(c => c.url.startsWith("http://") || c.url.startsWith("https://")).map(c => [c.url, c])).values()];
+    return { text: textParts.join("\n\n"), raw: payload, model: payload?.model ?? "gpt-4o-mini", citations: uniqueCitations, researchSources: uniqueResearchSources };
   } finally { clearTimeout(timeout); }
 }
 
@@ -314,7 +316,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
           prompt_id: prompt.id, prompt_number: prompt.prompt_number, prompt: String(prompt.prompt ?? ""), tracking_location: trackingLocation,
           topic: String(prompt.topic ?? "General"), language: String(prompt.language ?? "English"),
           provider, status: "completed", response_text: text, raw_response: answer.raw,
-          brand_mentioned: brandMentioned, citations, competitor_hosts: competitorHosts,
+          brand_mentioned: brandMentioned, citations, research_sources: answer.researchSources ?? [], competitor_hosts: competitorHosts,
           model: answer.model, started_at: started, completed_at: new Date().toISOString(), usage: answer.raw?.usage ?? null,
         };
       } catch (error) {
@@ -388,6 +390,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         result.response_analysis = {
           status: "completed",
           entities: byId.get(String(result.prompt_id)) ?? [],
+          research_sources: Array.isArray(result.research_sources) ? result.research_sources : [],
           extraction_model: payload?.model ?? "gpt-4o-mini",
           extracted_at: new Date().toISOString(),
         };
@@ -398,6 +401,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
       for (const result of batch) result.response_analysis = {
         status: "failed",
         entities: [],
+        research_sources: Array.isArray(result.research_sources) ? result.research_sources : [],
         error: (error instanceof Error ? error.message : String(error)).slice(0, 250),
       };
     }
