@@ -1,5 +1,5 @@
 "use client";
-import { useEffect,useMemo,useState } from "react";
+import { useEffect,useMemo,useRef,useState } from "react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { TrackingDataScope } from "@/components/tracking-data-scope";
@@ -9,18 +9,21 @@ type Row={metric_date:string;topic:string;llm_provider:string;visibility_score:n
 function localDateString(date = new Date()) { return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-"); }
 const LLMS=["chatgpt","gemini","perplexity","google_ai_overview","claude"],labels:Record<string,string>={chatgpt:"ChatGPT",gemini:"Gemini",perplexity:"Perplexity",google_ai_overview:"Google AI Overview",claude:"Claude"};
 export default function AnalyticsPage(){
- const {projectId}=useParams<{projectId:string}>();const [rows,setRows]=useState<Row[]>([]),[topics,setTopics]=useState<string[]>([]),[trackingLocation,setTrackingLocation]=useState("MY"),[scope,setScope]=useState<"current"|"legacy">("current"),[selectedTopics,setSelectedTopics]=useState<string[]>([]),[selectedLlms,setSelectedLlms]=useState<string[]>(LLMS),[period,setPeriod]=useState("Last 7 Days"),[customStart,setCustomStart]=useState(""),[customEnd,setCustomEnd]=useState(localDateString()),[loading,setLoading]=useState(true),[error,setError]=useState("");
+ const {projectId}=useParams<{projectId:string}>();
+ const topicSelectionInitialized=useRef(false);
+ const selectionProjectId=useRef(projectId);
+ if(selectionProjectId.current!==projectId){selectionProjectId.current=projectId;topicSelectionInitialized.current=false;}const [rows,setRows]=useState<Row[]>([]),[topics,setTopics]=useState<string[]>([]),[trackingLocation,setTrackingLocation]=useState("MY"),[scope,setScope]=useState<"current"|"legacy">("current"),[selectedTopics,setSelectedTopics]=useState<string[]>([]),[selectedLlms,setSelectedLlms]=useState<string[]>(LLMS),[period,setPeriod]=useState("Last 7 Days"),[customStart,setCustomStart]=useState(""),[customEnd,setCustomEnd]=useState(localDateString()),[loading,setLoading]=useState(true),[error,setError]=useState("");
  const start=useMemo(()=>{if(period==="Custom")return customStart||localDateString();const now=new Date();const d=new Date(now.getFullYear(),now.getMonth(),now.getDate());const days=period==="Today"?0:period==="Last 2 days"?1:period==="Last 14 Days"?13:period==="Last 30 Days"?29:period==="Last 90 Days"?89:period==="All Time"?36500:6;d.setDate(d.getDate()-days);return localDateString(d)},[period,customStart]);
  const end=period==="Custom"?customEnd:localDateString();
- useEffect(()=>{(async()=>{setLoading(true);const {data:p}=await supabase.from("projects").select("topics,tracking_market").eq("id",projectId).single();const t=p?.topics??[];const location=p?.tracking_market??"MY";const dataLocation=scope==="legacy"?"LEGACY":location;setTrackingLocation(location);setTopics(t);setSelectedTopics(v=>v.length?v:t);const {data,error}=await supabase.from("visibility_daily").select("metric_date,topic,llm_provider,visibility_score,visibility_rank,share_of_voice_score,share_of_voice_rank,average_position,average_position_rank").eq("project_id",projectId).eq("tracking_location",dataLocation).neq("llm_provider","Overall").gte("metric_date",start).lte("metric_date",end).order("metric_date");if(error)setError(error.message);setRows(data??[]);setLoading(false)})()},[projectId,start,end,scope]);
+ useEffect(()=>{(async()=>{setLoading(true);const {data:p}=await supabase.from("projects").select("topics,tracking_market").eq("id",projectId).single();const t=p?.topics??[];const location=p?.tracking_market??"MY";const dataLocation=scope==="legacy"?"LEGACY":location;setTrackingLocation(location);setTopics(t);if(!topicSelectionInitialized.current){setSelectedTopics(t);topicSelectionInitialized.current=true;}else{setSelectedTopics(v=>v.filter(topic=>t.includes(topic)));}const {data,error}=await supabase.from("visibility_daily").select("metric_date,topic,llm_provider,visibility_score,visibility_rank,share_of_voice_score,share_of_voice_rank,average_position,average_position_rank").eq("project_id",projectId).eq("tracking_location",dataLocation).neq("llm_provider","Overall").gte("metric_date",start).lte("metric_date",end).order("metric_date");if(error)setError(error.message);setRows(data??[]);setLoading(false)})()},[projectId,start,end,scope]);
  const chartDateRange=useMemo(()=>{
   const trackedDates=rows.map(r=>r.metric_date).sort();
   const firstTrackedDate=trackedDates[0];
   const requestedStart=period==="All Time"?(firstTrackedDate??start):start;
   return {start:firstTrackedDate&&firstTrackedDate>requestedStart?firstTrackedDate:requestedStart,end};
  },[rows,period,start,end]);
- const filtered=rows.filter(r=>(selectedTopics.length===0||selectedTopics.includes(r.topic))&&(selectedLlms.length===0||selectedLlms.includes(r.llm_provider)));
- function aggregate(key:keyof Row){const map=new Map<string,number[]>();for(const r of filtered){const v=r[key];if(typeof v==="number"){const a=map.get(r.metric_date)||[];a.push(v);map.set(r.metric_date,a)}}return [...map.entries()].sort().map(([date,vals])=>({label:date,value:vals.reduce((a,b)=>a+b,0)/vals.length}))}
+ const filtered=rows.filter(r=>selectedTopics.includes(r.topic)&&selectedLlms.includes(r.llm_provider));
+ function aggregate(key:keyof Row){const map=new Map<string,number[]>();for(const r of filtered){const v=r[key];if(typeof v==="number"&&Number.isFinite(v)){const a=map.get(r.metric_date)||[];a.push(v);map.set(r.metric_date,a)}}return [...map.entries()].sort().map(([date,vals])=>({label:date,value:vals.reduce((a,b)=>a+b,0)/vals.length}))}
  return <ProjectShell>
   <div className="ops-page">
     <header className="page-heading">
@@ -58,30 +61,33 @@ export default function AnalyticsPage(){
     {loading
       ? <div className="mt-6 grid gap-5 md:grid-cols-2">{[1,2,3,4,5,6].map(x=><div key={x} className="h-72 animate-pulse rounded-2xl bg-white"/>)}</div>
       : <div className="mt-6 grid gap-5 md:grid-cols-2">
-          <MetricChart data={aggregate("visibility_score")} title="Visibility Score" format="percent" dateRange={chartDateRange}/>
-          <MetricChart data={aggregate("visibility_rank")} title="Visibility Rank" invert dateRange={chartDateRange}/>
-          <MetricChart data={aggregate("share_of_voice_score")} title="Share of Voice" description="Your brand mentions divided by all identifiable brand mentions across the selected responses." format="percent" dateRange={chartDateRange}/>
-          <MetricChart data={aggregate("share_of_voice_rank")} title="Share of Voice Rank" description="Your rank against the other identifiable brands by share of voice; rank 1 is best." invert dateRange={chartDateRange}/>
-          <MetricChart data={aggregate("average_position")} title="Average Position" description="The average order in which your brand is first mentioned relative to other identifiable brands in each response where it appears. Lower is better." invert dateRange={chartDateRange}/>
-          <MetricChart data={aggregate("average_position_rank")} title="Average Position Rank" description="Your rank compared with identifiable competitors by average mention position; rank 1 is best." invert dateRange={chartDateRange}/>
+          <MetricChart data={aggregate("visibility_score")} title="Mean Visibility Score" description="Arithmetic mean across the selected topics and engines." format="percent" dateRange={chartDateRange}/>
+          <MetricChart data={aggregate("visibility_rank")} title="Mean Visibility Rank" description="Arithmetic mean of the selected topic/engine ranks; compare dates using the same filters." invert dateRange={chartDateRange}/>
+          <MetricChart data={aggregate("share_of_voice_score")} title="Mean Share of Voice" description="Arithmetic mean of the daily share-of-voice values across the selected topics and engines." format="percent" dateRange={chartDateRange}/>
+          <MetricChart data={aggregate("share_of_voice_rank")} title="Mean Share of Voice Rank" description="Arithmetic mean of the selected topic/engine ranks; compare dates using the same filters." invert dateRange={chartDateRange}/>
+          <MetricChart data={aggregate("average_position")} title="Mean Average Position" description="Arithmetic mean of the selected topic/engine average positions; lower is better." invert dateRange={chartDateRange}/>
+          <MetricChart data={aggregate("average_position_rank")} title="Mean Average Position Rank" description="Arithmetic mean of the selected topic/engine ranks; compare dates using the same filters." invert dateRange={chartDateRange}/>
         </div>
     }
 
     <section className="mt-8 platform-card overflow-hidden">
       <div className="platform-card-header">
         <h3 className="text-lg font-semibold">Answer Engine Snapshot</h3>
-        <p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest visibility score for each selected provider.</p>
+        <p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest mean visibility score across the selected topics for each engine.</p>
       </div>
       <div className="p-5">
         <h3 className="text-sm font-semibold">LLM latest values</h3>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {LLMS.filter(l=>selectedLlms.includes(l)).map(l=>{
-            const rs=filtered.filter(r=>r.llm_provider===l).sort((a,b)=>b.metric_date.localeCompare(a.metric_date));
-            const r=rs[0];
+            const rs=filtered.filter(r=>r.llm_provider===l&&r.visibility_score!=null).sort((a,b)=>b.metric_date.localeCompare(a.metric_date));
+            const latestDate=rs[0]?.metric_date;
+            const latestValues=rs.filter(r=>r.metric_date===latestDate&&r.visibility_score!=null).map(r=>Number(r.visibility_score));
+            const mean=latestValues.length?latestValues.reduce((sum,value)=>sum+value,0)/latestValues.length:null;
             return <div key={l} className="rounded-xl border border-[var(--line)] bg-[var(--muted)] p-4">
               <div className="text-xs font-bold text-[#66736c]">{labels[l]}</div>
-              <div className="mt-2 text-2xl font-semibold">{r?.visibility_score!=null?r.visibility_score.toFixed(1)+"%":"—"}</div>
-              <div className="text-xs text-[#66736c]">visibility score</div>
+              <div className="mt-2 text-2xl font-semibold">{mean!==null?mean.toFixed(1)+"%":"—"}</div>
+              <div className="text-xs text-[#66736c]">mean visibility score</div>
+              <div className="mt-1 text-[10px] text-[#66736c]">{latestDate??"No data"}</div>
             </div>
           })}
         </div>
