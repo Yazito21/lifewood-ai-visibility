@@ -140,7 +140,14 @@ export async function saveProjectBrandRegistry(
     const { error: assignmentError } = await client.from("topic_brand_assignments").insert(assignments);
     if (assignmentError) throw assignmentError;
   }
-  const { error: projectError } = await client.from("projects").update({ topics }).eq("id", projectId);
+  const tracked = merged.get(trackedKey);
+  const trackedWebsites = [...(tracked?.websites ?? new Set<string>())].filter(Boolean);
+  const trackedAliases = [...(tracked?.aliases ?? new Set<string>())].filter((alias) => normaliseBrandKey(alias) !== trackedKey);
+  const { error: projectError } = await client.from("projects").update({
+    topics,
+    brand_domains: trackedWebsites,
+    brand_terms: trackedAliases,
+  }).eq("id", projectId);
   if (projectError) throw projectError;
 }
 
