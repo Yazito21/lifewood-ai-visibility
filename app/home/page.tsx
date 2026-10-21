@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, FolderKanban, LogOut, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { ArrowRight, Download, FileSpreadsheet, FolderKanban, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { downloadBrandTemplate, parseBrandWorkbook, saveProjectBrandRegistry, validateBrandRows, type BrandImportRow } from "@/lib/brand-registry";
 
 type Project={id:string;brand_name:string;brand_description:string|null;brand_logo_url:string|null;tracking_market:string};
 
@@ -17,6 +18,12 @@ export default function ProjectsPage(){
   const [creating,setCreating]=useState(false);
   const [brandName,setBrandName]=useState("");
   const [description,setDescription]=useState("");
+  const [trackedWebsite,setTrackedWebsite]=useState("");
+  const [topicsText,setTopicsText]=useState("Data Collection, Data Annotation, AIGC, AEO/GEO");
+  const [brandFile,setBrandFile]=useState<File|null>(null);
+  const [brandRows,setBrandRows]=useState<BrandImportRow[]>([]);
+  const [fileTopics,setFileTopics]=useState<string[]>([]);
+  const [fileMessage,setFileMessage]=useState("");
   const [busy,setBusy]=useState(false);
   const [deleteTarget,setDeleteTarget]=useState<Project|null>(null);
   const [confirmName,setConfirmName]=useState("");
@@ -45,17 +52,53 @@ export default function ProjectsPage(){
 
   const canCreate=role==="superadmin"||role==="admin";
 
+  function currentTopics(){return [...new Set(topicsText.split(/[;,\\n]/).map(v=>v.trim()).filter(Boolean))]}
+  async function handleBrandFile(file:File|null){
+    setBrandFile(file);setBrandRows([]);setFileTopics([]);setFileMessage("");setError("");
+    if(!file)return;
+    try{
+      const parsed=parseBrandWorkbook(await file.arrayBuffer());
+      setBrandRows(parsed.rows);setFileTopics(parsed.topics);
+      const topics=currentTopics();
+      const errors=validateBrandRows(parsed.rows,topics,brandName,true);
+      const workbookTopics=new Set(parsed.topics);
+      if(topics.some(topic=>!workbookTopics.has(topic))||parsed.topics.some(topic=>!topics.includes(topic))){
+        errors.unshift("The workbook Topics sheet must match the topics entered above.");
+      }
+      setFileMessage(errors.length?errors.slice(0,5).join(" "):`Validated ${parsed.rows.length} brand-topic rows across ${topics.length} topics.`);
+      if(errors.length)setError(errors.join("\\n"));
+    }catch(e){setError(e instanceof Error?e.message:"Unable to read this Excel workbook.");}
+  }
   async function createProject(){
     if(!brandName.trim())return;
+    const topics=currentTopics();
+    if(!topics.length){setError("Add at least one tracking topic.");return;}
+    if(!brandFile){setError("Upload the completed brand registry Excel workbook before creating the project.");return;}
+    let parsed:{topics:string[];rows:BrandImportRow[]};
+    try{parsed=parseBrandWorkbook(await brandFile.arrayBuffer())}catch(e){setError(e instanceof Error?e.message:"Unable to read the Excel workbook.");return;}
+    const validation=validateBrandRows(parsed.rows,topics,brandName,true);
+    if(topics.some(topic=>!parsed.topics.includes(topic))||parsed.topics.some(topic=>!topics.includes(topic)))validation.unshift("The workbook Topics sheet must match the topics entered above.");
+    if(validation.length){setError(validation.join("\\n"));setFileMessage("The registry has validation errors. Fix them in Excel and upload the workbook again.");return;}
     setBusy(true);setError("");
     const {data:{user}}=await supabase.auth.getUser();
     if(!user){router.replace("/login");return}
-    const {data:project,error:projectError}=await supabase.from("projects").insert({brand_name:brandName.trim(),brand_description:description.trim()||null,created_by:user.id}).select().single();
+    const normalizedWebsite=trackedWebsite.trim();
+    const {data:project,error:projectError}=await supabase.from("projects").insert({
+      brand_name:brandName.trim(),brand_description:description.trim()||null,
+      brand_domains:normalizedWebsite?[normalizedWebsite]:[],brand_terms:[],topics,created_by:user.id
+    }).select().single();
     if(projectError||!project){setError(projectError?.message??"Unable to create project.");setBusy(false);return}
     const memberRole=role==="superadmin"?"superadmin":"admin";
     const {error:memberError}=await supabase.from("project_members").insert({project_id:project.id,user_id:user.id,role:memberRole});
     if(memberError){await supabase.from("projects").delete().eq("id",project.id);setError(memberError.message);setBusy(false);return}
-    setBrandName("");setDescription("");setCreating(false);setBusy(false);
+    try{
+      await saveProjectBrandRegistry(supabase,project.id,brandName.trim(),topics,parsed.rows,normalizedWebsite);
+    }catch(e){
+      await supabase.from("projects").delete().eq("id",project.id);
+      setError("Project setup failed and the incomplete project was removed: "+(e instanceof Error?e.message:"Unable to save the brand registry."));
+      setBusy(false);return;
+    }
+    setBrandName("");setDescription("");setTrackedWebsite("");setTopicsText("");setBrandFile(null);setBrandRows([]);setFileTopics([]);setFileMessage("");setCreating(false);setBusy(false);
     router.push("/platform/"+project.id);
   }
 
@@ -135,10 +178,10 @@ export default function ProjectsPage(){
     </main>
 
     {creating&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-5" onMouseDown={e=>{if(e.currentTarget===e.target)setCreating(false)}}>
-      <form onSubmit={e=>{e.preventDefault();void createProject()}} className="w-full max-w-lg rounded-3xl border border-[var(--line)] bg-[var(--card)] p-7 shadow-2xl">
+      <form onSubmit={e=>{e.preventDefault();void createProject()}} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-[var(--line)] bg-[var(--card)] p-7 shadow-2xl">
         <div className="flex items-start justify-between gap-4"><div><p className="page-eyebrow">Workspace</p><h3 className="mt-1 text-2xl font-semibold">Create project</h3><p className="mt-2 text-sm text-[var(--muted-foreground)]">Add the client company name and an optional summary.</p></div><button type="button" onClick={()=>setCreating(false)} className="platform-btn px-3"><X size={18}/></button></div>
-        <div className="mt-6 space-y-5"><label className="block text-sm font-semibold">Client company name<input value={brandName} onChange={e=>setBrandName(e.target.value)} placeholder="e.g. Lifewood" className="platform-input mt-2"/></label><label className="block text-sm font-semibold">Company summary <span className="font-normal text-[var(--muted-foreground)]">(optional)</span><textarea value={description} onChange={e=>setDescription(e.target.value)} rows={5} placeholder="Briefly describe the company and its services." className="platform-input mt-2 resize-y leading-6"/></label></div>
-        <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={()=>setCreating(false)} className="platform-btn">Cancel</button><button disabled={busy||!brandName.trim()} className="platform-btn platform-btn-primary disabled:opacity-50">{busy?"Creating…":"Create project"}</button></div>
+        <div className="mt-6 space-y-5"><label className="block text-sm font-semibold">Tracked brand name<input value={brandName} onChange={e=>setBrandName(e.target.value)} placeholder="e.g. Lifewood" className="platform-input mt-2"/></label><label className="block text-sm font-semibold">Tracked brand primary website<input value={trackedWebsite} onChange={e=>setTrackedWebsite(e.target.value)} placeholder="e.g. lifewood.com" className="platform-input mt-2"/></label><label className="block text-sm font-semibold">Company summary <span className="font-normal text-[var(--muted-foreground)]">(optional)</span><textarea value={description} onChange={e=>setDescription(e.target.value)} rows={3} placeholder="Briefly describe the company and its services." className="platform-input mt-2 resize-y leading-6"/></label><label className="block text-sm font-semibold">Tracking topics <span className="font-normal text-[var(--muted-foreground)]">(separate with commas or new lines)</span><textarea value={topicsText} onChange={e=>setTopicsText(e.target.value)} rows={3} placeholder="Data Collection, Data Annotation, AIGC" className="platform-input mt-2 resize-y leading-6"/></label><div className="rounded-2xl border border-[var(--line)] bg-[var(--soft)] p-4"><div className="flex items-start gap-3"><FileSpreadsheet size={20} className="mt-0.5 shrink-0 text-[var(--primary)]"/><div className="min-w-0 flex-1"><h4 className="text-sm font-semibold">Competitor registry workbook</h4><p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">Upload one Excel workbook with Topics and Brands sheets. Each topic must contain exactly 100 entries: your tracked brand and 99 competitors.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={()=>downloadBrandTemplate(currentTopics(),brandName.trim()||"Tracked Brand",trackedWebsite)} disabled={!currentTopics().length} className="platform-btn text-xs disabled:opacity-40"><Download size={14}/>Download Excel template</button><label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-xs font-semibold"><Upload size={14}/>{brandFile?brandFile.name:"Upload completed workbook"}<input type="file" accept=".xlsx,.xls,.csv" className="sr-only" onChange={e=>{void handleBrandFile(e.target.files?.[0]??null);e.currentTarget.value="";}}/></label></div>{fileMessage&&<p className={`mt-3 text-xs ${fileMessage.startsWith("Validated")?"text-emerald-700":"text-amber-700"}`}>{fileMessage}</p>}</div></div></div></div>
+        <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={()=>setCreating(false)} className="platform-btn">Cancel</button><button disabled={busy||!brandName.trim()||!brandFile} className="platform-btn platform-btn-primary disabled:opacity-50">{busy?"Creating…":"Create project"}</button></div>
       </form>
     </div>}
 
