@@ -5,7 +5,7 @@ import { ArrowDown, ArrowUp, Minus, Search, Trophy } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
-import { malaysiaDateString, shiftDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
+import { MIN_TRACKING_DATE, malaysiaDateString, shiftDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 import { brandDisplayName } from "@/lib/brand-display";
 
 type DirectCompetitor = {
@@ -127,7 +127,6 @@ export default function LeaderboardsPage() {
   const [previousOwnMetrics, setPreviousOwnMetrics] = useState<OwnMetric[]>([]);
   const [projectName, setProjectName] = useState("Tracked brand");
   const [projectWebsite, setProjectWebsite] = useState<string | null>(null);
-  const [trackingLocation, setTrackingLocation] = useState("MY");
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
   const [llms, setLlms] = useState<string[]>(["chatgpt"]);
@@ -287,7 +286,7 @@ export default function LeaderboardsPage() {
     <h2 className="page-title mt-1">Leaderboards</h2>
     <p className="page-description mt-2">See where {projectName} ranks against its tracked brand and direct competitors. Other brands mentioned in AI responses are excluded unless they are classified as direct competitors.</p>
     <div className="mt-8 ops-filter-panel">
-      <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{REPORTING_PERIODS.map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}</div>
+      <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{REPORTING_PERIODS.map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} min={MIN_TRACKING_DATE} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || MIN_TRACKING_DATE} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}</div>
       <div className="ops-filter-row"><span className="ops-filter-label">Topic</span><button onClick={() => setTopic("All")} className={`ops-filter-pill ${topic === "All" ? "is-active" : ""}`}>All</button>{topics.map((value) => <button key={value} onClick={() => setTopic(value)} className={`ops-filter-pill ${topic === value ? "is-active" : ""}`}>{value}</button>)}</div>
       <div className="ops-filter-row"><span className="ops-filter-label">Engines</span>{LLMS.map((engine) => <button key={engine} onClick={() => setLlms((current) => current.includes(engine) ? current.filter((item) => item !== engine) : [...current, engine])} className={`ops-filter-pill ${llms.includes(engine) ? "is-active" : ""}`}>{labels[engine]}</button>)}</div>
     </div>
