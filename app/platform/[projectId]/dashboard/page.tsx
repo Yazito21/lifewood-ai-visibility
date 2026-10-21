@@ -4,14 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, ExternalLink, RefreshCw, Play, Download } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
-import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
-import { malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
+import { MIN_TRACKING_DATE, malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 
 type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null };
 type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
-type CompetitorCount = { topic: string; metric_date: string; competitor_count: number; visibility_rank: number };
+type CompetitorCount = { topic: string; metric_date: string; competitor_count: number; visibility_rank: number | null };
 type RankSnapshot = Metric & { previousRank: number | null };
 
 const periods = REPORTING_PERIODS;
@@ -23,7 +22,6 @@ export default function DashboardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [trackingLocation, setTrackingLocation] = useState("MY");
-  const [scope, setScope] = useState<"current" | "legacy">("current");
   const [citationsByTopic, setCitationsByTopic] = useState<Record<string, AggregatedCitation[]>>({});
   const [competitorCounts, setCompetitorCounts] = useState<Record<string, number>>({});
   const [periodRanks, setPeriodRanks] = useState<Record<string, number>>({});
@@ -46,7 +44,7 @@ export default function DashboardPage() {
       .eq("id", projectId)
       .single();
     const location = project?.tracking_market ?? "MY";
-    const dataLocation = scope === "legacy" ? "LEGACY" : location;
+    const dataLocation = location;
     setTrackingLocation(location);
     const topicList: string[] = Array.isArray(project?.topics)
       ? project.topics.filter((topic: unknown): topic is string => typeof topic === "string")
@@ -91,7 +89,7 @@ export default function DashboardPage() {
     const ranks: Record<string, number> = {};
     for (const row of (competitorRows ?? []) as CompetitorCount[]) {
       counts[row.topic] = Number(row.competitor_count) || 0;
-      ranks[row.topic] = Number(row.visibility_rank) || 1;
+      if (row.visibility_rank !== null && row.visibility_rank !== undefined && Number.isFinite(Number(row.visibility_rank))) ranks[row.topic] = Number(row.visibility_rank);
     }
     setCompetitorCounts(counts);
     setPeriodRanks(ranks);
@@ -122,7 +120,7 @@ export default function DashboardPage() {
   async function exportRawResponses() {
     setExporting(true); setError(""); setTrackingMessage("");
     try {
-      const startDate = period === "All Time" ? "1900-01-01" : dateStart(period, customStart);
+      const startDate = dateStart(period, customStart, customEnd);
       const endDate = period === "Custom" ? customEnd : malaysiaDateString();
       if (!startDate || !endDate || startDate > endDate) throw new Error("Select a valid date range before exporting.");
       const { data: { session } } = await supabase.auth.getSession();
@@ -138,7 +136,7 @@ export default function DashboardPage() {
           apikey: publishableKey,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ project_id: projectId, start_date: startDate, end_date: endDate, tracking_location: scope === "legacy" ? "LEGACY" : trackingLocation }),
+        body: JSON.stringify({ project_id: projectId, start_date: startDate, end_date: endDate, tracking_location: trackingLocation }),
       });
       if (!response.ok) {
         let message = "Unable to export raw AI responses.";
@@ -185,7 +183,7 @@ export default function DashboardPage() {
     return () => { alive = false; };
   }, [projectId]);
 
-  useEffect(() => { void load(); }, [projectId, period, customStart, customEnd, scope]);
+  useEffect(() => { void load(); }, [projectId, period, customStart, customEnd]);
 
   const cardTopics = useMemo(() => ["Overall", ...topics.filter((topic) => topic !== "Overall")], [topics]);
   const chartDateRange = useMemo(() => {
@@ -211,9 +209,14 @@ export default function DashboardPage() {
   }, [metrics, cardTopics]);
 
   function chart(topic: string, key: "visibility_score" | "visibility_rank") {
-    return metrics.filter((row) => row.topic === topic).map((row) => ({
+    const rows = metrics.filter((row) => row.topic === topic);
+    // Historical rank rows may predate verified direct-competitor observations.
+    // Never draw a competitive rank line when the selected period has no
+    // verified competitors (or when the competitor metric could not be loaded).
+    const rankUnavailable = key === "visibility_rank" && (competitorCounts[topic] ?? 0) <= 1;
+    return rows.map((row) => ({
       label: row.metric_date,
-      value: row[key],
+      value: rankUnavailable ? null : row[key],
     }));
   }
 
@@ -226,35 +229,34 @@ export default function DashboardPage() {
           <p className="page-description mt-2">A live overview of AI visibility performance across answer engines and topics for the selected reporting dataset.</p>
         </section>
 
-        <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
 
         <section className="ops-filter-panel">
           <div className="ops-filter-row">
             <span className="ops-filter-label">Period</span>
             {periods.map((item) => <button key={item} onClick={() => setPeriod(item)} className={"ops-filter-btn " + (period === item ? "is-active" : "")}>{item}</button>)}
-            {period === "Custom" && <><label className="sr-only" htmlFor="dashboard-start">Start date</label><input id="dashboard-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="dashboard-end">End date</label><input id="dashboard-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
+            {period === "Custom" && <><label className="sr-only" htmlFor="dashboard-start">Start date</label><input id="dashboard-start" type="date" value={customStart} min={MIN_TRACKING_DATE} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="dashboard-end">End date</label><input id="dashboard-end" type="date" value={customEnd} min={customStart || MIN_TRACKING_DATE} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
           </div>
         </section>
 
         {trackingMessage && <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{trackingMessage}</div>}
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {!loading && metrics.length === 0 && <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          <p className="font-semibold">{scope === "legacy" ? "No legacy results found for this period." : "No results are available for the current tracking location in this period."}</p>
-          <p className="mt-1">{scope === "legacy" ? "Try a wider date range to inspect older location-unknown records." : "Historical location-unknown data is kept separate to protect the accuracy of this report. Run tracking at the selected location to establish or refresh its baseline, or switch to Legacy data to inspect older records."}</p>
+          <p className="font-semibold">No results are available for the selected period and tracking location.</p>
+          <p className="mt-1">Run tracking at the selected location to collect data for this reporting period.</p>
         </div>}
 
 
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest ranking, score and movement within the selected period.</p></div>
-            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking || exporting || scope === "legacy"} title={scope === "legacy" ? "Switch to current location to run tracking." : undefined} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
+            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking || exporting} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
-          {!loading && cardTopics.some((topic) => !(competitorCounts[topic] > 0) || competitorCounts[topic] === 1) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">One or more topics have no classified direct competitors yet. Their rank currently includes only the tracked brand; competitor rankings will become meaningful once direct-competitor observations are available.</div>}
+          {!loading && cardTopics.some((topic) => !(competitorCounts[topic] > 1)) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">One or more topics have no verified direct competitors in the selected period. Their competitive rank is unavailable; this is not a first-place result.</div>}
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
               {cardTopics.map((topic) => {
-                const snapshot = latestByTopic.get(topic); const denominator = competitorCounts[topic] ?? 0; const currentRank = denominator > 0 ? (periodRanks[topic] ?? snapshot?.visibility_rank ?? null) : (snapshot?.visibility_rank ?? null); const previousRank = snapshot?.previousRank ?? null;
+                const snapshot = latestByTopic.get(topic); const denominator = competitorCounts[topic] ?? 0; const currentRank = denominator > 1 ? (periodRanks[topic] ?? snapshot?.visibility_rank ?? null) : null; const previousRank = snapshot?.previousRank ?? null;
                 const change = currentRank !== null && previousRank !== null ? previousRank - currentRank : null;
                 return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (topic === "Overall" ? "platform-card-overall" : "")}>
                   <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (topic === "Overall" ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>{snapshot?.metric_date ?? "No data"}</span></div>

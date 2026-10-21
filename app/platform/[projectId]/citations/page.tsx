@@ -4,9 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Search } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
-import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
-import { malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
+import { MIN_TRACKING_DATE, malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 import { brandDisplayName } from "@/lib/brand-display";
 
 type AggregatedRow = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
@@ -74,8 +73,6 @@ function CitationTable({ title, data }: { title: string; data: AggregatedRow[] }
 export default function CitationsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [brandPages, setBrandPages] = useState<AggregatedRow[]>([]);
-  const [trackingLocation, setTrackingLocation] = useState("MY");
-  const [scope, setScope] = useState<"current" | "legacy">("current");
   const [allPages, setAllPages] = useState<AggregatedRow[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
@@ -95,12 +92,11 @@ export default function CitationsPage() {
       setError("");
       const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
       const location = project?.tracking_market ?? "MY";
-      const dataLocation = scope === "legacy" ? "LEGACY" : location;
+      const dataLocation = location;
       if (!llms.length) {
         if (cancelled) return;
         setTopics(project?.topics ?? []);
-        setTrackingLocation(location);
-        if (projectError) setError(projectError.message);
+         if (projectError) setError(projectError.message);
         setBrandPages([]);
         setAllPages([]);
         setLoading(false);
@@ -127,7 +123,6 @@ export default function CitationsPage() {
       ]);
       if (cancelled) return;
       setTopics(project?.topics ?? []);
-      setTrackingLocation(location);
       if (projectError || brandError || pagesError) setError((projectError || brandError || pagesError)?.message ?? "Unable to load citation data.");
       setBrandPages((brandRows ?? []) as AggregatedRow[]);
       setAllPages((pageRows ?? []) as AggregatedRow[]);
@@ -135,7 +130,7 @@ export default function CitationsPage() {
     }
     void load();
     return () => { cancelled = true; };
-  }, [projectId, start, end, topic, llms, scope]);
+  }, [projectId, start, end, topic, llms]);
 
 
 
@@ -143,9 +138,8 @@ export default function CitationsPage() {
     <p className="page-eyebrow">Citations</p>
     <h2 className="page-title mt-1">Citation intelligence</h2>
     <p className="page-description mt-2">Cumulative cited-page frequency for the selected reporting dataset.</p>
-    <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
     <div className="mt-8 ops-filter-panel">
-      <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{REPORTING_PERIODS.map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
+      <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{REPORTING_PERIODS.map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} min={MIN_TRACKING_DATE} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || MIN_TRACKING_DATE} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
       </div>
       <div className="ops-filter-row"><span className="ops-filter-label">Topic</span><button onClick={() => setTopic("All")} className={`ops-filter-pill ${topic === "All" ? "is-active" : ""}`}>All</button>{topics.map((value) => <button key={value} onClick={() => setTopic(value)} className={`ops-filter-pill ${topic === value ? "is-active" : ""}`}>{value}</button>)}</div>
       <div className="ops-filter-row"><span className="ops-filter-label">Engines</span>{LLMS.map((engine) => <button key={engine} onClick={() => setLlms((current) => current.includes(engine) ? current.filter((item) => item !== engine) : [...current, engine])} className={`ops-filter-pill ${llms.includes(engine) ? "is-active" : ""}`}>{labels[engine]}</button>)}</div>

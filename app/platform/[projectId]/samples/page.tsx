@@ -11,11 +11,20 @@ type Prompt = { id: string; prompt_number: number; prompt: string; topic: string
 type SampleResult = {
   prompt_id: string; prompt_number: number; prompt: string; topic: string; language: string;
   provider: string; status: string; response_text?: string; raw_response?: unknown; error_message?: string;
-  brand_mentioned: boolean; citations: { url: string; page_name: string; brand_name: string; is_brand_related: boolean; topic: string; prompt: string; provider: string; domain?: string; citation_source?: string }[];
+  brand_mentioned: boolean;
+  citations: { url: string; page_name: string; brand_name: string; is_brand_related: boolean; topic: string; prompt: string; provider: string; domain?: string; citation_source?: string }[];
   competitor_hosts: string[]; model?: string; usage?: unknown;
+  response_analysis?: {
+    status: "completed" | "failed" | "not_run";
+    entities: { name: string; aliases: string[]; entity_type: string; evidence: string }[];
+    research_sources?: { url: string; title?: string; source?: string }[];
+    mentioned_urls?: string[];
+    extraction_model?: string;
+    error?: string;
+  };
 };
 type SamplePayload = {
-  summary: { total_prompts: number; completed: number; failed: number; visibility_score: number; visibility_rank: number };
+  summary: { total_prompts: number; completed: number; failed: number; analysis_failures: number; visibility_score: number | null; visibility_rank: number | null };
   results: SampleResult[];
   citations: SampleResult["citations"];
   competitors: { domain: string; mentions: number }[];
@@ -74,9 +83,9 @@ export default function SamplesPage() {
   );
   const selectedPrompts = prompts.filter((p) => selected.includes(p.id));
   const filteredResults = (payload?.results ?? []).filter((r) =>
-    [r.prompt, r.topic, r.provider, r.status, String(r.prompt_number)].some((value) =>
-      value.toLowerCase().includes(resultSearch.trim().toLowerCase())
-    )
+    [r.prompt, r.topic, r.provider, r.status, String(r.prompt_number),
+      ...(r.response_analysis?.entities ?? []).map((entity) => entity.name)]
+      .some((value) => value.toLowerCase().includes(resultSearch.trim().toLowerCase()))
   );
   const visibleResults = resultsExpanded ? filteredResults : filteredResults.slice(0, 10);
   const filteredCompetitors = (payload?.competitors ?? []).filter((c) =>
@@ -132,6 +141,7 @@ export default function SamplesPage() {
       Run: runNumber, Brand: payload.project?.brand_name ?? "",
       Engines: selectedEngines.join(", "), Prompts: payload.summary.total_prompts,
       Completed: payload.summary.completed, Failed: payload.summary.failed,
+      "Entity Analysis Failures": payload.summary.analysis_failures,
       "Visibility Score (%)": payload.summary.visibility_score,
       "Visibility Rank": payload.summary.visibility_rank,
       "Generated At": new Date().toISOString(),
@@ -148,6 +158,11 @@ export default function SamplesPage() {
       "Pages Cited (Title + URL)": r.citations.map((c) => (c.page_name ? c.page_name + " — " : "") + c.url).join("\n"),
       "Brand Page URLs": r.citations.filter((c) => c.is_brand_related).map((c) => c.url).join("\n"),
       "Competitor Domains": r.competitor_hosts.join(", "),
+      "Entity Extraction Status": r.response_analysis?.status ?? "not_run",
+      "Extracted Entities": (r.response_analysis?.entities ?? []).map((entity) => entity.name).join("\n"),
+      "Research Source Count": r.response_analysis?.research_sources?.length ?? 0,
+      "Inline URL Count": r.response_analysis?.mentioned_urls?.length ?? 0,
+      "Entity Extraction Error": r.response_analysis?.error ?? "",
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Prompt Results");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.citations.map((c) => ({
@@ -167,7 +182,28 @@ export default function SamplesPage() {
       Frequency: p.frequency, "Distinct Prompts": p.prompts.size, "Page Title": p.title, Domain: p.domain, URL: p.url,
       Engines: [...p.engines].join(", "), "Tracked Brand Page": p.brandRelated ? "Yes" : "No",
     }))), "Page Frequency");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.competitors), "Competitors");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.competitors), "Non-brand citation domains");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.results.flatMap((r) =>
+      (r.response_analysis?.entities ?? []).map((entity) => ({
+        Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Topic: r.topic,
+        Engine: r.provider, Extraction_Status: r.response_analysis?.status ?? "not_run",
+        Entity: entity.name, Entity_Type: entity.entity_type, Aliases: entity.aliases.join(", "),
+        Evidence: entity.evidence,
+      }))
+    )), "Extracted Entities");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.results.flatMap((r) =>
+      (r.response_analysis?.research_sources ?? []).map((source) => ({
+        Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Topic: r.topic,
+        Engine: r.provider, "Research Source Title": source.title ?? "", URL: source.url,
+        Source_Type: source.source ?? "web_search_source",
+      }))
+    )), "Research Sources");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.results.flatMap((r) =>
+      (r.response_analysis?.mentioned_urls ?? []).map((url) => ({
+        Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Topic: r.topic,
+        Engine: r.provider, "Inline URL (not counted as citation)": url,
+      }))
+    )), "Inline URLs");
     XLSX.writeFile(wb, `lifewood-sample-run-${runNumber}-${new Date().toISOString().slice(0,10)}.xlsx`);
   }
 
@@ -234,9 +270,9 @@ export default function SamplesPage() {
                 </div>
               </div>
               <div className="rounded-xl bg-[var(--soft)] p-4">
-                <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Estimated request count</div>
+                <div className="text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Prompt requests</div>
                 <div className="mt-1 text-3xl font-semibold">{selected.length * selectedEngines.length}</div>
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Each prompt-engine combination makes one API request. API charges may apply.</p>
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">Each prompt-engine combination makes one answer request. Entity extraction adds separate analysis requests, so total API usage and charges may be higher.</p>
               </div>
               <button onClick={runSample} disabled={running || loadingPrompts || !selected.length || !selectedEngines.length} className="inline-flex w-full items-center justify-center gap-2 platform-btn platform-btn-primary disabled:opacity-50">
                 {running ? <RefreshCw size={16} className="animate-spin"/> : <Play size={16}/>}
@@ -248,13 +284,14 @@ export default function SamplesPage() {
         </section>
 
         {payload && <section className="space-y-5">
+          {payload.summary.analysis_failures > 0 && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">{payload.summary.analysis_failures} successful response(s) could not be analysed completely. Raw responses are still available, but review the extraction status and evidence before relying on entity-derived findings.</div>}
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
             <div><p className="page-eyebrow">Run {runNumber} · Results</p><h2 className="mt-1 text-xl font-semibold">Sample visibility results</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Generated just now · not stored in platform analytics</p></div>
             <button onClick={downloadExcel} className="inline-flex items-center justify-center gap-2 platform-btn platform-btn-primary"><Download size={16}/> Download Excel</button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="ops-kpi"><div className="ops-kpi-label">Visibility score</div><div className="ops-kpi-value">{payload.summary.visibility_score.toFixed(1)}%</div><div className="ops-kpi-meta">Across selected prompts</div></div>
-            <div className="ops-kpi"><div className="ops-kpi-label">Visibility rank</div><div className="ops-kpi-value">#{payload.summary.visibility_rank}</div><div className="ops-kpi-meta">Estimated from observed competitor citations</div></div>
+            <div className="ops-kpi"><div className="ops-kpi-label">Visibility score</div><div className="ops-kpi-value">{payload.summary.visibility_score == null ? "—" : payload.summary.visibility_score.toFixed(1) + "%"}</div><div className="ops-kpi-meta">{payload.summary.completed ? "Across successful responses" : "Unavailable: no successful responses"}</div></div>
+            <div className="ops-kpi"><div className="ops-kpi-label">Visibility rank</div><div className="ops-kpi-value">—</div><div className="ops-kpi-meta">Not calculated in sample mode; full tracking validates direct competitors</div></div>
             <div className="ops-kpi"><div className="ops-kpi-label">Completed</div><div className="ops-kpi-value">{payload.summary.completed}</div><div className="ops-kpi-meta">Successful responses</div></div>
             <div className="ops-kpi"><div className="ops-kpi-label">Failed</div><div className="ops-kpi-value">{payload.summary.failed}</div><div className="ops-kpi-meta">Failed prompt requests</div></div>
           </div>
@@ -266,7 +303,7 @@ export default function SamplesPage() {
               </div>
             </div>
             <div className="sample-table-wrap overflow-x-auto"><table className="platform-table sample-data-table min-w-[850px]"><thead><tr><th>Prompt</th><th>Topic</th><th>Engine</th><th>Status</th><th>Brand mentioned</th><th>Brand pages cited</th></tr></thead><tbody>
-              {visibleResults.map((r, i) => <tr key={r.prompt_id + r.provider + i}><td className="max-w-[420px]"><div className="text-xs font-bold text-[var(--muted-foreground)]">#{r.prompt_number}</div><div className="mt-1 whitespace-normal">{r.prompt}</div>{r.response_text && <details className="mt-2"><summary className="cursor-pointer text-xs font-semibold text-[var(--primary)]">View full response</summary><p className="mt-2 max-w-2xl whitespace-pre-wrap text-xs leading-5">{r.response_text}</p></details>}{r.error_message && <p className="mt-1 text-xs text-red-700">{r.error_message}</p>}</td><td>{r.topic}</td><td>{r.provider}</td><td><span className={"ops-status " + (r.status === "completed" ? "text-[var(--primary)]" : "text-red-700")}>{r.status}</span></td><td>{r.status === "completed" ? (r.brand_mentioned ? "Yes" : "No") : "—"}</td><td>{r.citations.filter((c) => c.is_brand_related).length}</td></tr>)}
+              {visibleResults.map((r, i) => <tr key={r.prompt_id + r.provider + i}><td className="max-w-[420px]"><div className="text-xs font-bold text-[var(--muted-foreground)]">#{r.prompt_number}</div><div className="mt-1 whitespace-normal">{r.prompt}</div>{r.response_text && <details className="mt-2"><summary className="cursor-pointer text-xs font-semibold text-[var(--primary)]">View full response</summary><p className="mt-2 max-w-2xl whitespace-pre-wrap text-xs leading-5">{r.response_text}</p></details>}{r.response_analysis && <details className="mt-2"><summary className="cursor-pointer text-xs font-semibold text-[var(--primary)]">Inspect extraction ({r.response_analysis.entities.length} entities · {r.response_analysis.status})</summary><div className="mt-2 space-y-2 text-xs"><p><strong>Extraction status:</strong> {r.response_analysis.status}{r.response_analysis.extraction_model ? " · " + r.response_analysis.extraction_model : ""}</p>{r.response_analysis.error && <p className="text-red-700"><strong>Extraction error:</strong> {r.response_analysis.error}</p>}{r.response_analysis.entities.length > 0 ? <ul className="list-disc space-y-1 pl-4">{r.response_analysis.entities.map((entity, entityIndex) => <li key={entity.name + entityIndex}><strong>{entity.name}</strong> ({entity.entity_type}){entity.aliases.length ? " · aliases: " + entity.aliases.join(", ") : ""}<div className="mt-0.5 whitespace-normal text-[var(--muted-foreground)]">Evidence: “{entity.evidence}”</div></li>)}</ul> : <p>No named entities were extracted from this response.</p>}<p><strong>Research sources:</strong> {r.response_analysis.research_sources?.length ?? 0} · <strong>Inline URLs (not counted as citations):</strong> {r.response_analysis.mentioned_urls?.length ?? 0}</p>{(r.response_analysis.research_sources?.length ?? 0) > 0 && <ul className="list-disc space-y-1 pl-4">{r.response_analysis.research_sources?.map((source, sourceIndex) => <li key={source.url + sourceIndex}><a href={source.url} target="_blank" rel="noreferrer" className="break-all text-[var(--primary)] hover:underline">{source.title || source.url}</a></li>)}</ul>}</div></details>}{r.error_message && <p className="mt-1 text-xs text-red-700">{r.error_message}</p>}</td><td>{r.topic}</td><td>{r.provider}</td><td><span className={"ops-status " + (r.status === "completed" ? "text-[var(--primary)]" : "text-red-700")}>{r.status}</span></td><td>{r.status === "completed" ? (r.brand_mentioned ? "Yes" : "No") : "—"}</td><td>{r.citations.filter((c) => c.is_brand_related).length}</td></tr>)}
             </tbody></table></div>
             {filteredResults.length > 10 && <div className="sample-table-footer"><button type="button" onClick={() => setResultsExpanded((value) => !value)} className="ops-filter-btn">{resultsExpanded ? "Show first 10" : "Show all " + filteredResults.length + " rows"}</button></div>}
           </div>
@@ -299,13 +336,13 @@ export default function SamplesPage() {
             })()}
           </div>
           <div className="ops-card overflow-hidden sample-table-card">
-            <div className="p-5"><h3 className="font-semibold">Observed competitor domains</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Non-brand domains found in response URLs; these are heuristic observations.</p>
+            <div className="p-5"><h3 className="font-semibold">Non-brand citation domains</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Non-brand domains found in annotated citation URLs. These are observations, not a verified direct-competitor list.</p>
               <div className="sample-table-tools mt-4">
                 <label className="sample-search"><Search size={16} aria-hidden="true"/><input value={competitorsSearch} onChange={(e) => { setCompetitorsSearch(e.target.value); setCompetitorsExpanded(false); }} placeholder="Search competitors…" aria-label="Search competitor domains"/></label>
                 <span className="text-xs text-[var(--muted-foreground)]">Showing {visibleCompetitors.length} of {filteredCompetitors.length} matching rows</span>
               </div>
             </div>
-            <div className="sample-table-wrap overflow-x-auto"><table className="platform-table sample-data-table min-w-[500px]"><thead><tr><th>Domain</th><th>Prompt citations</th></tr></thead><tbody>
+            <div className="sample-table-wrap overflow-x-auto"><table className="platform-table sample-data-table min-w-[500px]"><thead><tr><th>Domain</th><th>Prompts with citation</th></tr></thead><tbody>
               {visibleCompetitors.map((c) => <tr key={c.domain}><td>{c.domain}</td><td>{c.mentions}</td></tr>)}
               {!filteredCompetitors.length && <tr><td colSpan={2} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No competitor domains found.</td></tr>}
             </tbody></table></div>
