@@ -1,6 +1,6 @@
 "use client";
 import { useEffect,useState } from "react";
-import { Check,Eye,EyeOff,Plus,Save,Trash2,Settings2,Upload,Image as ImageIcon,X,LogOut,Mail,UserRound,MapPin } from "lucide-react";
+import { Check,Download,Eye,EyeOff,Plus,Save,Trash2,Settings2,Upload,Image as ImageIcon,X,LogOut,Mail,UserRound,MapPin } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { ProjectShell,UserRole } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
