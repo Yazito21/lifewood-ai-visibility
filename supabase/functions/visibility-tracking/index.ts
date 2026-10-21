@@ -495,6 +495,27 @@ Deno.serve(async (req: Request) => {
     if (!prompts?.length) return json({ error: "NO_ACTIVE_PROMPTS" }, 400);
     if (mode === "sample" && prompts.length > 25) return json({ error: "SAMPLE_LIMIT_25_PROMPTS" }, 400);
 
+    // Persistent runs require a complete fixed comparison universe for each topic.
+    // This catches incomplete legacy projects before any provider calls or writes.
+    if (mode !== "sample") {
+      const configuredTopics = [...new Set((Array.isArray(project.topics) ? project.topics.map(String) : prompts.map((p) => String(p.topic ?? "General"))).filter(Boolean))];
+      const { data: setupAssignments, error: setupAssignmentError } = await admin.from("topic_brand_assignments")
+        .select("topic,brand_id,role,include_in_metrics").eq("project_id", projectId).eq("include_in_metrics", true);
+      if (setupAssignmentError) return json({ error: "BRAND_REGISTRY_VALIDATION_FAILED", message: setupAssignmentError.message }, 500);
+      const invalidTopics = configuredTopics.map((topic) => {
+        const rows = (setupAssignments ?? []).filter((row: Record<string, unknown>) => String(row.topic) === topic);
+        const total = new Set(rows.map((row: Record<string, unknown>) => String(row.brand_id))).size;
+        const tracked = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "tracked_brand").map((row: Record<string, unknown>) => String(row.brand_id))).size;
+        const competitors = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "competitor").map((row: Record<string, unknown>) => String(row.brand_id))).size;
+        return { topic, total, tracked, competitors };
+      }).filter((item) => item.total !== 100 || item.tracked !== 1 || item.competitors !== 99);
+      if (invalidTopics.length) return json({
+        error: "BRAND_REGISTRY_INCOMPLETE",
+        message: "Each tracking topic must contain exactly 100 configured brands: one tracked brand and 99 competitors. Update the project’s fixed brand registry in Settings before running tracking.",
+        topics: invalidTopics,
+      }, 409);
+    }
+
     const { data: secret, error: secretError } = await admin.from("llm_secrets").select("ciphertext").eq("project_id", projectId).eq("provider", "chatgpt").maybeSingle();
     if (secretError) return json({ error: "API_KEY_LOOKUP_FAILED" }, 500);
     if (!secret?.ciphertext) return json({ error: "CHATGPT_API_KEY_NOT_CONFIGURED" }, 400);
