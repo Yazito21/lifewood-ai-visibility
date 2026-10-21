@@ -1049,21 +1049,14 @@ Deno.serve(async (req: Request) => {
       const averagePosition = targetPositionSamples > 0
         ? Math.round(targetPositionTotal / targetPositionSamples * 100) / 100
         : null;
-      const observedCompetitorKeys = entities.slice(1)
-        .filter((entity) => subset.some((result) => {
-          if (cachedTermMatches(result, String(result.response_text ?? ""), entity.aliases).count > 0) return true;
-          const citations = Array.isArray(result.citations) ? result.citations as Array<Record<string, unknown>> : [];
-          return citations.some((citation) => {
-            const host = normalizedHostLabel(String(citation.domain ?? citation.url ?? "")).replace(/^www\\./, "");
-            return (entity.websites ?? []).some((site: string) => host === site || host.endsWith("." + site));
-          });
-        }))
-        .map((entity) => entity.key);
-      const visibilityRank = observedCompetitorKeys.length
-        ? 1 + observedCompetitorKeys.filter((key) => (presenceCounts.get(key) ?? 0) > brandResponseCount).length
+      // Compare against the entire configured topic set, including brands with
+      // zero observed mentions. Registry membership must not depend on response content.
+      const configuredCompetitorKeys = entities.slice(1).map((entity) => entity.key);
+      const visibilityRank = configuredCompetitorKeys.length
+        ? 1 + configuredCompetitorKeys.filter((key) => (presenceCounts.get(key) ?? 0) > brandResponseCount).length
         : null;
-      const shareOfVoiceRank = observedCompetitorKeys.length
-        ? 1 + observedCompetitorKeys.filter((key) => (mentionCounts.get(key) ?? 0) > brandMentions).length
+      const shareOfVoiceRank = configuredCompetitorKeys.length
+        ? 1 + configuredCompetitorKeys.filter((key) => (mentionCounts.get(key) ?? 0) > brandMentions).length
         : null;
       const competitorAveragePositions = [...positionTotals.entries()]
         .filter(([key]) => key !== brandKey)
