@@ -60,6 +60,7 @@ export default function ResponsesPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState(today);
   const [provider, setProvider] = useState<string[]>([]);
+  const [trackingLocation, setTrackingLocation] = useState("MY");
   const [status, setStatus] = useState("all");
   const [topicOptions, setTopicOptions] = useState<string[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
@@ -126,8 +127,12 @@ export default function ResponsesPage() {
   useEffect(() => {
     let cancelled = false;
     async function loadFilters() {
-      const { data: promptRows } = await supabase.from("prompts").select("id,topic").eq("project_id", projectId).limit(2000);
+      const [{ data: project }, { data: promptRows }] = await Promise.all([
+        supabase.from("projects").select("tracking_market").eq("id", projectId).single(),
+        supabase.from("prompts").select("id,topic").eq("project_id", projectId).limit(2000),
+      ]);
       if (cancelled) return;
+      setTrackingLocation(project?.tracking_market ?? "MY");
       setTopicOptions([...new Set((promptRows ?? []).map((p) => String((p as Record<string, unknown>).topic ?? "")).filter(Boolean))].sort());
     }
     void loadFilters();
