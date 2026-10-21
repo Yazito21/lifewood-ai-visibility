@@ -47,7 +47,9 @@ export function reportingDateRange(
     const requestedEnd = customEnd || today;
     const start = requestedStart <= requestedEnd ? requestedStart : requestedEnd;
     const end = requestedStart <= requestedEnd ? requestedEnd : requestedStart;
-    return { start: start < MIN_TRACKING_DATE ? MIN_TRACKING_DATE : start, end };
+    const clampedStart = start < MIN_TRACKING_DATE ? MIN_TRACKING_DATE : start;
+    const clampedEnd = end < MIN_TRACKING_DATE ? MIN_TRACKING_DATE : end;
+    return { start: clampedStart, end: clampedEnd };
   }
   if (period === "All Time") return { start: MIN_TRACKING_DATE, end: today };
   const daysBack: Record<string, number> = {
