@@ -61,7 +61,12 @@ function matcherFor(cleanTerms: string[]) {
   const key = cleanTerms.join("\\u0000");
   let matcher = compiledMatcherCache.get(key);
   if (!matcher) {
-    matcher = new RegExp("(?<![A-Za-z0-9])(?:" + cleanTerms.map(escapeRegex).join("|") + ")(?![A-Za-z0-9])", "gi");
+    // Treat punctuation and spacing as equivalent separators. This lets names
+    // such as "AEO/GEO" match "AEO-GEO" or "AEO GEO" without substring false positives.
+    const patterns = cleanTerms.map((term) =>
+      term.split(/[^A-Za-z0-9]+/).filter(Boolean).map(escapeRegex).join("[^A-Za-z0-9]+")
+    ).filter(Boolean);
+    matcher = new RegExp("(?<![A-Za-z0-9])(?:" + patterns.join("|") + ")(?![A-Za-z0-9])", "gi");
     compiledMatcherCache.set(key, matcher);
   }
   return matcher;
@@ -504,6 +509,23 @@ Deno.serve(async (req: Request) => {
     if (!prompts?.length) return json({ error: "NO_ACTIVE_PROMPTS" }, 400);
     if (mode === "sample" && prompts.length > 25) return json({ error: "SAMPLE_LIMIT_25_PROMPTS" }, 400);
 
+    // A daily result is only comparable when every configured topic has active prompts.
+    // Prevent silently omitting topics (or retaining stale metrics for them).
+    if (mode !== "sample") {
+      const configuredTopics = [...new Set((Array.isArray(project.topics) ? project.topics.map(String) : []).filter(Boolean))];
+      const promptTopics = new Set(prompts.map((p) => String(p.topic ?? "General")));
+      const missingPromptTopics = configuredTopics.filter((topic) => !promptTopics.has(topic));
+      const unconfiguredPromptTopics = [...promptTopics].filter((topic) => configuredTopics.length > 0 && !configuredTopics.includes(topic));
+      if (missingPromptTopics.length || unconfiguredPromptTopics.length) {
+        return json({
+          error: "PROMPT_TOPIC_COVERAGE_INVALID",
+          message: "Every configured topic must have at least one active prompt, and active prompts must use configured topics.",
+          missing_prompt_topics: missingPromptTopics,
+          unconfigured_prompt_topics: unconfiguredPromptTopics,
+        }, 409);
+      }
+    }
+
     // Persistent runs require a complete fixed comparison universe for each topic.
     // This catches incomplete legacy projects before any provider calls or writes.
     if (mode !== "sample") {
@@ -919,6 +941,9 @@ Deno.serve(async (req: Request) => {
           String(directory.canonical_name ?? ""),
           ...(Array.isArray(directory.aliases) ? directory.aliases.map(String) : []),
           ...(Array.isArray(assignment.aliases) ? assignment.aliases.map(String) : []),
+          ...(Array.isArray(assignment.websites) ? assignment.websites.map(String) : []),
+          ...(directory.primary_website ? [String(directory.primary_website)] : []),
+          ...(Array.isArray(directory.additional_websites) ? directory.additional_websites.map(String) : []),
           ...(String(assignment.role) === "tracked_brand" && Array.isArray(project.brand_terms) ? project.brand_terms.map(String) : []),
         ].map((v) => v.trim()).filter((v) => v.length > 1))];
         const match = cachedTermMatches(result, responseText, aliases);
