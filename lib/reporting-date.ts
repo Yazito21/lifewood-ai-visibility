@@ -1,3 +1,5 @@
+export const MIN_TRACKING_DATE = "2026-10-15";
+
 export const REPORTING_PERIODS = [
   "Today",
   "Last 2 Days",
@@ -41,11 +43,13 @@ export function reportingDateRange(
   today = malaysiaDateString(),
 ) {
   if (period === "Custom") {
-    const start = customStart || today;
-    const end = customEnd || today;
-    return { start: start <= end ? start : end, end: start <= end ? end : start };
+    const requestedStart = customStart || today;
+    const requestedEnd = customEnd || today;
+    const start = requestedStart <= requestedEnd ? requestedStart : requestedEnd;
+    const end = requestedStart <= requestedEnd ? requestedEnd : requestedStart;
+    return { start: start < MIN_TRACKING_DATE ? MIN_TRACKING_DATE : start, end };
   }
-  if (period === "All Time") return { start: "1900-01-01", end: today };
+  if (period === "All Time") return { start: MIN_TRACKING_DATE, end: today };
   const daysBack: Record<string, number> = {
     Today: 0,
     "Last 2 Days": 1,
@@ -56,7 +60,8 @@ export function reportingDateRange(
     "Last 90 Days": 89,
   };
   const days = daysBack[period] ?? 6;
-  return { start: shiftDateString(today, -days), end: today };
+  const requestedStart = shiftDateString(today, -days);
+  return { start: requestedStart < MIN_TRACKING_DATE ? MIN_TRACKING_DATE : requestedStart, end: today };
 }
 
 export function malaysiaDayStart(dateString: string) {
