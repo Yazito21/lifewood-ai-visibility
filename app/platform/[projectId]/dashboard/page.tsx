@@ -35,6 +35,9 @@ export default function DashboardPage() {
   const [exporting, setExporting] = useState(false);
   const [canRunTracking, setCanRunTracking] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState("");
+  const [showRunDialog, setShowRunDialog] = useState(false);
+  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
 
   async function load() {
     setLoading(true); setError("");
@@ -97,23 +100,43 @@ export default function DashboardPage() {
   }
 
   async function runTracking() {
-    setTracking(true); setTrackingMessage(""); setError("");
+    setTracking(true); setTrackingMessage(""); setError(""); setShowRunDialog(false);
+    const chosenTopics = topics.filter((topic) => selectedTopics.includes(topic));
+    if (!chosenTopics.length) { setError("Select at least one topic to run."); setTracking(false); return; }
+    let batchRunId: string | null = null;
+    let completedTopics: string[] = [];
     try {
-      const { data, error } = await supabase.functions.invoke("visibility-tracking", {
-        body: { mode: "persistent", project_id: projectId, providers: ["chatgpt"] },
-      });
-      if (error) {
-        let message = error.message;
-        if (error.context instanceof Response) {
-          try { message = (await error.context.clone().json())?.error || message; } catch { /* use SDK message */ }
+      for (let index = 0; index < chosenTopics.length; index++) {
+        const topic = chosenTopics[index];
+        setTrackingMessage("Running topic " + (index + 1) + " of " + chosenTopics.length + ": " + topic + "…");
+        const { data, error } = await supabase.functions.invoke("visibility-tracking", {
+          body: {
+            mode: "persistent", project_id: projectId, providers: ["chatgpt"],
+            topic, selected_topics: chosenTopics, batch_index: index, batch_total: chosenTopics.length,
+            batch_run_id: batchRunId, batch_final: index === chosenTopics.length - 1,
+            rerun: isSuperadmin,
+          },
+        });
+        if (error) {
+          let message = error.message;
+          if (error.context instanceof Response) {
+            try { message = (await error.context.clone().json())?.message || (await error.context.clone().json())?.error || message; } catch { /* use SDK message */ }
+          }
+          throw new Error(topic + " failed: " + message);
         }
-        throw new Error(message);
+        if (data?.error || !["completed", "partial"].includes(String(data?.status))) {
+          throw new Error(topic + " failed: " + (data?.message || data?.error || "Tracking did not complete."));
+        }
+        batchRunId = String(data.run_id || batchRunId || "");
+        completedTopics.push(topic);
+        setTrackingMessage("Completed " + completedTopics.length + " of " + chosenTopics.length + " topics: " + completedTopics.join(", "));
+        if (data.status !== "completed") throw new Error(topic + " completed with failures. Later topics were not started.");
       }
-      if (data?.error) throw new Error(data.error);
-      setTrackingMessage("Tracking " + data.status + ": " + data.completed_prompts + " of " + data.total_prompts + " prompts completed.");
+      setTrackingMessage("Tracking completed successfully for " + completedTopics.length + " topic(s): " + completedTopics.join(", ") + ".");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError((e instanceof Error ? e.message : String(e)) + (completedTopics.length ? " Completed topics: " + completedTopics.join(", ") + "." : ""));
+      await load();
     } finally { setTracking(false); }
   }
 
@@ -174,10 +197,13 @@ export default function DashboardPage() {
         supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
         supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle(),
       ]);
-      if (alive) setCanRunTracking(
-        profile?.role === "superadmin" || profile?.role === "admin" ||
-        member?.role === "superadmin" || member?.role === "admin"
-      );
+      if (alive) {
+        setCanRunTracking(
+          profile?.role === "superadmin" || profile?.role === "admin" ||
+          member?.role === "superadmin" || member?.role === "admin"
+        );
+        setIsSuperadmin(profile?.role === "superadmin");
+      }
     }
     void loadPermissions();
     return () => { alive = false; };
@@ -246,10 +272,33 @@ export default function DashboardPage() {
         </div>}
 
 
+        {showRunDialog && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="run-topics-title">
+          <div className="w-full max-w-lg rounded-2xl border border-[var(--line)] bg-[var(--card)] p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div><p className="page-eyebrow">Tracking Setup</p><h3 id="run-topics-title" className="mt-1 text-xl font-semibold">Choose topics to run</h3><p className="mt-2 text-sm text-[var(--muted-foreground)]">Topics run sequentially. The next topic starts only after the current topic succeeds.</p></div>
+              <button type="button" className="platform-btn" onClick={() => setShowRunDialog(false)} disabled={tracking}>Cancel</button>
+            </div>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button type="button" className="platform-btn" onClick={() => setSelectedTopics(topics.slice())}>Select all</button>
+              <button type="button" className="platform-btn" onClick={() => setSelectedTopics([])}>Clear</button>
+            </div>
+            <div className="mt-4 space-y-2">
+              {topics.map((topic) => <label key={topic} className="flex cursor-pointer items-center gap-3 rounded-xl border border-[var(--line)] px-4 py-3 text-sm hover:bg-[var(--soft)]">
+                <input type="checkbox" checked={selectedTopics.includes(topic)} onChange={(event) => setSelectedTopics((current) => event.target.checked ? [...current, topic] : current.filter((value) => value !== topic))} className="h-4 w-4 accent-[var(--primary)]" />
+                <span className="font-medium">{topic}</span>
+              </label>)}
+            </div>
+            {isSuperadmin && <p className="mt-4 rounded-lg bg-[var(--soft)] p-3 text-xs text-[var(--muted-foreground)]">Superadmin mode: selected topics can be rerun individually without replacing other topics’ results.</p>}
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" className="platform-btn" onClick={() => setShowRunDialog(false)}>Cancel</button>
+              <button type="button" className="platform-btn platform-btn-primary disabled:opacity-50" disabled={!selectedTopics.length || tracking} onClick={() => void runTracking()}><Play size={14} /> Run {selectedTopics.length === topics.length ? "All Topics" : selectedTopics.length + (selectedTopics.length === 1 ? " Topic" : " Topics")}</button>
+            </div>
+          </div>
+        </div>}
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest ranking, score and movement within the selected period.</p></div>
-            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking || exporting} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
+            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={() => { setSelectedTopics(topics.slice()); setShowRunDialog(true); }} disabled={tracking || exporting} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
           {!loading && cardTopics.some((topic) => !(competitorCounts[topic] > 0)) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">One or more topics have no verified direct competitors in the selected period. Their competitive rank is unavailable; this is not a first-place result.</div>}
