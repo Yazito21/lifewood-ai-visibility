@@ -46,7 +46,7 @@ export function parseBrandWorkbook(buffer: ArrayBuffer): { topics: string[]; row
     const roleText = String(row.Role ?? "").trim().toLocaleLowerCase().replace(/[ -]/g, "_");
     const role = roleText === "tracked_brand" || roleText === "tracked" ? "tracked_brand" : "competitor";
     const notes = String(row.Notes ?? "").trim();
-    return { topic, brand, aliases, website, otherWebsites, role, notes };
+    return { topic, brand, aliases, website, otherWebsites, role: role as BrandImportRow["role"], notes };
   }).filter((row) => row.topic && row.brand);
   return { topics: [...new Set([...topicsFromSheet, ...rows.map((row) => row.topic)])], rows };
 }
