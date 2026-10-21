@@ -95,13 +95,10 @@ function aggregateOwnRow(metrics: OwnMetric[], projectName: string, projectWebsi
     citations: metrics.reduce((sum, row) => sum + numberValue(row.citation_count), 0),
   };
 }
-function competitorsObservedInPeriod(directCompetitors: DirectCompetitor[], observations: DirectObservation[]) {
-  const activeIds = new Set(
-    observations
-      .filter((row) => numberValue(row.presence_count) > 0 || numberValue(row.citation_count) > 0)
-      .map((row) => row.brand_id),
-  );
-  return directCompetitors.filter((competitor) => activeIds.has(competitor.id));
+function competitorsObservedInPeriod(directCompetitors: DirectCompetitor[], _observations: DirectObservation[]) {
+  // Keep every configured competitor in the comparison universe. A brand with
+  // no observations is a zero-visibility row, not a reason to drop the brand.
+  return directCompetitors;
 }
 function rankBrands(rows: BrandMetric[]) {
   return [...rows].sort((a, b) => b.visibility_score - a.visibility_score || b.citations - a.citations || a.brand_name.localeCompare(b.brand_name))
@@ -195,7 +192,7 @@ export default function LeaderboardsPage() {
             .select("brand_id,metric_date,llm_provider,presence_count,response_count,citation_count,tracking_location")
             .eq("project_id", projectId).eq("topic", selectedTopic).eq("tracking_location", location)
             .gte("metric_date", range.start).lte("metric_date", range.end)
-            .in("competitor_id", chunk).in("llm_provider", engines)
+            .in("brand_id", chunk).in("llm_provider", engines)
             .order("metric_date", { ascending: true }).range(offset, offset + 999);
           if (queryError) throw queryError;
           const batch = (data ?? []) as DirectObservation[];
