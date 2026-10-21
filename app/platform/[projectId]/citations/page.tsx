@@ -9,6 +9,7 @@ import { MIN_TRACKING_DATE, malaysiaDateString, reportingDateRange, REPORTING_PE
 import { brandDisplayName } from "@/lib/brand-display";
 
 type AggregatedRow = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
+type ThirdPartyRow = { hostname:string; website_name:string|null; frequency:number; response_frequency:number; brand_coverage:number; source_types:string[]; example_url:string|null };
 const LLMS = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "claude"];
 const labels: Record<string, string> = { chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", google_ai_overview: "Google AI Overview", claude: "Claude" };
 
@@ -70,10 +71,27 @@ function CitationTable({ title, data }: { title: string; data: AggregatedRow[] }
   );
 }
 
+function ThirdPartyMentionsTable({ data }: { data: ThirdPartyRow[] }) {
+  const [query,setQuery]=useState("");
+  const [expanded,setExpanded]=useState(false);
+  const filtered=useMemo(()=>{const q=query.trim().toLocaleLowerCase();return q?data.filter(row=>[row.hostname,row.website_name??"",...(row.source_types??[])].some(v=>v.toLocaleLowerCase().includes(q))):data},[data,query]);
+  const visible=expanded?filtered:filtered.slice(0,10);
+  return <section className="platform-card p-6">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Third-party Mentions</h3><p className="mt-1 max-w-3xl text-sm text-[#66736c]">External websites that appear in citation annotations, research-source metadata or URLs in AI responses. Official tracked-brand and configured-brand domains are excluded. Mention evidence is not necessarily an endorsement.</p></div><span className="text-sm text-[#66736c]">{filtered.length.toLocaleString()} {filtered.length===1?"website":"websites"}</span></div>
+    <label className="mt-4 flex w-full max-w-xl items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 focus-within:border-[var(--green)]"><Search size={16} className="shrink-0 text-[#66736c]" aria-hidden="true"/><input type="search" value={query} onChange={e=>{setQuery(e.target.value);setExpanded(false)}} placeholder="Search website or source type…" aria-label="Search third-party mentions" className="w-full bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[#87918b]"/></label>
+    <div className="mt-4 overflow-x-auto"><table className="platform-table min-w-[860px]"><thead><tr className="border-b border-[var(--line)] text-left text-xs uppercase tracking-[0.12em] text-[#66736c]"><th className="px-3 py-3">No.</th><th className="px-3 py-3">Website</th><th className="px-3 py-3">URL Frequency</th><th className="px-3 py-3">AI Responses</th><th className="px-3 py-3">Brands Featured</th><th className="px-3 py-3">Source Types</th></tr></thead><tbody>
+      {visible.map((row,index)=><tr key={row.hostname} className="border-b border-[#eef0ee]"><td className="px-3 py-3">{index+1}</td><td className="px-3 py-3"><a href={row.example_url||"https://"+row.hostname} target="_blank" rel="noreferrer" title={row.hostname} className="inline-flex items-center gap-1 font-semibold text-[var(--green)] hover:underline">{row.website_name||row.hostname}<ExternalLink size={13}/></a><span className="mt-1 block text-xs text-[#66736c]">{row.hostname}</span></td><td className="px-3 py-3 font-semibold">{Number(row.frequency||0).toLocaleString()}</td><td className="px-3 py-3">{Number(row.response_frequency||0).toLocaleString()}</td><td className="px-3 py-3">{Number(row.brand_coverage||0).toLocaleString()}</td><td className="px-3 py-3"><div className="flex max-w-[250px] flex-wrap gap-1">{(row.source_types||[]).map(type=><span key={type} className="rounded-full border border-[var(--line)] px-2 py-1 text-[10px]">{type==="citation_annotation"?"Cited":type==="research_source"?"Research source":"URL in answer"}</span>)}</div></td></tr>)}
+      {!visible.length&&<tr><td colSpan={6} className="px-3 py-10 text-center text-sm text-[#66736c]">{query.trim()?"No websites match your search.":"No third-party mentions found for this reporting period. New observations appear after a tracking run has analysed the configured brand registry."}</td></tr>}
+    </tbody></table></div>
+    {filtered.length>10&&<div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--line)] pt-4"><p className="text-sm text-[#66736c]">Showing {visible.length.toLocaleString()} of {filtered.length.toLocaleString()} websites</p><button type="button" onClick={()=>setExpanded(v=>!v)} className="ops-filter-btn">{expanded?"Show first 10":`Show all ${filtered.length.toLocaleString()} websites`}</button></div>}
+  </section>;
+}
+
 export default function CitationsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [brandPages, setBrandPages] = useState<AggregatedRow[]>([]);
   const [allPages, setAllPages] = useState<AggregatedRow[]>([]);
+  const [thirdPartyRows,setThirdPartyRows]=useState<ThirdPartyRow[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
   const [llms, setLlms] = useState<string[]>(["chatgpt"]);
@@ -99,6 +117,7 @@ export default function CitationsPage() {
          if (projectError) setError(projectError.message);
         setBrandPages([]);
         setAllPages([]);
+        setThirdPartyRows([]);
         setLoading(false);
         return;
       }
@@ -117,15 +136,32 @@ export default function CitationsPage() {
         }
         return { data: allRows, error: null };
       }
-      const [{ data: brandRows, error: brandError }, { data: pageRows, error: pagesError }] = await Promise.all([
+      async function loadThirdPartyRows() {
+        const allRows: ThirdPartyRow[] = [];
+        for (let offset = 0; ; offset += 1000) {
+          const { data: batch, error } = await supabase.rpc("get_third_party_mentions", {
+            p_project_id: projectId, p_start_date: start, p_end_date: end,
+            p_topic: topic === "All" ? null : topic, p_engines: llms,
+            p_tracking_location: dataLocation,
+          }).range(offset, offset + 999);
+          if(error) return {data:null as ThirdPartyRow[]|null,error};
+          const rows=(batch??[]) as ThirdPartyRow[];
+          allRows.push(...rows);
+          if(rows.length<1000)break;
+        }
+        return {data:allRows,error:null};
+      }
+      const [{ data: brandRows, error: brandError }, { data: pageRows, error: pagesError }, {data:thirdRows,error:thirdError}] = await Promise.all([
         loadAllCitationRows(true),
         loadAllCitationRows(false),
+        loadThirdPartyRows(),
       ]);
       if (cancelled) return;
       setTopics(project?.topics ?? []);
-      if (projectError || brandError || pagesError) setError((projectError || brandError || pagesError)?.message ?? "Unable to load citation data.");
+      if (projectError || brandError || pagesError || thirdError) setError((projectError || brandError || pagesError || thirdError)?.message ?? "Unable to load citation data.");
       setBrandPages((brandRows ?? []) as AggregatedRow[]);
       setAllPages((pageRows ?? []) as AggregatedRow[]);
+      setThirdPartyRows((thirdRows ?? []) as ThirdPartyRow[]);
       setLoading(false);
     }
     void load();
@@ -148,6 +184,7 @@ export default function CitationsPage() {
     <div className="mt-6 space-y-5">{loading ? <div className="h-80 animate-pulse platform-card" /> : <>
       <CitationTable title="Brand-related Pages" data={brandPages} />
       <CitationTable title="All Cited Pages" data={allPages} />
+      <ThirdPartyMentionsTable data={thirdPartyRows} />
     </>}</div>
   </div></ProjectShell>;
 }
