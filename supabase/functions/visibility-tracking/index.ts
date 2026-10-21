@@ -756,15 +756,32 @@ Deno.serve(async (req: Request) => {
       }
     }
     const citationRows = [...citationsMap.values()];
-    if (isSuperadminRerun && citationRows.length) {
+    if (isSuperadminRerun) {
+      // Citation rows are a daily aggregate, while raw response history is append-only.
+      // Carry forward prior URLs/frequencies even if the replacement run no longer cites them.
       const { data: previousCitations, error: previousCitationError } = await admin.from("citations")
-        .select("topic,url,frequency").eq("project_id", projectId).eq("metric_date", day)
+        .select("topic,url,frequency,page_name,brand_name,is_brand_related,prompt_id")
+        .eq("project_id", projectId).eq("metric_date", day)
         .eq("tracking_location", trackingLocationsForRun[0]).eq("llm_provider", "chatgpt");
       if (previousCitationError) throw new Error("CITATION_HISTORY_READ_FAILED: " + previousCitationError.message);
-      const previousFrequency = new Map((previousCitations ?? []).map((row: Record<string, unknown>) =>
-        [String(row.topic) + "|" + String(row.url), Number(row.frequency ?? 0)]
-      ));
-      for (const row of citationRows) row.frequency = Number(row.frequency ?? 0) + (previousFrequency.get(String(row.topic) + "|" + String(row.url)) ?? 0);
+      const currentByKey = new Map(citationRows.map((row) => [String(row.topic) + "|" + String(row.url), row]));
+      for (const previous of previousCitations ?? []) {
+        const key = String(previous.topic) + "|" + String(previous.url);
+        const current = currentByKey.get(key);
+        if (current) {
+          current.frequency = Number(current.frequency ?? 0) + Number(previous.frequency ?? 0);
+        } else {
+          const preserved = {
+            project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0],
+            llm_provider: "chatgpt", topic: previous.topic, url: previous.url,
+            frequency: Number(previous.frequency ?? 0), page_name: previous.page_name,
+            brand_name: previous.brand_name, is_brand_related: previous.is_brand_related,
+            prompt_id: previous.prompt_id,
+          };
+          citationRows.push(preserved);
+          currentByKey.set(key, preserved);
+        }
+      }
     }
     if (citationRows.length) {
       const { error } = await admin.from("citations").upsert(citationRows, { onConflict: "project_id,metric_date,topic,llm_provider,url,tracking_location" });
