@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
-import { malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
+import { MIN_TRACKING_DATE, malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 
 type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null };
 type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
@@ -234,7 +234,7 @@ export default function DashboardPage() {
           <div className="ops-filter-row">
             <span className="ops-filter-label">Period</span>
             {periods.map((item) => <button key={item} onClick={() => setPeriod(item)} className={"ops-filter-btn " + (period === item ? "is-active" : "")}>{item}</button>)}
-            {period === "Custom" && <><label className="sr-only" htmlFor="dashboard-start">Start date</label><input id="dashboard-start" type="date" value={customStart} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="dashboard-end">End date</label><input id="dashboard-end" type="date" value={customEnd} min={customStart || undefined} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
+            {period === "Custom" && <><label className="sr-only" htmlFor="dashboard-start">Start date</label><input id="dashboard-start" type="date" value={customStart} min={MIN_TRACKING_DATE} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="dashboard-end">End date</label><input id="dashboard-end" type="date" value={customEnd} min={customStart || MIN_TRACKING_DATE} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
           </div>
         </section>
 
