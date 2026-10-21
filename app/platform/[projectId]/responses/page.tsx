@@ -5,7 +5,6 @@ import { useParams } from "next/navigation";
 import { CalendarDays, ChevronDown, ChevronRight, Download, ExternalLink, FileText, Search } from "lucide-react";
 import * as XLSX from "xlsx";
 import { ProjectShell } from "@/components/project-shell";
-import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
 import { malaysiaDateString, shiftDateString, malaysiaDayStart, malaysiaDayEndExclusive } from "@/lib/reporting-date";
 
@@ -63,9 +62,6 @@ export default function ResponsesPage() {
   const [provider, setProvider] = useState<string[]>([]);
   const [status, setStatus] = useState("all");
   const [topicOptions, setTopicOptions] = useState<string[]>([]);
-  const [hasUnclassifiedLegacy, setHasUnclassifiedLegacy] = useState(false);
-  const [trackingLocation, setTrackingLocation] = useState("MY");
-  const [scope, setScope] = useState<"current" | "legacy">("current");
   const [topics, setTopics] = useState<string[]>([]);
   const [searched, setSearched] = useState(false);
   const [search, setSearch] = useState("");
@@ -96,7 +92,7 @@ export default function ResponsesPage() {
         .from("ai_responses")
         .select("id,prompt_id,llm_provider,captured_at,prompt_snapshot,raw_response,response_text,response_status,error_message,run_id,tracking_location,brand_name_snapshot,project_snapshot")
         .eq("project_id", projectId)
-        .eq("tracking_location", scope === "legacy" ? "LEGACY" : trackingLocation)
+        .eq("tracking_location", trackingLocation)
         .in("llm_provider", provider)
         .gte("captured_at", start.toISOString())
         .lt("captured_at", endExclusive.toISOString())
@@ -120,35 +116,23 @@ export default function ResponsesPage() {
         if (promptLookupError) setError(promptLookupError.message);
         for (const prompt of (promptRows ?? []) as Array<Record<string, unknown>>) topicByPrompt.set(String(prompt.id), String(prompt.topic ?? ""));
       }
-      setRows(result.filter((r) => r.prompt_id
-        ? topics.includes(topicByPrompt.get(r.prompt_id) || "")
-        : topics.includes("Unclassified legacy prompts")));
+      setRows(result.filter((r) => Boolean(r.prompt_id) && topics.includes(topicByPrompt.get(r.prompt_id!) || "")));
     }
     setPage(1);
     setExpanded([]);
     setLoading(false);
-  }, [projectId, fromDate, toDate, topics, provider, scope, trackingLocation]);
+  }, [projectId, fromDate, toDate, topics, provider, trackingLocation]);
 
   useEffect(() => {
     let cancelled = false;
     async function loadFilters() {
-      const [{ data: project }, { data: promptRows }, { count: unclassifiedCount }] = await Promise.all([
-        supabase.from("projects").select("tracking_market").eq("id", projectId).single(),
-        supabase.from("prompts").select("id,topic").eq("project_id", projectId).limit(2000),
-        supabase.from("ai_responses").select("id", { count: "exact", head: true })
-          .eq("project_id", projectId).eq("tracking_location", "LEGACY").is("prompt_id", null),
-      ]);
+      const { data: promptRows } = await supabase.from("prompts").select("id,topic").eq("project_id", projectId).limit(2000);
       if (cancelled) return;
-      setTrackingLocation(project?.tracking_market ?? "MY");
       setTopicOptions([...new Set((promptRows ?? []).map((p) => String((p as Record<string, unknown>).topic ?? "")).filter(Boolean))].sort());
-      setHasUnclassifiedLegacy((unclassifiedCount ?? 0) > 0);
     }
     void loadFilters();
     return () => { cancelled = true; };
   }, [projectId]);
-  const visibleTopicOptions = scope === "legacy" && hasUnclassifiedLegacy
-    ? [...topicOptions, "Unclassified legacy prompts"]
-    : topicOptions;
 
   const filtered = useMemo(() => rows.filter((row) => {
     if (provider.length && !provider.includes(row.llm_provider)) return false;
@@ -193,20 +177,19 @@ export default function ResponsesPage() {
           <p className="page-description mt-2">Browse the full AI answers captured by tracking runs, inspect the raw provider payload, and export responses for a selected period.</p>
         </header>
 
-        <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={(nextScope) => { setScope(nextScope); setRows([]); setSearched(false); setError(""); }} />
 
         <section className="ops-card p-5 sm:p-6">
           <h2 className="mb-4 text-sm font-semibold">Filter responses</h2>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="text-xs font-semibold text-[var(--muted-foreground)]">Start date
-              <input type="date" value={fromDate} max={toDate || today} onChange={(e) => setFromDate(e.target.value)} className="platform-input mt-2 text-sm"/>
+              <input type="date" value={fromDate} min="2026-10-15" max={toDate || today} onChange={(e) => setFromDate(e.target.value)} className="platform-input mt-2 text-sm"/>
             </label>
             <label className="text-xs font-semibold text-[var(--muted-foreground)]">End date
-              <input type="date" value={toDate} min={fromDate || undefined} max={today} onChange={(e) => setToDate(e.target.value)} className="platform-input mt-2 text-sm"/>
+              <input type="date" value={toDate} min={fromDate || "2026-10-15"} max={today} onChange={(e) => setToDate(e.target.value)} className="platform-input mt-2 text-sm"/>
             </label>
           </div>
           <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">Topics</p><div className="flex flex-wrap gap-2">
-            {visibleTopicOptions.map((topic) => <label key={topic} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs"><input type="checkbox" checked={topics.includes(topic)} onChange={(e) => setTopics((s) => e.target.checked ? [...s, topic] : s.filter((x) => x !== topic))} className="accent-emerald-600"/>{topic}</label>)}
+            {topicOptions.map((topic) => <label key={topic} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs"><input type="checkbox" checked={topics.includes(topic)} onChange={(e) => setTopics((s) => e.target.checked ? [...s, topic] : s.filter((x) => x !== topic))} className="accent-emerald-600"/>{topic}</label>)}
             {!topicOptions.length && <span className="text-xs text-[var(--muted-foreground)]">No topics found.</span>}
           </div></div>
           <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">AI engines</p><div className="flex flex-wrap gap-2">
