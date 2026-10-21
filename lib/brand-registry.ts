@@ -140,6 +140,18 @@ export async function saveProjectBrandRegistry(
     const { error: assignmentError } = await client.from("topic_brand_assignments").insert(assignments);
     if (assignmentError) throw assignmentError;
   }
+  // A brand can remain in the central directory after being removed from every
+  // topic. Mark it inactive so its domains no longer suppress third-party records.
+  const { data: existingDirectory, error: existingDirectoryError } = await client.from("brand_registry")
+    .select("id").eq("project_id", projectId).eq("is_active", true);
+  if (existingDirectoryError) throw existingDirectoryError;
+  const activeIds = new Set<string>((savedBrands ?? []).map((item: any) => String(item.id)));
+  const staleIds = (existingDirectory ?? []).map((item: any) => String(item.id)).filter((id: string) => !activeIds.has(id));
+  for (let offset = 0; offset < staleIds.length; offset += 80) {
+    const { error: deactivateError } = await client.from("brand_registry").update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq("project_id", projectId).in("id", staleIds.slice(offset, offset + 80));
+    if (deactivateError) throw deactivateError;
+  }
   const tracked = merged.get(trackedKey);
   const trackedWebsites = [...(tracked?.websites ?? new Set<string>())].filter(Boolean);
   const trackedAliases = [...(tracked?.aliases ?? new Set<string>())].filter((alias) => normaliseBrandKey(alias) !== trackedKey);
