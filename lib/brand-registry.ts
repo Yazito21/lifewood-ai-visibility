@@ -136,7 +136,7 @@ export async function saveProjectBrandRegistry(
     if (!brand_id) throw new Error(`Unable to resolve brand ID for ${row.brand}.`);
     return {
       project_id: projectId, topic: row.topic, brand_id,
-      role: row.role === "tracked_brand" || key === trackedKey ? "tracked_brand" : "competitor",
+      role: (row.role === "tracked_brand" || key === trackedKey ? "tracked_brand" : "competitor") as BrandImportRow["role"],
       aliases: row.aliases,
       websites: [...new Set([row.website, ...row.otherWebsites].filter(Boolean).map(normaliseWebsite))],
       include_in_metrics: true, notes: row.notes || null, updated_at: new Date().toISOString(),
