@@ -143,3 +143,16 @@ export async function saveProjectBrandRegistry(
   const { error: projectError } = await client.from("projects").update({ topics }).eq("id", projectId);
   if (projectError) throw projectError;
 }
+
+export function downloadBrandRegistryWorkbook(topics: string[], rows: BrandImportRow[]) {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ["AI Visibility Brand Registry"],
+    ["Edit the Brands sheet and upload it in Settings. Each topic should contain one tracked brand and 99 competitors."],
+  ]), "Instructions");
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Topic"], ...topics.map((topic) => [topic])]), "Topics");
+  const data: Array<Array<string>> = [["Topic", "Brand", "Aliases", "Website", "Other Websites", "Role", "Notes"]];
+  for (const row of rows) data.push([row.topic,row.brand,row.aliases.join("; "),row.website,row.otherWebsites.join("; "),row.role,row.notes ?? ""]);
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(data), "Brands");
+  XLSX.writeFile(workbook, "ai-visibility-brand-registry.xlsx");
+}
