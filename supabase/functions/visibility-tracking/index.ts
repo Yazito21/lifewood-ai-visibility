@@ -1259,7 +1259,11 @@ Deno.serve(async (req: Request) => {
         });
         if (overallObservationError) throw new Error("OVERALL_OBSERVATION_WRITE_FAILED: " + overallObservationError.message);
       }
-      const overallCitationCount = citationRows.reduce((sum, row) => sum + Number(row.frequency ?? 0), 0);
+      const { data: allTopicCitations, error: allTopicCitationsError } = await admin.from("citations")
+        .select("frequency").eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("llm_provider", "chatgpt").in("topic", configuredTopics);
+      if (allTopicCitationsError) throw new Error("OVERALL_CITATION_ROLLUP_READ_FAILED: " + allTopicCitationsError.message);
+      const overallCitationCount = (allTopicCitations ?? []).reduce((sum, row) => sum + Number(row.frequency ?? 0), 0);
       for (const provider of ["Overall", "chatgpt"]) {
         const { error: overallMetricError } = await admin.from("visibility_daily").upsert({
           project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0],
