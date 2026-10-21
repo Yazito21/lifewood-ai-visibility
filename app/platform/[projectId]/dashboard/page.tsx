@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, ExternalLink, RefreshCw, Play, Download } from "lucide-react";
 import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
-import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
 import { malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
@@ -23,7 +22,6 @@ export default function DashboardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [trackingLocation, setTrackingLocation] = useState("MY");
-  const [scope, setScope] = useState<"current" | "legacy">("current");
   const [citationsByTopic, setCitationsByTopic] = useState<Record<string, AggregatedCitation[]>>({});
   const [competitorCounts, setCompetitorCounts] = useState<Record<string, number>>({});
   const [periodRanks, setPeriodRanks] = useState<Record<string, number>>({});
@@ -46,7 +44,7 @@ export default function DashboardPage() {
       .eq("id", projectId)
       .single();
     const location = project?.tracking_market ?? "MY";
-    const dataLocation = scope === "legacy" ? "LEGACY" : location;
+    const dataLocation = location;
     setTrackingLocation(location);
     const topicList: string[] = Array.isArray(project?.topics)
       ? project.topics.filter((topic: unknown): topic is string => typeof topic === "string")
@@ -122,7 +120,7 @@ export default function DashboardPage() {
   async function exportRawResponses() {
     setExporting(true); setError(""); setTrackingMessage("");
     try {
-      const startDate = period === "All Time" ? "1900-01-01" : dateStart(period, customStart);
+      const startDate = dateStart(period, customStart, customEnd);
       const endDate = period === "Custom" ? customEnd : malaysiaDateString();
       if (!startDate || !endDate || startDate > endDate) throw new Error("Select a valid date range before exporting.");
       const { data: { session } } = await supabase.auth.getSession();
@@ -138,7 +136,7 @@ export default function DashboardPage() {
           apikey: publishableKey,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ project_id: projectId, start_date: startDate, end_date: endDate, tracking_location: scope === "legacy" ? "LEGACY" : trackingLocation }),
+        body: JSON.stringify({ project_id: projectId, start_date: startDate, end_date: endDate, tracking_location: trackingLocation }),
       });
       if (!response.ok) {
         let message = "Unable to export raw AI responses.";
@@ -185,7 +183,7 @@ export default function DashboardPage() {
     return () => { alive = false; };
   }, [projectId]);
 
-  useEffect(() => { void load(); }, [projectId, period, customStart, customEnd, scope]);
+  useEffect(() => { void load(); }, [projectId, period, customStart, customEnd]);
 
   const cardTopics = useMemo(() => ["Overall", ...topics.filter((topic) => topic !== "Overall")], [topics]);
   const chartDateRange = useMemo(() => {
@@ -231,7 +229,6 @@ export default function DashboardPage() {
           <p className="page-description mt-2">A live overview of AI visibility performance across answer engines and topics for the selected reporting dataset.</p>
         </section>
 
-        <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
 
         <section className="ops-filter-panel">
           <div className="ops-filter-row">
@@ -244,15 +241,15 @@ export default function DashboardPage() {
         {trackingMessage && <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{trackingMessage}</div>}
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {!loading && metrics.length === 0 && <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          <p className="font-semibold">{scope === "legacy" ? "No legacy results found for this period." : "No results are available for the current tracking location in this period."}</p>
-          <p className="mt-1">{scope === "legacy" ? "Try a wider date range to inspect older location-unknown records." : "Historical location-unknown data is kept separate to protect the accuracy of this report. Run tracking at the selected location to establish or refresh its baseline, or switch to Legacy data to inspect older records."}</p>
+          <p className="font-semibold">No results are available for the selected period and tracking location.</p>
+          <p className="mt-1">Run tracking at the selected location to collect data for this reporting period.</p>
         </div>}
 
 
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest ranking, score and movement within the selected period.</p></div>
-            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking || exporting || scope === "legacy"} title={scope === "legacy" ? "Switch to current location to run tracking." : undefined} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
+            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking || exporting} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
           {!loading && cardTopics.some((topic) => !(competitorCounts[topic] > 1)) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">One or more topics have no verified direct competitors in the selected period. Their competitive rank is unavailable; this is not a first-place result.</div>}
