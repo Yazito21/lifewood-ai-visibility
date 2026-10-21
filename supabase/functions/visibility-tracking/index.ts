@@ -1132,11 +1132,14 @@ Deno.serve(async (req: Request) => {
       const { metrics, competitorPresence, competitorAveragePosition } = analyzeSubset(subset, topic);
       const observations = (entitiesByTopic.get(topic) ?? []).map((entity) => {
         const entityMentions = Number(competitorPresence[entity.key] ?? 0);
-        const citations = subset.reduce((sum, result) => sum + (result.citations as Array<Record<string, unknown>>)
+        const citations = citationRows
           .filter((citation) => {
-            const host = normalizedHostLabel(String(citation.domain ?? citation.url ?? "")).replace(/^www[.]/, "");
+            const citationTopic = String(citation.topic ?? "");
+            if (topic !== "Overall" && citationTopic !== topic) return false;
+            const host = hostOf(String(citation.url ?? ""));
             return (entity.websites ?? []).some((site) => host === site || host.endsWith("." + site));
-          }).length, 0);
+          })
+          .reduce((sum, citation) => sum + Number(citation.frequency ?? 0), 0);
         return {
           project_id: projectId, brand_id: entity.id, topic, metric_date: day,
           tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
@@ -1155,7 +1158,9 @@ Deno.serve(async (req: Request) => {
       const row = {
         project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0], topic, llm_provider: "Overall",
         ...metrics,
-        citation_count: subset.reduce((sum, r) => sum + (r.citations as unknown[]).length, 0),
+        citation_count: citationRows
+          .filter((citation) => topic === "Overall" || String(citation.topic ?? "") === topic)
+          .reduce((sum, citation) => sum + Number(citation.frequency ?? 0), 0),
       };
       const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
       if (error) throw new Error("METRICS_WRITE_FAILED for " + topic + ": " + error.message);
