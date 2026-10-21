@@ -124,13 +124,15 @@ export default function DashboardPage() {
           }
           throw new Error(topic + " failed: " + message);
         }
-        if (data?.error || !["completed", "partial"].includes(String(data?.status))) {
+        if (data?.error || !["completed", "running"].includes(String(data?.status))) {
           throw new Error(topic + " failed: " + (data?.message || data?.error || "Tracking did not complete."));
         }
         batchRunId = String(data.run_id || batchRunId || "");
         completedTopics.push(topic);
         setTrackingMessage("Completed " + completedTopics.length + " of " + chosenTopics.length + " topics: " + completedTopics.join(", "));
-        if (data.status !== "completed") throw new Error(topic + " completed with failures. Later topics were not started.");
+        if (index === chosenTopics.length - 1 && data.status !== "completed") {
+          throw new Error(topic + " did not finish successfully. Later topics were not started.");
+        }
       }
       setTrackingMessage("Tracking completed successfully for " + completedTopics.length + " topic(s): " + completedTopics.join(", ") + ".");
       await load();
