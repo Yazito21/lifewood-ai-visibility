@@ -137,8 +137,9 @@ export default function DashboardPage() {
       setTrackingMessage("Tracking completed successfully for " + completedTopics.length + " topic(s): " + completedTopics.join(", ") + ".");
       await load();
     } catch (e) {
-      setError((e instanceof Error ? e.message : String(e)) + (completedTopics.length ? " Completed topics: " + completedTopics.join(", ") + "." : ""));
+      const message = (e instanceof Error ? e.message : String(e)) + (completedTopics.length ? " Completed topics: " + completedTopics.join(", ") + "." : "");
       await load();
+      setError(message);
     } finally { setTracking(false); }
   }
 
