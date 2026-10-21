@@ -660,6 +660,16 @@ Deno.serve(async (req: Request) => {
       }
     }
     const citationRows = [...citationsMap.values()];
+    if (isSuperadminRerun && citationRows.length) {
+      const { data: previousCitations, error: previousCitationError } = await admin.from("citations")
+        .select("topic,url,frequency").eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("llm_provider", "chatgpt");
+      if (previousCitationError) throw new Error("CITATION_HISTORY_READ_FAILED: " + previousCitationError.message);
+      const previousFrequency = new Map((previousCitations ?? []).map((row: Record<string, unknown>) =>
+        [String(row.topic) + "|" + String(row.url), Number(row.frequency ?? 0)]
+      ));
+      for (const row of citationRows) row.frequency = Number(row.frequency ?? 0) + (previousFrequency.get(String(row.topic) + "|" + String(row.url)) ?? 0);
+    }
     if (citationRows.length) {
       const { error } = await admin.from("citations").upsert(citationRows, { onConflict: "project_id,metric_date,topic,llm_provider,url,tracking_location" });
       if (error) throw new Error("CITATIONS_WRITE_FAILED: " + error.message);
