@@ -907,7 +907,7 @@ Deno.serve(async (req: Request) => {
     const brandKey = "__tracked_brand__";
 
     function analyzeSubset(subset: Array<Record<string, unknown>>, topic: string) {
-      const entities = [{ key: brandKey, aliases: brandTerms }, ...(entitiesByTopic.get(topic) ?? [])];
+      const entities = [{ key: brandKey, id: brandKey, domain: "", websites: [] as string[], aliases: brandTerms, brand_name: brandName, website: "" }, ...(entitiesByTopic.get(topic) ?? [])];
       const brandResponseCount = subset.filter((result) =>
         cachedTermMatches(result, String(result.response_text ?? ""), brandTerms).count > 0
       ).length;
@@ -960,9 +960,10 @@ Deno.serve(async (req: Request) => {
         .filter((entity) => subset.some((result) => {
           if (cachedTermMatches(result, String(result.response_text ?? ""), entity.aliases).count > 0) return true;
           const citations = Array.isArray(result.citations) ? result.citations as Array<Record<string, unknown>> : [];
-          return citations.some((citation) =>
-            normalizedHostLabel(String(citation.domain ?? citation.url ?? "")) === entity.key
-          );
+          return citations.some((citation) => {
+            const host = normalizedHostLabel(String(citation.domain ?? citation.url ?? "")).replace(/^www\\./, "");
+            return (entity.websites ?? []).some((site: string) => host === site || host.endsWith("." + site));
+          });
         }))
         .map((entity) => entity.key);
       const visibilityRank = observedCompetitorKeys.length
@@ -995,19 +996,27 @@ Deno.serve(async (req: Request) => {
     for (const topic of ["Overall", ...topicNames]) {
       const subset = succeeded.filter((r) => topic === "Overall" || r.topic === topic);
       const { metrics, competitorPresence } = analyzeSubset(subset, topic);
-      const observations = (entitiesByTopic.get(topic) ?? []).map((entity) => ({
-        project_id: projectId, competitor_id: entity.id, metric_date: day,
-        tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
-        presence_count: Number(competitorPresence[entity.key] ?? 0),
-        response_count: subset.length,
-        citation_count: subset.reduce((sum, result) => sum + (result.citations as Array<Record<string, unknown>>)
-          .filter((citation) => normalizedHostLabel(String(citation.domain ?? citation.url ?? "")) === entity.domain).length, 0),
-      }));
+      const observations = (entitiesByTopic.get(topic) ?? []).map((entity) => {
+        const entityMentions = Number(competitorPresence[entity.key] ?? 0);
+        const citations = subset.reduce((sum, result) => sum + (result.citations as Array<Record<string, unknown>>)
+          .filter((citation) => {
+            const host = normalizedHostLabel(String(citation.domain ?? citation.url ?? "")).replace(/^www\\./, "");
+            return (entity.websites ?? []).some((site) => host === site || host.endsWith("." + site));
+          }).length, 0);
+        return {
+          project_id: projectId, brand_id: entity.id, topic, metric_date: day,
+          tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
+          presence_count: entityMentions, response_count: subset.length,
+          mention_count: subset.reduce((sum, result) => sum + cachedTermMatches(result, String(result.response_text ?? ""), entity.aliases).count, 0),
+          citation_count: citations,
+          average_position: null,
+        };
+      });
       if (observations.length) {
-        const { error: observationError } = await admin.from("direct_competitor_observations").upsert(observations, {
-          onConflict: "competitor_id,metric_date,tracking_location,llm_provider",
+        const { error: observationError } = await admin.from("topic_brand_observations").upsert(observations, {
+          onConflict: "project_id,brand_id,topic,metric_date,tracking_location,llm_provider",
         });
-        if (observationError) throw new Error("DIRECT_COMPETITOR_OBSERVATION_WRITE_FAILED: " + observationError.message);
+        if (observationError) throw new Error("TOPIC_BRAND_OBSERVATION_WRITE_FAILED: " + observationError.message);
       }
       const row = {
         project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0], topic, llm_provider: "Overall",
