@@ -252,8 +252,8 @@ export default function LeaderboardsPage() {
         setProjectWebsite(rootWebsite(project?.brand_domains?.[0] ?? null));
         setTopics((project?.topics ?? []).filter((value: string) => value && value !== "Overall"));
         setDirectCompetitors(filteredRegistry);
-        setCurrentCompetitorObservations(currentObservations.filter((row) => eligibleIds.has(row.competitor_id)));
-        setPreviousCompetitorObservations(previousObservations.filter((row) => eligibleIds.has(row.competitor_id)));
+        setCurrentCompetitorObservations(currentObservations.filter((row) => eligibleIds.has(row.brand_id)));
+        setPreviousCompetitorObservations(previousObservations.filter((row) => eligibleIds.has(row.brand_id)));
         setCurrentOwnMetrics(currentOwn);
         setPreviousOwnMetrics(previousOwn);
       } catch (cause) {
