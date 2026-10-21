@@ -601,22 +601,66 @@ Deno.serve(async (req: Request) => {
     const succeeded = results.filter((r) => r.status === "completed");
     const failed = results.filter((r) => r.status === "failed");
 
-    // Sample mode returns data only to this request. It does not create runs or write result data.
+    // Sample mode is temporary and writes no result rows. It uses the same fixed
+    // topic-specific competitor registry as persistent tracking; citation domains
+    // never become competitors merely because they appeared in a response.
     if (mode === "sample") {
       const brandCount = succeeded.filter((r) => r.brand_mentioned).length;
       const analysisFailures = succeeded.filter((r) =>
         (r.response_analysis as Record<string, unknown> | undefined)?.status !== "completed"
       ).length;
-      const competitors = new Map<string, number>();
-      for (const result of succeeded) for (const host of result.competitor_hosts as string[]) competitors.set(host, (competitors.get(host) ?? 0) + 1);
-      // Sample mode only surfaces observed non-brand citation domains; it does not
-      // run the full verified direct-competitor ranking pipeline. Never fabricate a rank.
-      const allCitations = succeeded.flatMap((r) => (r.citations as Array<Record<string,unknown>>).map((c) => ({ ...c, topic: r.topic, prompt: r.prompt, prompt_number: r.prompt_number, provider: r.provider })));
+      const [{ data: sampleAssignments, error: sampleAssignmentError }, { data: sampleDirectory, error: sampleDirectoryError }] = await Promise.all([
+        admin.from("topic_brand_assignments").select("topic,brand_id,role,aliases,websites,include_in_metrics")
+          .eq("project_id", projectId).eq("include_in_metrics", true),
+        admin.from("brand_registry").select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_active")
+          .eq("project_id", projectId).eq("is_active", true),
+      ]);
+      if (sampleAssignmentError) throw new Error("SAMPLE_BRAND_ASSIGNMENT_READ_FAILED: " + sampleAssignmentError.message);
+      if (sampleDirectoryError) throw new Error("SAMPLE_BRAND_REGISTRY_READ_FAILED: " + sampleDirectoryError.message);
+      const sampleDirectoryById = new Map<string, Record<string, unknown>>(
+        (sampleDirectory ?? []).map((row: Record<string, unknown>) => [String(row.id), row])
+      );
+      const sampleCompetitorCounts = new Map<string, { domain: string; name: string; mentions: number }>();
+      for (const result of succeeded) {
+        const topic = String(result.topic ?? "General");
+        const text = String(result.response_text ?? "");
+        const observed: string[] = [];
+        for (const assignment of (sampleAssignments ?? []).filter((row: Record<string, unknown>) =>
+          String(row.topic) === topic && String(row.role) === "competitor"
+        ) as Array<Record<string, unknown>>) {
+          const directory = sampleDirectoryById.get(String(assignment.brand_id));
+          if (!directory) continue;
+          const aliases = [...new Set([
+            String(directory.canonical_name ?? ""),
+            ...(Array.isArray(directory.aliases) ? directory.aliases.map(String) : []),
+            ...(Array.isArray(assignment.aliases) ? assignment.aliases.map(String) : []),
+          ].map((value) => value.trim()).filter((value) => value.length > 1))];
+          if (summarizeTermMatches(text, aliases).count <= 0) continue;
+          const id = String(directory.id);
+          observed.push(id);
+          const websiteValue = String(directory.primary_website ?? (Array.isArray(assignment.websites) ? assignment.websites[0] : "") ?? "");
+          const websiteHost = websiteValue ? normalizedHostLabel(websiteValue).replace(/^www\./, "") : "";
+          const name = String(directory.canonical_name ?? "");
+          const domain = websiteHost || name;
+          const previous = sampleCompetitorCounts.get(id);
+          sampleCompetitorCounts.set(id, { domain: domain ? name + (websiteHost ? " — " + websiteHost : "") : name, name, mentions: Number(previous?.mentions ?? 0) + 1 });
+        }
+        // Overwrite the sample-only field with fixed-list matches, not all cited domains.
+        result.competitor_hosts = [...new Set(observed)].map((id) => {
+          const entry = sampleCompetitorCounts.get(id);
+          return entry?.domain ?? id;
+        });
+      }
+      const allCitations = succeeded.flatMap((r) => (r.citations as Array<Record<string,unknown>>).map((c) => ({
+        ...c, topic: r.topic, prompt: r.prompt, prompt_number: r.prompt_number, provider: r.provider,
+      })));
       return json({
         mode, project: { brand_name: project.brand_name }, providers: providerIds,
-        summary: { total_prompts: results.length, completed: succeeded.length, failed: failed.length, analysis_failures: analysisFailures, visibility_score: succeeded.length ? Math.round(brandCount / succeeded.length * 1000) / 10 : null, visibility_rank: null },
+        summary: { total_prompts: results.length, completed: succeeded.length, failed: failed.length, analysis_failures: analysisFailures,
+          visibility_score: succeeded.length ? Math.round(brandCount / succeeded.length * 1000) / 10 : null, visibility_rank: null },
         results, citations: allCitations,
-        competitors: [...competitors.entries()].map(([domain, count]) => ({ domain, mentions: count })).sort((a,b)=>b.mentions-a.mentions),
+        competitors: [...sampleCompetitorCounts.values()].sort((a, b) => b.mentions - a.mentions || a.name.localeCompare(b.name))
+          .map(({ domain, mentions }) => ({ domain, mentions })),
       });
     }
 
