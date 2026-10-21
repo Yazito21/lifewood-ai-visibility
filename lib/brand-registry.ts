@@ -119,9 +119,15 @@ export async function saveProjectBrandRegistry(
       updated_at: new Date().toISOString(),
     };
   });
-  const { data: savedBrands, error: registryError } = await client.from("brand_registry").upsert(directoryRows, { onConflict: "project_id,normalized_key" }).select("id,normalized_key");
-  if (registryError) throw registryError;
-  const brandIdByKey = new Map<string, string>((savedBrands ?? []).map((item: any) => [item.normalized_key, item.id]));
+  const savedBrandRows: Array<{id:string;normalized_key:string}> = [];
+  for(let offset=0;offset<directoryRows.length;offset+=100){
+    const batch=directoryRows.slice(offset,offset+100);
+    const {data,error:registryError}=await client.from("brand_registry").upsert(batch,{onConflict:"project_id,normalized_key"}).select("id,normalized_key");
+    if(registryError)throw registryError;
+    savedBrandRows.push(...((data??[]) as Array<{id:string;normalized_key:string}>));
+  }
+  const savedBrands=savedBrandRows;
+  const brandIdByKey = new Map<string, string>(savedBrands.map((item) => [item.normalized_key, item.id]));
   const { error: deleteError } = await client.from("topic_brand_assignments").delete().eq("project_id", projectId);
   if (deleteError) throw deleteError;
   const assignments = rows.filter((row) => topics.includes(row.topic)).map((row) => {
