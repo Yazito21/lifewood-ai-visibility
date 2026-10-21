@@ -305,11 +305,13 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         // a URL appearing in prose is not proof that the answer cited that page.
         const mentionedUrls = urlsIn(text);
         const citationCandidates = responseCitations;
-        const domains = Array.isArray(project.brand_domains) ? project.brand_domains.map((d) => String(d).toLowerCase().replace("https://","").replace("http://","").replace("www.","").split("/")[0]) : [];
+        const domains = Array.isArray(project.brand_domains) ? project.brand_domains.map((d) => normalizedHostLabel(String(d)).replace(/^www\\./, "").toLowerCase()).filter(Boolean) : [];
         const citations = [...new Map(citationCandidates.filter((c) => c.url.startsWith("http://") || c.url.startsWith("https://")).map((c) => [c.url, c])).values()].map((source) => {
           const url = String(source.url);
           const host = hostOf(url);
-          const related = domains.some((d) => d && (host === d || host.endsWith("." + d))) || containsTerm(url, terms);
+          // Brand citations are first-party-domain matches only. A brand term in a
+          // third-party URL is not proof the URL belongs to the tracked brand.
+          const related = domains.some((d) => d && (host === d || host.endsWith("." + d)));
           return { url, page_name: String(source.title || titleFromUrl(url)), brand_name: related ? brandName : titleFromUrl(url), is_brand_related: related, domain: host, citation_source: source.source ?? "web_search" };
         });
         const competitorHosts = [...new Set(citations.filter((c) => !c.is_brand_related).map((c) => hostOf(c.url)).filter((host) => Boolean(host) && !isGenericCitationDomain(host)))];
