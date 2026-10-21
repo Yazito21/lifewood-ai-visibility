@@ -727,9 +727,9 @@ Deno.serve(async (req: Request) => {
       const { error: competitorsDeleteError } = await admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]).eq("topic", requestedTopic);
       if (competitorsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorsDeleteError.message }, 500);
       // Remove only the replaceable daily observations; keep the append-only competitor registry intact.
-      const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
+      const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]).eq("topic", requestedTopic);
       if (directObservationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: directObservationDeleteError.message }, 500);
-      const { error: topicObservationDeleteError } = await admin.from("topic_brand_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
+      const { error: topicObservationDeleteError } = await admin.from("topic_brand_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]).eq("topic", requestedTopic);
       if (topicObservationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: topicObservationDeleteError.message }, 500);
       const { error: metricsDeleteError } = await admin.from("visibility_daily").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
       if (metricsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsDeleteError.message }, 500);
