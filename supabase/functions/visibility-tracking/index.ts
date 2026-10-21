@@ -305,7 +305,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         // a URL appearing in prose is not proof that the answer cited that page.
         const mentionedUrls = urlsIn(text);
         const citationCandidates = responseCitations;
-        const domains = Array.isArray(project.brand_domains) ? project.brand_domains.map((d) => normalizedHostLabel(String(d)).replace(/^www\\./, "").toLowerCase()).filter(Boolean) : [];
+        const domains = Array.isArray(project.brand_domains) ? project.brand_domains.map((d) => normalizedHostLabel(String(d)).replace(/^www[.]/, "").toLowerCase()).filter(Boolean) : [];
         const citations = [...new Map(citationCandidates.filter((c) => c.url.startsWith("http://") || c.url.startsWith("https://")).map((c) => [c.url, c])).values()].map((source) => {
           const url = String(source.url);
           const host = hostOf(url);
@@ -1109,7 +1109,7 @@ Deno.serve(async (req: Request) => {
         const entityMentions = Number(competitorPresence[entity.key] ?? 0);
         const citations = subset.reduce((sum, result) => sum + (result.citations as Array<Record<string, unknown>>)
           .filter((citation) => {
-            const host = normalizedHostLabel(String(citation.domain ?? citation.url ?? "")).replace(/^www\\./, "");
+            const host = normalizedHostLabel(String(citation.domain ?? citation.url ?? "")).replace(/^www[.]/, "");
             return (entity.websites ?? []).some((site) => host === site || host.endsWith("." + site));
           }).length, 0);
         return {
