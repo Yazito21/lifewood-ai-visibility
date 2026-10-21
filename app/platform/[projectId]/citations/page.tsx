@@ -123,7 +123,6 @@ export default function CitationsPage() {
       ]);
       if (cancelled) return;
       setTopics(project?.topics ?? []);
-      setTrackingLocation(location);
       if (projectError || brandError || pagesError) setError((projectError || brandError || pagesError)?.message ?? "Unable to load citation data.");
       setBrandPages((brandRows ?? []) as AggregatedRow[]);
       setAllPages((pageRows ?? []) as AggregatedRow[]);
