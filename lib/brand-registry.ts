@@ -122,7 +122,7 @@ export async function saveProjectBrandRegistry(
   const { data: savedBrands, error: registryError } = await client.from("brand_registry").upsert(directoryRows, { onConflict: "project_id,normalized_key" }).select("id,normalized_key");
   if (registryError) throw registryError;
   const brandIdByKey = new Map<string, string>((savedBrands ?? []).map((item: any) => [item.normalized_key, item.id]));
-  const { error: deleteError } = await client.from("topic_brand_assignments").delete().eq("project_id", projectId).in("topic", topics);
+  const { error: deleteError } = await client.from("topic_brand_assignments").delete().eq("project_id", projectId);
   if (deleteError) throw deleteError;
   const assignments = rows.filter((row) => topics.includes(row.topic)).map((row) => {
     const key = normaliseBrandKey(row.brand);
