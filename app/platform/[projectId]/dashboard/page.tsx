@@ -109,7 +109,7 @@ export default function DashboardPage() {
       for (let index = 0; index < chosenTopics.length; index++) {
         const topic = chosenTopics[index];
         setTrackingMessage("Running topic " + (index + 1) + " of " + chosenTopics.length + ": " + topic + "…");
-        const { data, error } = await supabase.functions.invoke("visibility-tracking", {
+        const response = await supabase.functions.invoke("visibility-tracking", {
           body: {
             mode: "persistent", project_id: projectId, providers: ["chatgpt"],
             topic, selected_topics: chosenTopics, batch_index: index, batch_total: chosenTopics.length,
@@ -117,10 +117,15 @@ export default function DashboardPage() {
             rerun: isSuperadmin,
           },
         });
+        const data: Record<string, unknown> | null = response.data as Record<string, unknown> | null;
+        const error = response.error;
         if (error) {
           let message = error.message;
           if (error.context instanceof Response) {
-            try { message = (await error.context.clone().json())?.message || (await error.context.clone().json())?.error || message; } catch { /* use SDK message */ }
+            try {
+              const details = await error.context.clone().json();
+              message = details?.message || details?.error || message;
+            } catch { /* use SDK message */ }
           }
           throw new Error(topic + " failed: " + message);
         }
