@@ -667,297 +667,241 @@ Deno.serve(async (req: Request) => {
       if (error) throw new Error("CITATIONS_WRITE_FAILED: " + error.message);
     }
 
-    // Bootstrap the append-only registry from existing citation history exactly once.
-    // This lets historical reporting periods continue to work after the new model is deployed.
-    const { data: registryProbe, error: registryProbeError } = await admin
-      .from("direct_competitors").select("topic").eq("project_id", projectId);
-    if (registryProbeError) throw new Error("DIRECT_COMPETITOR_REGISTRY_READ_FAILED: " + registryProbeError.message);
-    const existingRegistryTopics = new Set((registryProbe ?? []).map((row: Record<string, unknown>) => String(row.topic)));
-    const bootstrapTopics = new Set(["Overall", ...topicNames].filter((topic) => !existingRegistryTopics.has(topic)));
-    const needsCompetitorBootstrap = bootstrapTopics.size > 0;
-    const historicalFirstSeen = new Map<string, string>();
-    const historicalLastSeen = new Map<string, string>();
-    const historicalCitationCounts = new Map<string, number>();
 
-    // Classify citation candidates against the tracked brand's business line.
-    // The registry is append-only: new domains are added, aliases are enriched,
-    // and existing competitors are never removed when a later run omits them.
-    const classifierCandidatesByTopic = new Map<string, Map<string, { domain: string; brand_name: string; page_name: string; citations: number }>>();
-    const ownedDomains = (Array.isArray(project.brand_domains) ? project.brand_domains : [])
-      .map((value) => normalizedHostLabel(String(value))).filter(Boolean);
-    for (const result of succeeded) {
-      const resultTopic = String(result.topic ?? "General");
-      const topicCandidates = classifierCandidatesByTopic.get(resultTopic) ?? new Map();
-      for (const citation of result.citations as Array<Record<string, unknown>>) {
-        if (citation.is_brand_related) continue;
-        const domain = normalizedHostLabel(String(citation.domain ?? citation.url ?? ""));
-        if (!domain || isGenericCitationDomain(domain) ||
-          ownedDomains.some((owned) => domain === owned || domain.endsWith("." + owned))) continue;
-        const previous = topicCandidates.get(domain);
-        topicCandidates.set(domain, {
-          domain,
-          brand_name: String(citation.brand_name ?? titleFromUrl(String(citation.url ?? ""))),
-          page_name: String(citation.page_name ?? ""),
-          citations: (previous?.citations ?? 0) + 1,
-        });
-      }
-      // Search-result sources are not citations, but can help identify the domain
-      // of an entity that the answer explicitly mentions. Only use a source when
-      // its title/domain clearly matches an extracted entity name or alias.
-      const extractedEntities = Array.isArray((result.response_analysis as Record<string, unknown> | undefined)?.entities)
-        ? (result.response_analysis as Record<string, unknown>).entities as Array<Record<string, unknown>>
-        : [];
-      const researchSources = Array.isArray(result.research_sources)
-        ? result.research_sources as Array<Record<string, unknown>>
-        : [];
-      for (const entity of extractedEntities) {
-        const names = [String(entity.name ?? ""), ...(Array.isArray(entity.aliases) ? entity.aliases.map(String) : [])]
-          .map((name) => name.trim().toLocaleLowerCase()).filter((name) => name.length > 2);
-        if (!names.length) continue;
-        for (const source of researchSources) {
-          const url = String(source.url ?? "");
-          const domain = normalizedHostLabel(String(url));
-          const sourceLabel = (String(source.title ?? "") + " " + domain.replace(/[._-]+/g, " ")).toLocaleLowerCase();
-          if (!domain || isGenericCitationDomain(domain) ||
-            ownedDomains.some((owned) => domain === owned || domain.endsWith("." + owned)) ||
-            !names.some((name) => sourceLabel.includes(name) || name.includes(domain.split(".")[0].replace(/[-_]+/g, " ")))) continue;
-          const previous = topicCandidates.get(domain);
-          topicCandidates.set(domain, {
-            domain,
-            brand_name: String(entity.name),
-            page_name: String(source.title ?? titleFromUrl(url)),
-            citations: (previous?.citations ?? 0) + 1,
-          });
-        }
-      }
-      classifierCandidatesByTopic.set(resultTopic, topicCandidates);
-    }
-
-    if (needsCompetitorBootstrap) {
-      for (let offset = 0; ; offset += 1000) {
-        const { data: historicalCitations, error: historyError } = await admin
-          .from("citations")
-          .select("topic,url,brand_name,page_name,is_brand_related,frequency,metric_date,tracking_location")
-          .eq("project_id", projectId)
-          .eq("tracking_location", trackingLocationsForRun[0])
-          .order("metric_date", { ascending: true })
-          .range(offset, offset + 999);
-        if (historyError) throw new Error("DIRECT_COMPETITOR_HISTORY_READ_FAILED: " + historyError.message);
-        const rows = historicalCitations ?? [];
-        for (const citation of rows as Array<Record<string, unknown>>) {
-          const topic = String(citation.topic ?? "General");
-          const domain = normalizedHostLabel(String(citation.url ?? ""));
-          const date = String(citation.metric_date ?? "");
-          if (!domain || !date) continue;
-          for (const entityTopic of new Set([topic, "Overall"])) {
-            const dateKey = entityTopic + "|" + domain;
-            const first = historicalFirstSeen.get(dateKey);
-            const last = historicalLastSeen.get(dateKey);
-            if (!first || date < first) historicalFirstSeen.set(dateKey, date);
-            if (!last || date > last) historicalLastSeen.set(dateKey, date);
-          }
-          if (!citation.is_brand_related && !isGenericCitationDomain(domain) &&
-            (bootstrapTopics.has(topic) || bootstrapTopics.has("Overall")) &&
-            !ownedDomains.some((owned) => domain === owned || domain.endsWith("." + owned))) {
-            const topicCandidates = classifierCandidatesByTopic.get(topic) ?? new Map();
-            const previous = topicCandidates.get(domain);
-            topicCandidates.set(domain, {
-              domain,
-              brand_name: String(citation.brand_name ?? titleFromUrl(String(citation.url ?? ""))),
-              page_name: String(citation.page_name ?? ""),
-              citations: (previous?.citations ?? 0) + Number(citation.frequency ?? 1),
-            });
-            classifierCandidatesByTopic.set(topic, topicCandidates);
-          }
-          if (!citation.is_brand_related && !isGenericCitationDomain(domain)) {
-            const citationKey = [date, topic, domain].join("|");
-            historicalCitationCounts.set(citationKey, (historicalCitationCounts.get(citationKey) ?? 0) + Number(citation.frequency ?? 1));
-          }
-        }
-        if (rows.length < 1000) break;
-      }
-    }
-
-    const discoveredByTopic = new Map<string, Map<string, ClassifiedCompetitor>>();
+    // Canonical, explicitly configured comparison set. No response-discovered
+    // entity is automatically promoted to competitor status.
     const classificationFailures: string[] = [];
-    for (const topic of topicNames) {
-      const candidates = [...(classifierCandidatesByTopic.get(topic)?.values() ?? [])];
-      try {
-        const classified = await classifyDirectCompetitors(apiKey, project, topic, candidates);
-        discoveredByTopic.set(topic, new Map(classified.map((item) => [item.domain, item])));
-      } catch (classificationError) {
-        console.error("DIRECT_COMPETITOR_CLASSIFICATION_FAILED", topic,
-          classificationError instanceof Error ? classificationError.message : String(classificationError));
-        classificationFailures.push(topic);
-        discoveredByTopic.set(topic, new Map());
-      }
-    }
-
-    const discoveredEntities = new Map<string, { topic: string; domain: string; brand_name: string; website: string; aliases: string[] }>();
-    for (const [topic, competitorsForTopic] of discoveredByTopic) {
-      for (const item of competitorsForTopic.values()) {
-        const topicsToSave = [topic, "Overall"];
-        for (const entityTopic of topicsToSave) {
-          const key = entityTopic + "|" + item.domain;
-          const previous = discoveredEntities.get(key);
-          discoveredEntities.set(key, {
-            topic: entityTopic, domain: item.domain,
-            brand_name: previous?.brand_name ?? item.brand_name,
-            website: "https://" + item.domain,
-            aliases: [...new Set([...(previous?.aliases ?? []), ...item.aliases])],
-          });
-        }
-      }
-    }
-
-    const { data: existingCompetitors, error: existingCompetitorsError } = await admin
-      .from("direct_competitors")
-      .select("id,topic,normalized_domain,brand_name,website,aliases,first_seen_date,last_seen_date")
-      .eq("project_id", projectId);
-    if (existingCompetitorsError) throw new Error("DIRECT_COMPETITOR_REGISTRY_READ_FAILED: " + existingCompetitorsError.message);
-    const existingByKey = new Map((existingCompetitors ?? []).map((item: Record<string, unknown>) =>
-      [String(item.topic) + "|" + String(item.normalized_domain), item]));
-    const registryUpserts = [...discoveredEntities.values()].map((item) => {
-      const existing = existingByKey.get(item.topic + "|" + item.domain) as Record<string, unknown> | undefined;
-      return {
-        project_id: projectId, topic: item.topic, normalized_domain: item.domain,
-        brand_name: item.brand_name, website: item.website,
-        aliases: [...new Set([
-          ...(Array.isArray(existing?.aliases) ? existing.aliases.map(String) : []),
-          ...item.aliases,
-        ])],
-        first_seen_date: String(existing?.first_seen_date ?? historicalFirstSeen.get(item.topic + "|" + item.domain) ?? day),
-        last_seen_date: (() => {
-          const discoveredLast = historicalLastSeen.get(item.topic + "|" + item.domain) ?? day;
-          const existingLast = String(existing?.last_seen_date ?? "");
-          return [discoveredLast, existingLast].filter(Boolean).sort().at(-1) ?? day;
-        })(),
-      };
-    });
-    if (registryUpserts.length) {
-      const { error } = await admin.from("direct_competitors").upsert(registryUpserts, {
-        onConflict: "project_id,topic,normalized_domain",
-      });
-      if (error) throw new Error("DIRECT_COMPETITOR_REGISTRY_WRITE_FAILED: " + error.message);
-    }
-    const { data: registryRows, error: registryReadError } = await admin
-      .from("direct_competitors")
-      .select("id,topic,normalized_domain,brand_name,website,aliases")
+    const { data: allAssignments, error: assignmentError } = await admin
+      .from("topic_brand_assignments")
+      .select("project_id,topic,brand_id,role,aliases,websites,include_in_metrics")
       .eq("project_id", projectId)
-      .in("topic", ["Overall", ...topicNames]);
-    if (registryReadError) throw new Error("DIRECT_COMPETITOR_REGISTRY_READ_FAILED: " + registryReadError.message);
+      .eq("include_in_metrics", true);
+    if (assignmentError) throw new Error("TOPIC_BRAND_ASSIGNMENT_READ_FAILED: " + assignmentError.message);
 
-    const entitiesByTopic = new Map<string, Array<{ id: string; key: string; domain: string; brand_name: string; website: string; aliases: string[] }>>();
-    for (const topic of ["Overall", ...topicNames]) {
-      const rows = (registryRows ?? []).filter((row: Record<string, unknown>) => String(row.topic) === topic);
-      entitiesByTopic.set(topic, rows.map((row: Record<string, unknown>) => ({
-        id: String(row.id), key: String(row.normalized_domain), domain: String(row.normalized_domain),
-        brand_name: String(row.brand_name), website: String(row.website ?? ""),
-        aliases: [...new Set([
-          String(row.brand_name ?? ""), String(row.normalized_domain ?? ""),
-          String(row.normalized_domain ?? "").split(".")[0].replace(/[-_]+/g, " "),
-          ...(Array.isArray(row.aliases) ? row.aliases.map(String) : []),
-        ].map((value) => value.trim()).filter((value) => value.length > 1))],
-      })));
+    const assignedBrandIds = [...new Set((allAssignments ?? []).map((row: Record<string, unknown>) => String(row.brand_id)))];
+    let { data: directoryRows, error: directoryError } = await admin
+      .from("brand_registry")
+      .select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_tracked_brand,is_active")
+      .eq("project_id", projectId)
+      .eq("is_active", true);
+    if (directoryError) throw new Error("BRAND_REGISTRY_READ_FAILED: " + directoryError.message);
+
+    // Safety bootstrap for a project created before the registry UI was used.
+    // This adds the tracked identity only; it never guesses competitor brands.
+    const trackedKey = String(project.brand_name ?? "Brand").trim().toLocaleLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "");
+    let trackedRecord = (directoryRows ?? []).find((row: Record<string, unknown>) =>
+      row.is_tracked_brand === true || String(row.normalized_key ?? "") === trackedKey
+    ) as Record<string, unknown> | undefined;
+    if (!trackedRecord) {
+      const { data: trackedRows, error: trackedError } = await admin.from("brand_registry").upsert({
+        project_id: projectId,
+        canonical_name: String(project.brand_name ?? "Brand"),
+        normalized_key: trackedKey,
+        aliases: Array.isArray(project.brand_terms) ? project.brand_terms : [],
+        primary_website: Array.isArray(project.brand_domains) ? String((project.brand_domains as unknown[])[0] ?? "") : null,
+        additional_websites: Array.isArray(project.brand_domains) ? (project.brand_domains as unknown[]).slice(1).map(String) : [],
+        is_tracked_brand: true,
+        is_active: true,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "project_id,normalized_key" }).select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_tracked_brand,is_active");
+      if (trackedError) throw new Error("TRACKED_BRAND_BOOTSTRAP_FAILED: " + trackedError.message);
+      trackedRecord = (trackedRows ?? [])[0] as Record<string, unknown> | undefined;
+      const { data: assignmentRows, error: trackedAssignmentError } = await admin.from("topic_brand_assignments").upsert(
+        topicNames.map((topic) => ({
+          project_id: projectId, topic, brand_id: String(trackedRecord?.id ?? ""),
+          role: "tracked_brand", aliases: Array.isArray(project.brand_terms) ? project.brand_terms : [],
+          websites: Array.isArray(project.brand_domains) ? (project.brand_domains as unknown[]).map(String) : [],
+          include_in_metrics: true,
+        })), { onConflict: "project_id,topic,brand_id" }
+      ).select("project_id");
+      if (trackedAssignmentError) throw new Error("TRACKED_BRAND_ASSIGNMENT_BOOTSTRAP_FAILED: " + trackedAssignmentError.message);
+      void assignmentRows;
+      const refreshed = await admin.from("brand_registry")
+        .select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_tracked_brand,is_active")
+        .eq("project_id", projectId).eq("is_active", true);
+      if (refreshed.error) throw new Error("BRAND_REGISTRY_READ_FAILED: " + refreshed.error.message);
+      directoryRows = refreshed.data ?? [];
     }
 
-    if (needsCompetitorBootstrap) {
-      const { data: promptRows, error: promptRowsError } = await admin
-        .from("prompts").select("id,topic").eq("project_id", projectId);
-      if (promptRowsError) throw new Error("DIRECT_COMPETITOR_HISTORY_READ_FAILED: " + promptRowsError.message);
-      const promptTopicById = new Map((promptRows ?? []).map((row: Record<string, unknown>) => [String(row.id), String(row.topic ?? "General")]));
-      const historicalGroups = new Map<string, Array<{ topic: string; text: string }>>();
+    const directoryById = new Map<string, Record<string, unknown>>(
+      (directoryRows ?? []).map((row: Record<string, unknown>) => [String(row.id), row])
+    );
+    const validAssignments = (allAssignments ?? []).filter((row: Record<string, unknown>) => directoryById.has(String(row.brand_id)));
+    const fixedTrackedId = String(trackedRecord?.id ?? (directoryRows ?? []).find((row: Record<string, unknown>) => row.is_tracked_brand === true)?.id ?? "");
+    const assignedTrackedTopics = new Set(validAssignments
+      .filter((row: Record<string, unknown>) => String(row.brand_id) === fixedTrackedId && String(row.role) === "tracked_brand")
+      .map((row: Record<string, unknown>) => String(row.topic)));
+    const missingTrackedTopics = topicNames.filter((topic) => !assignedTrackedTopics.has(topic));
+    if (missingTrackedTopics.length && fixedTrackedId) {
+      const { error: trackedAssignmentError } = await admin.from("topic_brand_assignments").upsert(
+        missingTrackedTopics.map((topic) => ({
+          project_id: projectId, topic, brand_id: fixedTrackedId, role: "tracked_brand",
+          aliases: Array.isArray(project.brand_terms) ? project.brand_terms : [],
+          websites: Array.isArray(project.brand_domains) ? (project.brand_domains as unknown[]).map(String) : [],
+          include_in_metrics: true,
+        })), { onConflict: "project_id,topic,brand_id" }
+      );
+      if (trackedAssignmentError) throw new Error("TRACKED_BRAND_ASSIGNMENT_BOOTSTRAP_FAILED: " + trackedAssignmentError.message);
+    }
+
+    type FixedBrandEntity = { id: string; key: string; domain: string; website: string; websites: string[]; brand_name: string; aliases: string[] };
+    function siteHost(value: string) { return normalizedHostLabel(value).replace(/^www\./, "").toLocaleLowerCase(); }
+    function entityFromAssignment(assignment: Record<string, unknown>): FixedBrandEntity | null {
+      const directory = directoryById.get(String(assignment.brand_id));
+      if (!directory || String(assignment.role) === "tracked_brand") return null;
+      const websites = [...new Set([
+        ...(Array.isArray(assignment.websites) ? assignment.websites.map(String) : []),
+        ...(directory.primary_website ? [String(directory.primary_website)] : []),
+        ...(Array.isArray(directory.additional_websites) ? directory.additional_websites.map(String) : []),
+      ].map(siteHost).filter(Boolean))];
+      const aliases = [...new Set([
+        String(directory.canonical_name ?? ""),
+        ...(Array.isArray(directory.aliases) ? directory.aliases.map(String) : []),
+        ...(Array.isArray(assignment.aliases) ? assignment.aliases.map(String) : []),
+        ...websites,
+        ...websites.map((domain) => domain.split(".")[0].replace(/[-_]+/g, " ")),
+      ].map((value) => value.trim()).filter((value) => value.length > 1))];
+      return {
+        id: String(directory.id),
+        key: String(directory.id),
+        domain: websites[0] ?? "",
+        website: websites[0] ? "https://" + websites[0] : "",
+        websites,
+        brand_name: String(directory.canonical_name ?? ""),
+        aliases,
+      };
+    }
+
+    const entitiesByTopic = new Map<string, FixedBrandEntity[]>();
+    for (const topic of topicNames) {
+      const topicEntities = validAssignments
+        .filter((row: Record<string, unknown>) => String(row.topic) === topic && String(row.role) === "competitor")
+        .map((row: Record<string, unknown>) => entityFromAssignment(row))
+        .filter((row: FixedBrandEntity | null): row is FixedBrandEntity => Boolean(row));
+      entitiesByTopic.set(topic, [...new Map(topicEntities.map((entity) => [entity.id, entity])).values()]);
+    }
+    // Overall is the deduplicated union of all configured topic brand assignments.
+    const overallEntities = new Map<string, FixedBrandEntity>();
+    for (const entities of entitiesByTopic.values()) for (const entity of entities) {
+      const existing = overallEntities.get(entity.id);
+      overallEntities.set(entity.id, existing ? {
+        ...existing,
+        aliases: [...new Set([...existing.aliases, ...entity.aliases])],
+        websites: [...new Set([...existing.websites, ...entity.websites])],
+        domain: existing.domain || entity.domain,
+        website: existing.website || entity.website,
+      } : entity);
+    }
+    entitiesByTopic.set("Overall", [...overallEntities.values()]);
+
+    // Recompute brand evidence only for response rows just saved for this run.
+    const responseIdByKey = new Map<string, string>();
+    if (runId) {
       for (let offset = 0; ; offset += 1000) {
-        const { data: historicalResponses, error: responseHistoryError } = await admin
-          .from("ai_responses")
-          .select("prompt_id,captured_at,response_text,tracking_location")
-          .eq("project_id", projectId).eq("tracking_location", trackingLocationsForRun[0])
-          .eq("response_status", "completed").order("captured_at", { ascending: true })
-          .range(offset, offset + 999);
-        if (responseHistoryError) throw new Error("DIRECT_COMPETITOR_HISTORY_READ_FAILED: " + responseHistoryError.message);
-        const rows = historicalResponses ?? [];
-        for (const response of rows as Array<Record<string, unknown>>) {
-          const topic = promptTopicById.get(String(response.prompt_id)) ?? "General";
-          const parts = new Intl.DateTimeFormat("en-CA", {
-            timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
-          }).formatToParts(new Date(String(response.captured_at)));
-          const date = `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}-${parts.find((part) => part.type === "day")?.value}`;
-          const key = date + "|" + topic;
-          const group = historicalGroups.get(key) ?? [];
-          group.push({ topic, text: String(response.response_text ?? "") });
-          historicalGroups.set(key, group);
-        }
-        if (rows.length < 1000) break;
+        const { data: storedResponses, error: storedResponseError } = await admin.from("ai_responses")
+          .select("id,prompt_id,tracking_location")
+          .eq("project_id", projectId).eq("run_id", runId).range(offset, offset + 999);
+        if (storedResponseError) throw new Error("STORED_RESPONSE_LOOKUP_FAILED: " + storedResponseError.message);
+        for (const response of storedResponses ?? []) responseIdByKey.set(
+          String(response.prompt_id) + "|" + String(response.tracking_location ?? ""), String(response.id)
+        );
+        if ((storedResponses ?? []).length < 1000) break;
       }
+    }
 
-      const historicalObservationRows: Array<Record<string, unknown>> = [];
-      const historicalDates = [...new Set([...historicalGroups.keys()].map((key) => key.split("|")[0]))].sort();
-      for (const [groupKey, group] of historicalGroups) {
-        const [date, topic] = groupKey.split("|");
-        for (const entity of entitiesByTopic.get(topic) ?? []) {
-          const presenceCount = group.filter((response) => cachedTermMatches(
-            response, response.text, entity.aliases
-          ).count > 0).length;
-          const citationCount = historicalCitationCounts.get([date, topic, entity.domain].join("|")) ?? 0;
-          historicalObservationRows.push({
-            project_id: projectId, competitor_id: entity.id, metric_date: date,
-            tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
-            presence_count: presenceCount, response_count: group.length, citation_count: citationCount,
+    function canonicalUrl(url: string) {
+      try {
+        const parsed = new URL(url);
+        parsed.hash = "";
+        for (const key of [...parsed.searchParams.keys()]) {
+          if (/^(utm_|gclid$|dclid$|fbclid$|msclkid$|yclid$|_ga$|_gl$|ref$|source$|campaign$)/i.test(key)) parsed.searchParams.delete(key);
+        }
+        parsed.protocol = "https:";
+        parsed.hostname = parsed.hostname.replace(/^www\./i, "").toLowerCase();
+        parsed.searchParams.sort();
+        return parsed.toString().replace(/\/$/, "");
+      } catch { return url; }
+    }
+    const evidenceRows: Array<Record<string, unknown>> = [];
+    const thirdPartyRows: Array<Record<string, unknown>> = [];
+    for (const result of succeeded) {
+      const topic = String(result.topic ?? "General");
+      const responseId = responseIdByKey.get(String(result.prompt_id) + "|" + String(result.tracking_location ?? ""));
+      const responseText = String(result.response_text ?? "");
+      const topicAssignments = validAssignments.filter((row: Record<string, unknown>) => String(row.topic) === topic);
+      const matchedBrands: Array<{ id: string; name: string }> = [];
+      for (const assignment of topicAssignments) {
+        const directory = directoryById.get(String(assignment.brand_id));
+        if (!directory) continue;
+        const aliases = [...new Set([
+          String(directory.canonical_name ?? ""),
+          ...(Array.isArray(directory.aliases) ? directory.aliases.map(String) : []),
+          ...(Array.isArray(assignment.aliases) ? assignment.aliases.map(String) : []),
+          ...(String(assignment.role) === "tracked_brand" && Array.isArray(project.brand_terms) ? project.brand_terms.map(String) : []),
+        ].map((v) => v.trim()).filter((v) => v.length > 1))];
+        const match = cachedTermMatches(result, responseText, aliases);
+        if (match.count > 0) {
+          matchedBrands.push({ id: String(directory.id), name: String(directory.canonical_name ?? "") });
+          if (responseId) evidenceRows.push({
+            project_id: projectId, response_id: responseId, brand_id: String(directory.id), topic,
+            match_source: "response_text", matched_value: String(directory.canonical_name ?? ""),
+            evidence_text: responseText.slice(Math.max(0, (match.firstStart ?? 0) - 80), Math.min(responseText.length, (match.firstStart ?? 0) + 180)),
+            first_position: match.firstStart, occurrence_count: match.count, confidence: "deterministic",
           });
         }
       }
-      // Overall is the union of the brand's business lines; count each competitor once per date.
-      for (const date of historicalDates) {
-        const subset = [...historicalGroups.entries()]
-          .filter(([key]) => key.startsWith(date + "|"))
-          .flatMap(([, values]) => values);
-        for (const entity of entitiesByTopic.get("Overall") ?? []) {
-          const presenceCount = subset.filter((response) => cachedTermMatches(
-            response, response.text, entity.aliases
-          ).count > 0).length;
-          const citationCount = [...historicalCitationCounts.entries()].filter(([key]) => {
-            const [citationDate, , domain] = key.split("|");
-            return citationDate === date && domain === entity.domain;
-          }).reduce((sum, [, count]) => sum + count, 0);
-          historicalObservationRows.push({
-            project_id: projectId, competitor_id: entity.id, metric_date: date,
-            tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
-            presence_count: presenceCount, response_count: subset.length, citation_count: citationCount,
+      const sources: Array<{ url: string; title: string; source_type: string }> = [];
+      for (const citation of (Array.isArray(result.citations) ? result.citations as Array<Record<string, unknown>> : [])) {
+        const url = String(citation.url ?? "");
+        if (/^https?:\/\//i.test(url)) sources.push({ url, title: String(citation.page_name ?? citation.title ?? ""), source_type: "citation_annotation" });
+      }
+      for (const source of (Array.isArray(result.research_sources) ? result.research_sources as Array<Record<string, unknown>> : [])) {
+        const url = String(source.url ?? "");
+        if (/^https?:\/\//i.test(url)) sources.push({ url, title: String(source.title ?? ""), source_type: "research_source" });
+      }
+      for (const url of (Array.isArray(result.mentioned_urls) ? result.mentioned_urls.map(String) : [])) {
+        if (/^https?:\/\//i.test(url)) sources.push({ url, title: titleFromUrl(url), source_type: "mentioned_url" });
+      }
+      const dedupedSources = [...new Map(sources.map((source) => [source.source_type + "|" + canonicalUrl(source.url), source])).values()];
+      for (const source of dedupedSources) {
+        const host = hostOf(source.url);
+        if (!host) continue;
+        const sourceRelatedBrands = matchedBrands;
+        // Brand associations are based on deterministic text evidence; when the
+        // answer did not mention a configured brand, the URL remains unverified.
+        for (const brand of sourceRelatedBrands) {
+          if (responseId) evidenceRows.push({
+            project_id: projectId, response_id: responseId, brand_id: brand.id, topic,
+            match_source: source.source_type === "citation_annotation" ? "citation_domain" : source.source_type === "research_source" ? "research_source" : "mentioned_url",
+            matched_value: host, evidence_text: source.url, first_position: null, occurrence_count: 1,
+            confidence: "deterministic",
           });
         }
-      }
-      for (let offset = 0; offset < historicalObservationRows.length; offset += 500) {
-        const batch = historicalObservationRows.slice(offset, offset + 500);
-        const { error: backfillError } = await admin.from("direct_competitor_observations").upsert(batch, {
-          onConflict: "competitor_id,metric_date,tracking_location,llm_provider",
+        thirdPartyRows.push({
+          project_id: projectId, response_id: responseId ?? null, metric_date: day, topic,
+          llm_provider: "chatgpt", tracking_location: trackingLocationsForRun[0],
+          url: source.url, canonical_url: canonicalUrl(source.url), hostname: host.replace(/^www\./, "").toLowerCase(),
+          website_name: source.title || titleFromUrl(source.url), source_type: source.source_type,
+          associated_brand_ids: sourceRelatedBrands.map((brand) => brand.id),
+          associated_brand_names: sourceRelatedBrands.map((brand) => brand.name),
+          association_status: sourceRelatedBrands.length ? "verified" : "unverified", frequency: 1,
         });
-        if (backfillError) throw new Error("DIRECT_COMPETITOR_HISTORY_BACKFILL_FAILED: " + backfillError.message);
       }
     }
-
-    const competitorRows = ["Overall", ...topicNames].flatMap((topic) => {
-      const subset = succeeded.filter((result) => topic === "Overall" || String(result.topic ?? "General") === topic);
-      return (entitiesByTopic.get(topic) ?? []).map((entity) => {
-        const mentions = subset.filter((result) => cachedTermMatches(
-          result, String(result.response_text ?? ""), entity.aliases
-        ).count > 0).length;
-        const citationCount = subset.reduce((sum, result) => sum + (result.citations as Array<Record<string, unknown>>)
-          .filter((citation) => normalizedHostLabel(String(citation.domain ?? citation.url ?? "")) === entity.domain).length, 0);
-        return {
-          project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0],
-          topic, llm_provider: "chatgpt", brand_name: entity.brand_name, website: entity.website,
-          visibility_score: Math.round(mentions / Math.max(subset.length, 1) * 1000) / 10,
-          citation_count: citationCount,
-        };
+    for (let offset = 0; offset < evidenceRows.length; offset += 500) {
+      const batch = evidenceRows.slice(offset, offset + 500);
+      const { error: evidenceWriteError } = await admin.from("response_brand_evidence").upsert(batch, {
+        onConflict: "response_id,brand_id,topic,match_source,matched_value",
       });
-    });
-    if (competitorRows.length) {
-      const { error } = await admin.from("competitors").upsert(competitorRows, {
-        onConflict: "project_id,metric_date,topic,llm_provider,brand_name,tracking_location",
-      });
-      if (error) throw new Error("COMPETITORS_WRITE_FAILED: " + error.message);
+      if (evidenceWriteError) throw new Error("RESPONSE_BRAND_EVIDENCE_WRITE_FAILED: " + evidenceWriteError.message);
     }
-
+    for (let offset = 0; offset < thirdPartyRows.length; offset += 500) {
+      const batch = thirdPartyRows.slice(offset, offset + 500);
+      const { error: thirdPartyWriteError } = await admin.from("third_party_mentions").upsert(batch, {
+        onConflict: "project_id,response_id,canonical_url,source_type,topic,tracking_location",
+      });
+      if (thirdPartyWriteError) throw new Error("THIRD_PARTY_MENTIONS_WRITE_FAILED: " + thirdPartyWriteError.message);
+    }
     const brandName = String(project.brand_name ?? "Brand");
     const brandTerms = [brandName, ...(Array.isArray(project.brand_terms) ? project.brand_terms.map(String) : [])].filter(Boolean);
     const brandKey = "__tracked_brand__";
