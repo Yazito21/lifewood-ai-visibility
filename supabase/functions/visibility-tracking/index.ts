@@ -193,8 +193,16 @@ async function callChatGPT(apiKey: string, prompt: string, project: Record<strin
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const message = payload?.error?.message || "OpenAI Responses API request failed (" + response.status + ")";
-      throw new Error(message.slice(0, 500));
+      const message = String(payload?.error?.message || "OpenAI Responses API request failed (" + response.status + ")").slice(0, 500);
+      // Preserve the provider's error payload in ai_responses.raw_response for diagnosis.
+      return {
+        text: "",
+        raw: { http_status: response.status, error: payload?.error ?? payload },
+        model: payload?.model ?? "gpt-4o-mini",
+        citations: [] as Array<{ url: string; title: string; source: string }>,
+        researchSources: [] as Array<{ url: string; title: string; source: string }>,
+        providerError: "PROVIDER_HTTP_" + response.status + ": " + message,
+      };
     }
     const textParts: string[] = [];
     const citations: Array<{ url: string; title: string; source: string }> = [];
@@ -214,7 +222,10 @@ async function callChatGPT(apiKey: string, prompt: string, project: Record<strin
     }
     const uniqueCitations = [...new Map(citations.filter(c => c.url.startsWith("http://") || c.url.startsWith("https://")).map(c => [c.url, c])).values()];
     const uniqueResearchSources = [...new Map(researchSources.filter(c => c.url.startsWith("http://") || c.url.startsWith("https://")).map(c => [c.url, c])).values()];
-    return { text: textParts.join("\n\n"), raw: payload, model: payload?.model ?? "gpt-4o-mini", citations: uniqueCitations, researchSources: uniqueResearchSources };
+    const providerError = payload?.status && payload.status !== "completed"
+      ? "PROVIDER_RESPONSE_" + String(payload.status).toUpperCase() + ": response was not completed."
+      : undefined;
+    return { text: textParts.join("\n\n"), raw: payload, model: payload?.model ?? "gpt-4o-mini", citations: uniqueCitations, researchSources: uniqueResearchSources, providerError };
   } finally { clearTimeout(timeout); }
 }
 
@@ -302,6 +313,18 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         const projectForLocation = { ...project, tracking_market: trackingLocation, tracking_location: trackingLocation };
         const answer = await callChatGPT(apiKeys[provider], String(prompt.prompt ?? ""), projectForLocation);
         const text = answer.text;
+        if (answer.providerError) {
+          results[index] = {
+            prompt_id: prompt.id, prompt_number: prompt.prompt_number, prompt: String(prompt.prompt ?? ""),
+            tracking_location: trackingLocation, topic: String(prompt.topic ?? "General"),
+            language: String(prompt.language ?? "English"), provider, status: "failed",
+            response_text: text || null, raw_response: answer.raw,
+            error_message: String(answer.providerError).slice(0, 500),
+            brand_mentioned: false, citations: [], competitor_hosts: [],
+            started_at: started, completed_at: new Date().toISOString(),
+          };
+          continue;
+        }
         const brandName = String(project.brand_name ?? "");
         const terms = [brandName, ...(Array.isArray(project.brand_terms) ? project.brand_terms.map(String) : [])].filter(Boolean);
         const brandMentioned = containsTerm(text, terms);
