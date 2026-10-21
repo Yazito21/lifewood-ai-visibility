@@ -1205,7 +1205,71 @@ Deno.serve(async (req: Request) => {
       if (providerError) throw new Error("PROVIDER_METRICS_WRITE_FAILED for " + topic + ": " + providerError.message);
     }
 
-        const extractionFailures = succeeded.filter((result) =>
+    // Only refresh the cross-topic Overall rollup once every configured topic in
+    // this batch has succeeded. A single-topic rerun must not replace Overall
+    // with a partial sample or disturb other topics' historical summaries.
+    if (batchFinal && configuredTopics.length > 0 && configuredTopics.every((topic) => selectedTopics.includes(topic))) {
+      const { data: topicRows, error: topicRowsError } = await admin.from("topic_brand_observations")
+        .select("brand_id,topic,presence_count,response_count,mention_count,citation_count,average_position")
+        .eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocationsForRun[0])
+        .eq("llm_provider", "chatgpt").in("topic", configuredTopics);
+      if (topicRowsError) throw new Error("OVERALL_ROLLUP_READ_FAILED: " + topicRowsError.message);
+      const rollups = new Map<string, { presence: number; responses: number; mentions: number; citations: number; positionTotal: number; positionWeight: number }>();
+      for (const row of topicRows ?? []) {
+        const key = String(row.brand_id);
+        const current = rollups.get(key) ?? { presence: 0, responses: 0, mentions: 0, citations: 0, positionTotal: 0, positionWeight: 0 };
+        current.presence += Number(row.presence_count ?? 0);
+        current.responses += Number(row.response_count ?? 0);
+        current.mentions += Number(row.mention_count ?? 0);
+        current.citations += Number(row.citation_count ?? 0);
+        const position = row.average_position == null ? null : Number(row.average_position);
+        const weight = Number(row.presence_count ?? 0);
+        if (position !== null && Number.isFinite(position) && weight > 0) {
+          current.positionTotal += position * weight;
+          current.positionWeight += weight;
+        }
+        rollups.set(key, current);
+      }
+      const trackedAssignment = (allAssignments ?? []).find((row: Record<string, unknown>) => String(row.role) === "tracked_brand");
+      const trackedId = trackedAssignment ? String(trackedAssignment.brand_id) : fixedTrackedId;
+      const tracked = trackedId ? rollups.get(trackedId) : null;
+      const totalResponses = tracked?.responses ?? 0;
+      const totalMentions = [...rollups.values()].reduce((sum, item) => sum + item.mentions, 0);
+      const trackedVisibility = totalResponses ? Math.round((tracked?.presence ?? 0) / totalResponses * 1000) / 10 : 0;
+      const trackedSov = totalMentions ? Math.round((tracked?.mentions ?? 0) / totalMentions * 1000) / 10 : 0;
+      const trackedPosition = tracked && tracked.positionWeight > 0 ? Math.round(tracked.positionTotal / tracked.positionWeight * 100) / 100 : null;
+      const competitors = [...rollups.entries()].filter(([id]) => id !== trackedId);
+      const overallMetrics = {
+        visibility_score: trackedVisibility,
+        visibility_rank: 1 + competitors.filter(([, item]) => item.presence > (tracked?.presence ?? 0)).length,
+        share_of_voice_score: trackedSov,
+        share_of_voice_rank: 1 + competitors.filter(([, item]) => item.mentions > (tracked?.mentions ?? 0)).length,
+        average_position: trackedPosition,
+        average_position_rank: trackedPosition === null ? null : 1 + competitors.filter(([, item]) => item.positionWeight > 0 && item.positionTotal / item.positionWeight < trackedPosition).length,
+      };
+      const overallObservationRows = [...rollups.entries()].map(([brand_id, item]) => ({
+        project_id: projectId, brand_id, topic: "Overall", metric_date: day, tracking_location: trackingLocationsForRun[0],
+        llm_provider: "chatgpt", presence_count: item.presence, response_count: item.responses,
+        mention_count: item.mentions, citation_count: item.citations,
+        average_position: item.positionWeight > 0 ? Math.round(item.positionTotal / item.positionWeight * 100) / 100 : null,
+      }));
+      if (overallObservationRows.length) {
+        const { error: overallObservationError } = await admin.from("topic_brand_observations").upsert(overallObservationRows, {
+          onConflict: "project_id,brand_id,topic,metric_date,tracking_location,llm_provider",
+        });
+        if (overallObservationError) throw new Error("OVERALL_OBSERVATION_WRITE_FAILED: " + overallObservationError.message);
+      }
+      const overallCitationCount = citationRows.reduce((sum, row) => sum + Number(row.frequency ?? 0), 0);
+      for (const provider of ["Overall", "chatgpt"]) {
+        const { error: overallMetricError } = await admin.from("visibility_daily").upsert({
+          project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0],
+          topic: "Overall", llm_provider: provider, ...overallMetrics, citation_count: overallCitationCount,
+        }, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
+        if (overallMetricError) throw new Error("OVERALL_METRICS_WRITE_FAILED: " + overallMetricError.message);
+      }
+    }
+
+    const extractionFailures = succeeded.filter((result) =>
       (result.response_analysis as Record<string, unknown> | undefined)?.status !== "completed"
     ).length;
     const status = failed.length === 0 && extractionFailures === 0 && classificationFailures.length === 0
