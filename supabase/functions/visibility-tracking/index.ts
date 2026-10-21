@@ -527,18 +527,16 @@ Deno.serve(async (req: Request) => {
     } else if (mode === "sample") {
       return json({ error: "SAMPLE_PROMPTS_REQUIRED" }, 400);
     }
-    const { data: prompts, error: promptsError } = await promptQuery;
+    const { data: allPrompts, error: promptsError } = await promptQuery;
     if (promptsError) return json({ error: "PROMPT_LOAD_FAILED" }, 500);
-    if (!prompts?.length) return json({ error: "NO_ACTIVE_PROMPTS" }, 400);
-    if (mode === "sample" && prompts.length > 25) return json({ error: "SAMPLE_LIMIT_25_PROMPTS" }, 400);
+    if (!allPrompts?.length) return json({ error: "NO_ACTIVE_PROMPTS" }, 400);
+    if (mode === "sample" && allPrompts.length > 25) return json({ error: "SAMPLE_LIMIT_25_PROMPTS" }, 400);
 
-    // A daily result is only comparable when every configured topic has active prompts.
-    // Prevent silently omitting topics (or retaining stale metrics for them).
+    const configuredTopics = [...new Set((Array.isArray(project.topics) ? project.topics.map(String) : []).filter(Boolean))];
+    const activePromptTopics = new Set(allPrompts.map((p) => String(p.topic ?? "General")));
     if (mode !== "sample") {
-      const configuredTopics = [...new Set((Array.isArray(project.topics) ? project.topics.map(String) : []).filter(Boolean))];
-      const promptTopics = new Set(prompts.map((p) => String(p.topic ?? "General")));
-      const missingPromptTopics = configuredTopics.filter((topic) => !promptTopics.has(topic));
-      const unconfiguredPromptTopics = [...promptTopics].filter((topic) => configuredTopics.length > 0 && !configuredTopics.includes(topic));
+      const missingPromptTopics = configuredTopics.filter((topic) => !activePromptTopics.has(topic));
+      const unconfiguredPromptTopics = [...activePromptTopics].filter((topic) => configuredTopics.length > 0 && !configuredTopics.includes(topic));
       if (missingPromptTopics.length || unconfiguredPromptTopics.length) {
         return json({
           error: "PROMPT_TOPIC_COVERAGE_INVALID",
@@ -548,15 +546,27 @@ Deno.serve(async (req: Request) => {
         }, 409);
       }
     }
+    const requestedTopic = typeof body?.topic === "string" ? body.topic.trim() : "";
+    const selectedTopics = Array.isArray(body?.selected_topics)
+      ? [...new Set(body.selected_topics.map(String).map((value: string) => value.trim()).filter(Boolean))]
+      : requestedTopic ? [requestedTopic] : [];
+    if (mode !== "sample" && (!requestedTopic || !configuredTopics.includes(requestedTopic) || !selectedTopics.includes(requestedTopic))) {
+      return json({ error: "VALID_TOPIC_REQUIRED", message: "Select a configured topic for this tracking step." }, 400);
+    }
+    if (mode !== "sample" && selectedTopics.some((topic) => !configuredTopics.includes(topic))) {
+      return json({ error: "INVALID_SELECTED_TOPICS", message: "One or more selected topics are not configured for this project." }, 400);
+    }
+    const prompts = mode === "sample" ? allPrompts : allPrompts.filter((prompt) => String(prompt.topic ?? "General") === requestedTopic);
+    if (!prompts.length) return json({ error: "NO_ACTIVE_PROMPTS_FOR_TOPIC", message: "No active prompts are configured for " + requestedTopic + "." }, 400);
 
     // Persistent runs require a complete fixed comparison universe for each topic.
     // This catches incomplete legacy projects before any provider calls or writes.
     if (mode !== "sample") {
-      const configuredTopics = [...new Set((Array.isArray(project.topics) ? project.topics.map(String) : prompts.map((p) => String(p.topic ?? "General"))).filter(Boolean))];
+      const registryTopics = configuredTopics.length ? configuredTopics : [...new Set(allPrompts.map((p) => String(p.topic ?? "General")))];
       const { data: setupAssignments, error: setupAssignmentError } = await admin.from("topic_brand_assignments")
         .select("topic,brand_id,role,include_in_metrics").eq("project_id", projectId).eq("include_in_metrics", true);
       if (setupAssignmentError) return json({ error: "BRAND_REGISTRY_VALIDATION_FAILED", message: setupAssignmentError.message }, 500);
-      const invalidTopics = configuredTopics.map((topic) => {
+      const invalidTopics = registryTopics.map((topic) => {
         const rows = (setupAssignments ?? []).filter((row: Record<string, unknown>) => String(row.topic) === topic);
         const total = new Set(rows.map((row: Record<string, unknown>) => String(row.brand_id))).size;
         const tracked = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "tracked_brand").map((row: Record<string, unknown>) => String(row.brand_id))).size;
@@ -578,75 +588,61 @@ Deno.serve(async (req: Request) => {
     if (!trackingLocationsForRun.length) return json({ error: "NO_VALID_TRACKING_LOCATIONS" }, 400);
     let runId: string | null = null;
     let isSuperadminRerun = false;
+    const batchRunId = typeof body?.batch_run_id === "string" && body.batch_run_id ? body.batch_run_id : null;
+    const batchFinal = body?.batch_final === true;
+    const selectedPromptCount = allPrompts.filter((prompt) => selectedTopics.includes(String(prompt.topic ?? "General"))).length * trackingLocationsForRun.length;
     if (mode !== "sample") {
-      runId = crypto.randomUUID();
-      if (isSuperadmin) {
-        // Superadmins may rerun tracking on the same Malaysia-time day.
-        // The daily claim is advanced to the newest run, while previous run history is retained.
-        isSuperadminRerun = true;
-        const todayMYT = new Intl.DateTimeFormat("en-CA", {
-          timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
-        }).format(new Date());
-        const { data: existingClaim, error: existingClaimError } = await admin
-          .from("tracking_run_daily_claims")
-          .select("run_id")
-          .eq("project_id", projectId)
-          .eq("run_date", todayMYT)
-          .maybeSingle();
-        if (existingClaimError) {
-          console.error("DAILY_TRACKING_CLAIM_LOOKUP_FAILED", existingClaimError.message);
-          return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
+      if (batchRunId) {
+        const { data: existingRun, error: existingRunError } = await admin.from("tracking_runs")
+          .select("id,started_by,status,project_id").eq("id", batchRunId).eq("project_id", projectId).maybeSingle();
+        if (existingRunError || !existingRun || existingRun.status !== "running" || existingRun.started_by !== userId) {
+          return json({ error: "TRACKING_BATCH_NOT_ACTIVE", message: "The selected-topic tracking batch is no longer active. Start a new run." }, 409);
         }
-        const { error: runInsertError } = await admin.from("tracking_runs").insert({
-          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running", tracking_location: trackingLocationsForRun[0],
-          total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
-        });
-        if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
-        const now = new Date().toISOString();
-        if (existingClaim?.run_id) {
-          const { error: claimUpdateError } = await admin.from("tracking_run_daily_claims")
-            .update({ run_id: runId, started_by: userId, created_at: now })
-            .eq("project_id", projectId).eq("run_date", todayMYT);
-          if (claimUpdateError) {
-            await admin.from("tracking_runs").delete().eq("id", runId);
-            return json({ error: "DAILY_TRACKING_CLAIM_UPDATE_FAILED", message: claimUpdateError.message }, 500);
-          }
-          await admin.from("tracking_runs").update({ error_message: "Superseded by a Superadmin rerun." })
-            .eq("id", existingClaim.run_id).neq("status", "running");
-        } else {
-          const { error: claimInsertError } = await admin.from("tracking_run_daily_claims").insert({
-            project_id: projectId, run_date: todayMYT, run_id: runId, started_by: userId, created_at: now,
-          });
-          if (claimInsertError) {
-            await admin.from("tracking_runs").delete().eq("id", runId);
-            return json({ error: "DAILY_TRACKING_CLAIM_CREATE_FAILED", message: claimInsertError.message }, 500);
-          }
-        }
+        runId = batchRunId;
+        isSuperadminRerun = isSuperadmin && body?.rerun === true;
       } else {
-        const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
-          p_project_id: projectId,
-          p_started_by: userId,
-          p_run_id: runId,
-          p_total_prompts: prompts.length * trackingLocationsForRun.length,
-        });
-        if (claimError) {
-          console.error("DAILY_TRACKING_CLAIM_FAILED", claimError.message);
-          return json({ error: "DAILY_TRACKING_CLAIM_FAILED", message: "Could not reserve today's tracking run. Please contact an administrator." }, 500);
-        }
-        const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
-        if (!claim?.claimed) {
-          const nextDate = claim?.run_date
-            ? new Date(new Date(String(claim.run_date) + "T00:00:00+08:00").getTime() + 24 * 60 * 60 * 1000).toISOString()
-            : null;
-          return json({
-            error: "DAILY_TRACKING_LIMIT_REACHED",
-            message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
-            run_id: claim?.run_id ?? null,
-            status: claim?.status ?? "unknown",
-            started_at: claim?.started_at ?? null,
-            run_date: claim?.run_date ?? null,
-            next_available_at: nextDate,
-          }, 409);
+        runId = crypto.randomUUID();
+        isSuperadminRerun = isSuperadmin && body?.rerun === true;
+        if (isSuperadminRerun) {
+          const todayMYT = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
+          }).format(new Date());
+          const { data: existingClaim, error: existingClaimError } = await admin
+            .from("tracking_run_daily_claims").select("run_id").eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
+          if (existingClaimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
+          const { error: runInsertError } = await admin.from("tracking_runs").insert({
+            id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running",
+            tracking_location: trackingLocationsForRun[0], total_prompts: selectedPromptCount, completed_prompts: 0, failed_prompts: 0,
+          });
+          if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
+          const now = new Date().toISOString();
+          if (existingClaim?.run_id) {
+            const { error: claimUpdateError } = await admin.from("tracking_run_daily_claims").update({ run_id: runId, started_by: userId, created_at: now }).eq("project_id", projectId).eq("run_date", todayMYT);
+            if (claimUpdateError) {
+              await admin.from("tracking_runs").delete().eq("id", runId);
+              return json({ error: "DAILY_TRACKING_CLAIM_UPDATE_FAILED", message: claimUpdateError.message }, 500);
+            }
+            await admin.from("tracking_runs").update({ error_message: "Superseded by a Superadmin rerun." }).eq("id", existingClaim.run_id).neq("status", "running");
+          } else {
+            const { error: claimInsertError } = await admin.from("tracking_run_daily_claims").insert({ project_id: projectId, run_date: todayMYT, run_id: runId, started_by: userId, created_at: now });
+            if (claimInsertError) {
+              await admin.from("tracking_runs").delete().eq("id", runId);
+              return json({ error: "DAILY_TRACKING_CLAIM_CREATE_FAILED", message: claimInsertError.message }, 500);
+            }
+          }
+        } else {
+          const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
+            p_project_id: projectId, p_started_by: userId, p_run_id: runId, p_total_prompts: selectedPromptCount,
+          });
+          if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_FAILED", message: "Could not reserve today's tracking run. Please contact an administrator." }, 500);
+          const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
+          if (!claim?.claimed) {
+            return json({
+              error: "DAILY_TRACKING_LIMIT_REACHED",
+              message: "A full tracking batch has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
+              run_id: claim?.run_id ?? null, status: claim?.status ?? "unknown", started_at: claim?.started_at ?? null, run_date: claim?.run_date ?? null,
+            }, 409);
+          }
         }
       }
       activeRunId = runId;
@@ -728,12 +724,12 @@ Deno.serve(async (req: Request) => {
         timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
       }).formatToParts(new Date());
       const rerunDay = `${datePartsForCleanup.find((p) => p.type === "year")?.value}-${datePartsForCleanup.find((p) => p.type === "month")?.value}-${datePartsForCleanup.find((p) => p.type === "day")?.value}`;
-      const { error: competitorsDeleteError } = await admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
+      const { error: competitorsDeleteError } = await admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]).eq("topic", requestedTopic);
       if (competitorsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorsDeleteError.message }, 500);
       // Remove only the replaceable daily observations; keep the append-only competitor registry intact.
-      const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
+      const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]).eq("topic", requestedTopic);
       if (directObservationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: directObservationDeleteError.message }, 500);
-      const { error: topicObservationDeleteError } = await admin.from("topic_brand_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
+      const { error: topicObservationDeleteError } = await admin.from("topic_brand_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]).eq("topic", requestedTopic);
       if (topicObservationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: topicObservationDeleteError.message }, 500);
       const { error: metricsDeleteError } = await admin.from("visibility_daily").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
       if (metricsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsDeleteError.message }, 500);
@@ -759,10 +755,10 @@ Deno.serve(async (req: Request) => {
     if (isSuperadminRerun) {
       // Remove today's old summary rows so metrics for disappeared topics are not retained.
       const { error: metricsCleanupError } = await admin.from("visibility_daily")
-        .delete().eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocationsForRun[0]);
+        .delete().eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocationsForRun[0]).eq("topic", requestedTopic);
       if (metricsCleanupError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsCleanupError.message }, 500);
     }
-    const topicNames = [...new Set(prompts.map((p) => String(p.topic ?? "General")))];
+    const topicNames = [requestedTopic];
     const citationsMap = new Map<string, Record<string,unknown>>();
     const competitorMap = new Map<string, number>();
     const competitorTopicMap = new Map<string, number>();
@@ -785,7 +781,7 @@ Deno.serve(async (req: Request) => {
       const { data: previousCitations, error: previousCitationError } = await admin.from("citations")
         .select("topic,url,frequency,page_name,brand_name,is_brand_related,prompt_id")
         .eq("project_id", projectId).eq("metric_date", day)
-        .eq("tracking_location", trackingLocationsForRun[0]).eq("llm_provider", "chatgpt");
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("llm_provider", "chatgpt").eq("topic", requestedTopic);
       if (previousCitationError) throw new Error("CITATION_HISTORY_READ_FAILED: " + previousCitationError.message);
       const currentByKey = new Map(citationRows.map((row) => [String(row.topic) + "|" + String(row.url), row]));
       for (const previous of previousCitations ?? []) {
@@ -1167,7 +1163,7 @@ Deno.serve(async (req: Request) => {
       };
     }
 
-    for (const topic of ["Overall", ...topicNames]) {
+    for (const topic of topicNames) {
       const subset = succeeded.filter((r) => topic === "Overall" || r.topic === topic);
       const { metrics, competitorPresence, competitorAveragePosition } = analyzeSubset(subset, topic);
       const observations = (entitiesByTopic.get(topic) ?? []).map((entity) => {
@@ -1209,7 +1205,75 @@ Deno.serve(async (req: Request) => {
       if (providerError) throw new Error("PROVIDER_METRICS_WRITE_FAILED for " + topic + ": " + providerError.message);
     }
 
-        const extractionFailures = succeeded.filter((result) =>
+    // Only refresh the cross-topic Overall rollup once every configured topic in
+    // this batch has succeeded. A single-topic rerun must not replace Overall
+    // with a partial sample or disturb other topics' historical summaries.
+    if (batchFinal && configuredTopics.length > 0 && configuredTopics.every((topic) => selectedTopics.includes(topic))) {
+      const { data: topicRows, error: topicRowsError } = await admin.from("topic_brand_observations")
+        .select("brand_id,topic,presence_count,response_count,mention_count,citation_count,average_position")
+        .eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocationsForRun[0])
+        .eq("llm_provider", "chatgpt").in("topic", configuredTopics);
+      if (topicRowsError) throw new Error("OVERALL_ROLLUP_READ_FAILED: " + topicRowsError.message);
+      const rollups = new Map<string, { presence: number; responses: number; mentions: number; citations: number; positionTotal: number; positionWeight: number }>();
+      for (const row of topicRows ?? []) {
+        const key = String(row.brand_id);
+        const current = rollups.get(key) ?? { presence: 0, responses: 0, mentions: 0, citations: 0, positionTotal: 0, positionWeight: 0 };
+        current.presence += Number(row.presence_count ?? 0);
+        current.responses += Number(row.response_count ?? 0);
+        current.mentions += Number(row.mention_count ?? 0);
+        current.citations += Number(row.citation_count ?? 0);
+        const position = row.average_position == null ? null : Number(row.average_position);
+        const weight = Number(row.presence_count ?? 0);
+        if (position !== null && Number.isFinite(position) && weight > 0) {
+          current.positionTotal += position * weight;
+          current.positionWeight += weight;
+        }
+        rollups.set(key, current);
+      }
+      const trackedAssignment = (allAssignments ?? []).find((row: Record<string, unknown>) => String(row.role) === "tracked_brand");
+      const trackedId = trackedAssignment ? String(trackedAssignment.brand_id) : fixedTrackedId;
+      const tracked = trackedId ? rollups.get(trackedId) : null;
+      const totalResponses = tracked?.responses ?? 0;
+      const totalMentions = [...rollups.values()].reduce((sum, item) => sum + item.mentions, 0);
+      const trackedVisibility = totalResponses ? Math.round((tracked?.presence ?? 0) / totalResponses * 1000) / 10 : 0;
+      const trackedSov = totalMentions ? Math.round((tracked?.mentions ?? 0) / totalMentions * 1000) / 10 : 0;
+      const trackedPosition = tracked && tracked.positionWeight > 0 ? Math.round(tracked.positionTotal / tracked.positionWeight * 100) / 100 : null;
+      const competitors = [...rollups.entries()].filter(([id]) => id !== trackedId);
+      const overallMetrics = {
+        visibility_score: trackedVisibility,
+        visibility_rank: 1 + competitors.filter(([, item]) => item.presence > (tracked?.presence ?? 0)).length,
+        share_of_voice_score: trackedSov,
+        share_of_voice_rank: 1 + competitors.filter(([, item]) => item.mentions > (tracked?.mentions ?? 0)).length,
+        average_position: trackedPosition,
+        average_position_rank: trackedPosition === null ? null : 1 + competitors.filter(([, item]) => item.positionWeight > 0 && item.positionTotal / item.positionWeight < trackedPosition).length,
+      };
+      const overallObservationRows = [...rollups.entries()].map(([brand_id, item]) => ({
+        project_id: projectId, brand_id, topic: "Overall", metric_date: day, tracking_location: trackingLocationsForRun[0],
+        llm_provider: "chatgpt", presence_count: item.presence, response_count: item.responses,
+        mention_count: item.mentions, citation_count: item.citations,
+        average_position: item.positionWeight > 0 ? Math.round(item.positionTotal / item.positionWeight * 100) / 100 : null,
+      }));
+      if (overallObservationRows.length) {
+        const { error: overallObservationError } = await admin.from("topic_brand_observations").upsert(overallObservationRows, {
+          onConflict: "project_id,brand_id,topic,metric_date,tracking_location,llm_provider",
+        });
+        if (overallObservationError) throw new Error("OVERALL_OBSERVATION_WRITE_FAILED: " + overallObservationError.message);
+      }
+      const { data: allTopicCitations, error: allTopicCitationsError } = await admin.from("citations")
+        .select("frequency").eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("llm_provider", "chatgpt").in("topic", configuredTopics);
+      if (allTopicCitationsError) throw new Error("OVERALL_CITATION_ROLLUP_READ_FAILED: " + allTopicCitationsError.message);
+      const overallCitationCount = (allTopicCitations ?? []).reduce((sum, row) => sum + Number(row.frequency ?? 0), 0);
+      for (const provider of ["Overall", "chatgpt"]) {
+        const { error: overallMetricError } = await admin.from("visibility_daily").upsert({
+          project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0],
+          topic: "Overall", llm_provider: provider, ...overallMetrics, citation_count: overallCitationCount,
+        }, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
+        if (overallMetricError) throw new Error("OVERALL_METRICS_WRITE_FAILED: " + overallMetricError.message);
+      }
+    }
+
+    const extractionFailures = succeeded.filter((result) =>
       (result.response_analysis as Record<string, unknown> | undefined)?.status !== "completed"
     ).length;
     const status = failed.length === 0 && extractionFailures === 0 && classificationFailures.length === 0
@@ -1220,14 +1284,20 @@ Deno.serve(async (req: Request) => {
       ...(extractionFailures ? [String(extractionFailures) + " response analysis item(s) failed"] : []),
       ...(classificationFailures.length ? [String(classificationFailures.length) + " topic competitor classification(s) failed"] : []),
     ];
+    const { data: priorRun, error: priorRunError } = await admin.from("tracking_runs").select("completed_prompts,failed_prompts,total_prompts").eq("id", runId).single();
+    if (priorRunError) throw new Error("TRACKING_RUN_STATUS_READ_FAILED: " + priorRunError.message);
+    const accumulatedCompleted = Number(priorRun.completed_prompts ?? 0) + succeeded.length;
+    const accumulatedFailed = Number(priorRun.failed_prompts ?? 0) + failed.length;
+    const batchStatus = status !== "completed" ? (accumulatedCompleted ? "partial" : "failed") : batchFinal ? "completed" : "running";
+    const allRunIssues = [...(runIssues.length ? [requestedTopic + ": " + runIssues.join("; ")] : [])];
     const { error: runStatusWriteError } = await admin.from("tracking_runs").update({
-      status, completed_prompts: succeeded.length, failed_prompts: failed.length,
-      error_message: runIssues.length ? runIssues.join("; ") + "." : null,
-      completed_at: new Date().toISOString(),
+      status: batchStatus, completed_prompts: accumulatedCompleted, failed_prompts: accumulatedFailed,
+      error_message: allRunIssues.length ? allRunIssues.join(". ") + "." : null,
+      completed_at: batchStatus === "running" ? null : new Date().toISOString(),
     }).eq("id", runId);
     if (runStatusWriteError) throw new Error("TRACKING_RUN_STATUS_WRITE_FAILED: " + runStatusWriteError.message);
     return json({
-      mode, run_id: runId, status, total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
+      mode, run_id: runId, topic: requestedTopic, batch_index: Number(body?.batch_index ?? 0), batch_total: Number(body?.batch_total ?? selectedTopics.length), status: batchStatus, total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
       analysis_failures: extractionFailures,
       classification_failures: classificationFailures,
       visibility_score: succeeded.length ? Math.round(succeeded.filter((r) => r.brand_mentioned).length / succeeded.length * 1000) / 10 : 0,
