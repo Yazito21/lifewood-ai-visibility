@@ -52,7 +52,7 @@ export default function ProjectsPage(){
 
   const canCreate=role==="superadmin"||role==="admin";
 
-  function currentTopics(){return [...new Set(topicsText.split(/[;,\\n]/).map(v=>v.trim()).filter(Boolean))]}
+  function currentTopics(){return [...new Set(topicsText.split(/[;,]/).flatMap((part) => part.split(String.fromCharCode(10))).map(v=>v.trim()).filter(Boolean))]}
   async function handleBrandFile(file:File|null){
     setBrandFile(file);setBrandRows([]);setFileTopics([]);setFileMessage("");setError("");
     if(!file)return;
