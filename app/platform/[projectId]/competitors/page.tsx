@@ -236,7 +236,6 @@ export default function LeaderboardsPage() {
         setProjectName(project?.brand_name ?? "Tracked brand");
         setProjectWebsite(rootWebsite(project?.brand_domains?.[0] ?? null));
         setTopics((project?.topics ?? []).filter((value: string) => value && value !== "Overall"));
-        setTrackingLocation(project?.tracking_market ?? "MY");
         setDirectCompetitors(filteredRegistry);
         setCurrentCompetitorObservations(currentObservations.filter((row) => eligibleIds.has(row.competitor_id)));
         setPreviousCompetitorObservations(previousObservations.filter((row) => eligibleIds.has(row.competitor_id)));
