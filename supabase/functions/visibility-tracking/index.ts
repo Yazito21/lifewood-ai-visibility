@@ -868,15 +868,35 @@ Deno.serve(async (req: Request) => {
       for (const source of dedupedSources) {
         const host = hostOf(source.url);
         if (!host) continue;
-        const sourceRelatedBrands = matchedBrands;
-        // Brand associations are based on deterministic text evidence; when the
-        // answer did not mention a configured brand, the URL remains unverified.
+        const sourceText = (source.title + " " + source.url).toLocaleLowerCase();
+        const directlyMatchedBrands: Array<{id:string;name:string}> = [];
+        for (const assignment of topicAssignments) {
+          const directory = directoryById.get(String(assignment.brand_id));
+          if (!directory) continue;
+          const aliases = [...new Set([
+            String(directory.canonical_name ?? ""),
+            ...(Array.isArray(directory.aliases) ? directory.aliases.map(String) : []),
+            ...(Array.isArray(assignment.aliases) ? assignment.aliases.map(String) : []),
+            ...(String(assignment.role) === "tracked_brand" && Array.isArray(project.brand_terms) ? project.brand_terms.map(String) : []),
+          ].map((v) => v.trim()).filter((v) => v.length > 1))];
+          // Match against each URL/title independently rather than using the
+          // response-text cache, which is scoped to the full answer text.
+          if (summarizeTermMatches(sourceText, aliases).count > 0) directlyMatchedBrands.push({
+            id: String(directory.id), name: String(directory.canonical_name ?? ""),
+          });
+        }
+        const directIds = new Set(directlyMatchedBrands.map((brand) => brand.id));
+        const sourceRelatedBrands = directlyMatchedBrands.length ? directlyMatchedBrands : matchedBrands;
+        // Keep only websites associated with a configured brand. URL/title
+        // matches provide direct evidence; same-answer associations are inferred
+        // and should be reviewed before outreach.
+        if (!sourceRelatedBrands.length) continue;
         for (const brand of sourceRelatedBrands) {
           if (responseId) evidenceRows.push({
             project_id: projectId, response_id: responseId, brand_id: brand.id, topic,
             match_source: source.source_type === "citation_annotation" ? "citation_domain" : source.source_type === "research_source" ? "research_source" : "mentioned_url",
             matched_value: host, evidence_text: source.url, first_position: null, occurrence_count: 1,
-            confidence: "deterministic",
+            confidence: directIds.has(brand.id) ? "deterministic" : "review_required",
           });
         }
         thirdPartyRows.push({
@@ -886,7 +906,7 @@ Deno.serve(async (req: Request) => {
           website_name: source.title || titleFromUrl(source.url), source_type: source.source_type,
           associated_brand_ids: sourceRelatedBrands.map((brand) => brand.id),
           associated_brand_names: sourceRelatedBrands.map((brand) => brand.name),
-          association_status: sourceRelatedBrands.length ? "verified" : "unverified", frequency: 1,
+          association_status: "inferred", frequency: 1,
         });
       }
     }
