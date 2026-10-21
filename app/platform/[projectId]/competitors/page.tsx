@@ -16,7 +16,7 @@ type DirectCompetitor = {
   website: string | null;
 };
 type DirectObservation = {
-  competitor_id: string;
+  brand_id: string;
   metric_date: string;
   llm_provider: string;
   presence_count: number;
@@ -68,9 +68,9 @@ function numberValue(value: number | string | null | undefined) {
 function aggregateCompetitorRows(directCompetitors: DirectCompetitor[], observations: DirectObservation[]): BrandMetric[] {
   const byId = new Map<string, DirectObservation[]>();
   for (const observation of observations) {
-    const bucket = byId.get(observation.competitor_id) ?? [];
+    const bucket = byId.get(observation.brand_id) ?? [];
     bucket.push(observation);
-    byId.set(observation.competitor_id, bucket);
+    byId.set(observation.brand_id, bucket);
   }
   return directCompetitors.map((competitor) => {
     const records = byId.get(competitor.id) ?? [];
@@ -99,7 +99,7 @@ function competitorsObservedInPeriod(directCompetitors: DirectCompetitor[], obse
   const activeIds = new Set(
     observations
       .filter((row) => numberValue(row.presence_count) > 0 || numberValue(row.citation_count) > 0)
-      .map((row) => row.competitor_id),
+      .map((row) => row.brand_id),
   );
   return directCompetitors.filter((competitor) => activeIds.has(competitor.id));
 }
@@ -150,32 +150,50 @@ export default function LeaderboardsPage() {
   useEffect(() => {
     let cancelled = false;
     async function fetchCompetitorRegistry(selectedTopic: string) {
-      const all: DirectCompetitor[] = [];
-      for (let offset = 0; ; offset += 1000) {
-        let query = supabase.from("direct_competitors").select("id,topic,normalized_domain,brand_name,website")
-          .eq("project_id", projectId).eq("topic", selectedTopic).order("normalized_domain").range(offset, offset + 999);
-        const { data, error: queryError } = await query;
-        if (queryError) throw queryError;
-        const batch = (data ?? []) as DirectCompetitor[];
-        all.push(...batch);
-        if (batch.length < 1000) break;
+      const assignmentRows: Array<{ topic:string; brand_id:string; role:string }> = [];
+      for(let offset=0;;offset+=1000){
+        let query=supabase.from("topic_brand_assignments").select("topic,brand_id,role")
+          .eq("project_id",projectId).eq("include_in_metrics",true).eq("role","competitor")
+          .order("topic").range(offset,offset+999);
+        if(selectedTopic!=="Overall")query=query.eq("topic",selectedTopic);
+        const {data,error:queryError}=await query;
+        if(queryError)throw queryError;
+        const batch=(data??[]) as Array<{topic:string;brand_id:string;role:string}>;
+        assignmentRows.push(...batch);
+        if(batch.length<1000)break;
       }
-      const unique = new Map<string, DirectCompetitor>();
-      for (const row of all) {
-        const domain = (row.normalized_domain || hostFromUrl(row.website) || "").toLowerCase().replace(/^www\./, "");
-        if (domain && !unique.has(domain)) unique.set(domain, { ...row, normalized_domain: domain, website: rootWebsite(row.website || domain) });
+      const brandIds=[...new Set(assignmentRows.map(row=>row.brand_id))];
+      const brandRows:Array<{id:string;canonical_name:string;normalized_key:string;primary_website:string|null;is_active:boolean}>=[];
+      for(let i=0;i<brandIds.length;i+=80){
+        const {data,error:queryError}=await supabase.from("brand_registry")
+          .select("id,canonical_name,normalized_key,primary_website,is_active")
+          .eq("project_id",projectId).eq("is_active",true).in("id",brandIds.slice(i,i+80));
+        if(queryError)throw queryError;
+        brandRows.push(...((data??[]) as typeof brandRows));
+      }
+      const byId=new Map(brandRows.map(row=>[row.id,row]));
+      const unique=new Map<string,DirectCompetitor>();
+      for(const assignment of assignmentRows){
+        const brand=byId.get(assignment.brand_id);
+        if(!brand)continue;
+        unique.set(brand.id,{
+          id:brand.id,topic:selectedTopic,
+          normalized_domain:brand.id,
+          brand_name:brand.canonical_name,
+          website:rootWebsite(brand.primary_website),
+        });
       }
       return [...unique.values()];
     }
-    async function fetchObservations(ids: string[], range: DateRange, location: string, engines: string[]) {
+    async function fetchObservations(ids: string[], range: DateRange, location: string, engines: string[], selectedTopic: string) {
       if (!ids.length || !engines.length) return [] as DirectObservation[];
       const all: DirectObservation[] = [];
       for (let i = 0; i < ids.length; i += 80) {
         const chunk = ids.slice(i, i + 80);
         for (let offset = 0; ; offset += 1000) {
-          const { data, error: queryError } = await supabase.from("direct_competitor_observations")
-            .select("competitor_id,metric_date,llm_provider,presence_count,response_count,citation_count,tracking_location")
-            .eq("project_id", projectId).eq("tracking_location", location)
+          const { data, error: queryError } = await supabase.from("topic_brand_observations")
+            .select("brand_id,metric_date,llm_provider,presence_count,response_count,citation_count,tracking_location")
+            .eq("project_id", projectId).eq("topic", selectedTopic).eq("tracking_location", location)
             .gte("metric_date", range.start).lte("metric_date", range.end)
             .in("competitor_id", chunk).in("llm_provider", engines)
             .order("metric_date", { ascending: true }).range(offset, offset + 999);
@@ -216,11 +234,11 @@ export default function LeaderboardsPage() {
         const ids = registry.map((row) => row.id);
         const currentRange = { start, end };
         const [currentObservations, currentOwn] = await Promise.all([
-          fetchObservations(ids, currentRange, location, llms),
+          fetchObservations(ids, currentRange, location, llms, selectedTopic),
           fetchOwnMetrics(currentRange, location, selectedTopic, llms),
         ]);
         const [previousObservations, previousOwn] = previousRange ? await Promise.all([
-          fetchObservations(ids, previousRange, location, llms),
+          fetchObservations(ids, previousRange, location, llms, selectedTopic),
           fetchOwnMetrics(previousRange, location, selectedTopic, llms),
         ]) : [[], []] as [DirectObservation[], OwnMetric[]];
         if (cancelled) return;
@@ -283,7 +301,7 @@ export default function LeaderboardsPage() {
   return <ProjectShell><div className="ops-page">
     <p className="page-eyebrow">Competitive Landscape</p>
     <h2 className="page-title mt-1">Leaderboards</h2>
-    <p className="page-description mt-2">See where {projectName} ranks against its tracked brand and direct competitors. Other brands mentioned in AI responses are excluded unless they are classified as direct competitors.</p>
+    <p className="page-description mt-2">See where {projectName} ranks against its tracked brand and direct competitors. Competitor rankings use the project’s fixed, topic-specific brand registry. Each canonical brand is counted once, including in Overall.</p>
     <div className="mt-8 ops-filter-panel">
       <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{REPORTING_PERIODS.map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} min={MIN_TRACKING_DATE} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || MIN_TRACKING_DATE} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}</div>
       <div className="ops-filter-row"><span className="ops-filter-label">Topic</span><button onClick={() => setTopic("All")} className={`ops-filter-pill ${topic === "All" ? "is-active" : ""}`}>All</button>{topics.map((value) => <button key={value} onClick={() => setTopic(value)} className={`ops-filter-pill ${topic === value ? "is-active" : ""}`}>{value}</button>)}</div>
