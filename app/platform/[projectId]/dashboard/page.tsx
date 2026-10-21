@@ -211,9 +211,14 @@ export default function DashboardPage() {
   }, [metrics, cardTopics]);
 
   function chart(topic: string, key: "visibility_score" | "visibility_rank") {
-    return metrics.filter((row) => row.topic === topic).map((row) => ({
+    const rows = metrics.filter((row) => row.topic === topic);
+    // Historical rank rows may predate verified direct-competitor observations.
+    // Never draw a competitive rank line when the selected period has no
+    // verified competitors (or when the competitor metric could not be loaded).
+    const rankUnavailable = key === "visibility_rank" && (competitorCounts[topic] ?? 0) <= 1;
+    return rows.map((row) => ({
       label: row.metric_date,
-      value: row[key],
+      value: rankUnavailable ? null : row[key],
     }));
   }
 
