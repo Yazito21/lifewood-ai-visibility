@@ -4,7 +4,6 @@ import { Download, Plus, Search, Trash2, Upload, X } from "lucide-react";
 import { useParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import { ProjectShell, UserRole } from "@/components/project-shell";
-import { TrackingDataScope } from "@/components/tracking-data-scope";
 import { supabase } from "@/lib/supabase";
 
 type Prompt = { id: string; prompt_number: number; prompt: string; topic: string; language: string; active: boolean };
@@ -15,8 +14,6 @@ export default function PromptsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
-  const [trackingLocation, setTrackingLocation] = useState("MY");
-  const [scope, setScope] = useState<"current" | "legacy">("current");
   const [latestMetrics, setLatestMetrics] = useState<Record<string, LatestMetric>>({});
   const [role, setRole] = useState<UserRole>("viewer");
   const [search, setSearch] = useState("");
@@ -37,7 +34,7 @@ export default function PromptsPage() {
     const { data: project, error: projectError } = await supabase.from("projects")
       .select("topics,tracking_market").eq("id", projectId).single();
     const location = project?.tracking_market ?? "MY";
-    const dataLocation = scope === "legacy" ? "LEGACY" : location;
+    const dataLocation = location;
     const [{ data: promptRows, error: promptError }, { data: profile }, { data: member }, { data: metrics, error: metricError }] = await Promise.all([
       supabase.from("prompts").select("id,prompt_number,prompt,topic,language,active").eq("project_id", projectId).order("prompt_number"),
       supabase.from("profiles").select("role").eq("id", user.id).single(),
@@ -51,7 +48,6 @@ export default function PromptsPage() {
     if (metricError) setError((current) => current ? current + " " + metricError.message : metricError.message);
     setPrompts(promptRows ?? []);
     setTopics(project?.topics ?? []);
-    setTrackingLocation(location);
     setRole(profile?.role === "superadmin" ? "superadmin" : member?.role ?? profile?.role ?? "viewer");
     const byTopic: Record<string, LatestMetric> = {};
     for (const metric of metrics ?? []) {
@@ -60,7 +56,7 @@ export default function PromptsPage() {
     setLatestMetrics(byTopic);
   }
 
-  useEffect(() => { void load(); }, [projectId, scope]);
+  useEffect(() => { void load(); }, [projectId]);
 
   const canEdit = role === "admin" || role === "superadmin";
   const filtered = useMemo(() => {
@@ -160,7 +156,6 @@ export default function PromptsPage() {
       </div>}
     </div>
 
-    <TrackingDataScope trackingLocation={trackingLocation} scope={scope} onScopeChange={setScope} />
 
     {error && <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
     {notice && <div role="status" className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
