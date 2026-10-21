@@ -111,6 +111,7 @@ DROP POLICY IF EXISTS "third-party mentions visible to members" ON public.third_
 CREATE POLICY "third-party mentions visible to members" ON public.third_party_mentions FOR SELECT TO authenticated USING(public.is_project_member(project_id));
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.brand_registry, public.topic_brand_assignments TO authenticated;
+GRANT ALL ON public.brand_registry, public.topic_brand_assignments TO service_role;
 GRANT SELECT ON public.topic_brand_observations, public.response_brand_evidence, public.third_party_mentions TO authenticated;
 GRANT ALL ON public.topic_brand_observations, public.response_brand_evidence, public.third_party_mentions TO service_role;
 
@@ -379,10 +380,13 @@ AS $$
       ELSE 'https://'||regexp_replace(regexp_replace(b.primary_website,'^https?://','','i'),'^www[.]','','i') END AS website,
     s.visibility_score,s.citations
   FROM selected s JOIN public.brand_registry b ON b.id=s.brand_id
-  JOIN public.topic_brand_assignments a ON a.project_id=b.project_id AND a.brand_id=b.id
-    AND a.role='competitor' AND a.include_in_metrics
-    AND (coalesce(p_topic,'Overall')='Overall' OR a.topic=p_topic)
   WHERE b.project_id=p_project_id AND b.is_active
+    AND EXISTS (
+      SELECT 1 FROM public.topic_brand_assignments a
+      WHERE a.project_id=b.project_id AND a.brand_id=b.id
+        AND a.role='competitor' AND a.include_in_metrics
+        AND (coalesce(p_topic,'Overall')='Overall' OR a.topic=p_topic)
+    )
   ORDER BY s.citations DESC,s.visibility_score DESC NULLS LAST,b.canonical_name;
 $$;
 
