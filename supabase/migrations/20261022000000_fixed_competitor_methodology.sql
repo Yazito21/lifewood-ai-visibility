@@ -180,13 +180,13 @@ SELECT p.id, p.brand_name,
   regexp_replace(lower(trim(p.brand_name)), '[^a-z0-9]+', '', 'g'),
   coalesce(p.brand_terms, '{}'::text[]),
   nullif(split_part(regexp_replace(regexp_replace(coalesce(p.brand_domains[1], ''), '^https?://', '', 'i'), '^www[.]', '', 'i'), '/', 1), ''),
-  coalesce(ARRAY(SELECT x FROM unnest(coalesce(p.brand_domains, '{}'::text[])[2:]) x WHERE btrim(x) <> ''), '{}'::text[]),
+  coalesce(ARRAY(SELECT x FROM unnest((coalesce(p.brand_domains, '{}'::text[]))[2:]) AS q(x) WHERE btrim(x) <> ''), '{}'::text[]),
   true, true, now()
 FROM public.projects p
 WHERE nullif(regexp_replace(lower(trim(p.brand_name)), '[^a-z0-9]+', '', 'g'), '') IS NOT NULL
 ON CONFLICT (project_id, normalized_key) DO UPDATE SET
   is_tracked_brand = true,
-  aliases = ARRAY(SELECT DISTINCT v FROM unnest(coalesce(public.brand_registry.aliases,'{}') || EXCLUDED.aliases) v WHERE btrim(v) <> ''),
+  aliases = ARRAY(SELECT DISTINCT v FROM unnest(coalesce(public.brand_registry.aliases,'{}') || EXCLUDED.aliases) AS q(v) WHERE btrim(v) <> ''),
   primary_website = coalesce(public.brand_registry.primary_website, EXCLUDED.primary_website),
   additional_websites = ARRAY(SELECT DISTINCT v FROM unnest(coalesce(public.brand_registry.additional_websites,'{}') || EXCLUDED.additional_websites) v WHERE btrim(v) <> ''),
   updated_at = now();
@@ -231,7 +231,7 @@ JOIN public.brand_registry b ON b.project_id=p.id
   AND b.normalized_key=regexp_replace(lower(trim(p.brand_name)), '[^a-z0-9]+', '', 'g')
 ON CONFLICT (project_id,topic,brand_id) DO UPDATE SET
   role='tracked_brand', include_in_metrics=true,
-  aliases=ARRAY(SELECT DISTINCT v FROM unnest(coalesce(public.topic_brand_assignments.aliases,'{}') || EXCLUDED.aliases) v WHERE btrim(v) <> ''),
+  aliases=ARRAY(SELECT DISTINCT v FROM unnest(coalesce(public.topic_brand_assignments.aliases,'{}') || EXCLUDED.aliases) AS q(v) WHERE btrim(v) <> ''),
   websites=CASE WHEN cardinality(EXCLUDED.websites)>0 THEN EXCLUDED.websites ELSE public.topic_brand_assignments.websites END;
 
 -- Seed previously-discovered competitors as an editable starting point, not as
