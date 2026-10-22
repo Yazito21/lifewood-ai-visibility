@@ -584,6 +584,7 @@ Deno.serve(async (req: Request) => {
     let isSuperadminRerun = false;
     const isTopicScopedRun = Boolean(selectedTopic);
     const trackingBatchId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
+    const isAdminBatchContinuation = Boolean(trackingBatchId) && !isSuperadmin;
     if (mode !== "sample") {
       runId = crypto.randomUUID();
 
@@ -673,6 +674,7 @@ Deno.serve(async (req: Request) => {
           timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
         }).format(new Date());
         if (trackingBatchId) {
+          if (isSuperadmin) return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "Superadmin topic reruns are independent and do not use an Admin batch token." }, 400);
           const { data: claim, error: claimError } = await admin.from("tracking_run_daily_claims")
             .select("run_id,started_by").eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
           if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
