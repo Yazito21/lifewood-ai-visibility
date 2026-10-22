@@ -682,13 +682,10 @@ Deno.serve(async (req: Request) => {
           if (!batchFirstRun?.completed_at || batchFirstRun.started_by !== userId) {
             return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The first topic has not completed under your tracking session." }, 409);
           }
-          if (claim?.run_id === batchRunId && claim.started_by === userId) {
-            // Normal sequence continuation: this batch owns today's daily claim.
-            const insertionError = await createTrackingRun();
-            if (insertionError) return insertionError;
-          } else if (claim?.run_id && claim.started_by === userId) {
-            // An Admin's daily claim can also be updated by a legacy Full run.
-            // Only continue if the original batch row still belongs to this user.
+          if (claim?.run_id && claim.started_by === userId && batchFirstRun.started_by === userId) {
+            // The sequence token must identify a run started by this user, and the
+            // daily claim must still belong to that user. The claim may rotate if
+            // the app's legacy full-run path is invoked during a sequence.
             const insertionError = await createTrackingRun();
             if (insertionError) return insertionError;
           } else {
