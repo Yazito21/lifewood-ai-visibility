@@ -664,13 +664,45 @@ Deno.serve(async (req: Request) => {
             next_available_at: nextDate,
           }, 409);
         }
-      } else {
-        // Admins can only run a topic as part of the daily entitlement after the
-        // daily full-run claim is available. Do not create a new daily claim here.
-        return json({
-          error: "TOPIC_RUN_REQUIRES_SUPERADMIN",
-          message: "Only Superadmins can run selected topics independently. An Admin must use the regular full tracking entitlement.",
-        }, 403);
+      } else if (isTopicScopedRun) {
+        // Regular Admin topic runs are orchestrated by the dashboard as one ordered
+        // sequence. The client sends the selected topic, but the daily claim itself
+        // remains a full-run entitlement. Permit the first topic to claim it, then
+        // subsequent topic calls from the same user can continue via the claimed run.
+        const todayMYT = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
+        }).format(new Date());
+        const { data: existingClaim, error: existingClaimError } = await admin
+          .from("tracking_run_daily_claims").select("run_id,started_by")
+          .eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
+        if (existingClaimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
+        if (existingClaim?.run_id) {
+          const { data: claimRun } = await admin.from("tracking_runs").select("started_by,status")
+            .eq("id", existingClaim.run_id).maybeSingle();
+          if (existingClaim.started_by !== userId || claimRun?.started_by !== userId) {
+            return json({
+              error: "DAILY_TRACKING_LIMIT_REACHED",
+              message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
+              run_id: existingClaim.run_id,
+            }, 409);
+          }
+          const insertionError = await createTrackingRun();
+          if (insertionError) return insertionError;
+        } else {
+          const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
+            p_project_id: projectId,
+            p_started_by: userId,
+            p_run_id: runId,
+            p_total_prompts: prompts.length * trackingLocationsForRun.length,
+          });
+          if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_FAILED", message: "Could not reserve today's tracking run. Please contact an administrator." }, 500);
+          const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
+          if (!claim?.claimed) return json({
+            error: "DAILY_TRACKING_LIMIT_REACHED",
+            message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
+            run_id: claim?.run_id ?? null,
+          }, 409);
+        }
       }
       activeRunId = runId;
     }
