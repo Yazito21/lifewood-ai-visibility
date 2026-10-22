@@ -785,18 +785,6 @@ Deno.serve(async (req: Request) => {
         .delete().eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocationsForRun[0]);
       if (metricsCleanupError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsCleanupError.message }, 500);
     }
-    if (isSuperadminRerun && isTopicScopedRun) {
-      const selectedDay = day;
-      const selectedLocation = trackingLocationsForRun[0];
-      const cleanupResults = await Promise.all([
-        admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", selectedDay).eq("tracking_location", selectedLocation).eq("topic", selectedTopic),
-        admin.from("direct_competitor_observations").delete().eq("project_id", projectId).eq("metric_date", selectedDay).eq("tracking_location", selectedLocation).eq("topic", selectedTopic),
-        admin.from("topic_brand_observations").delete().eq("project_id", projectId).eq("metric_date", selectedDay).eq("tracking_location", selectedLocation).eq("topic", selectedTopic),
-        admin.from("visibility_daily").delete().eq("project_id", projectId).eq("metric_date", selectedDay).eq("tracking_location", selectedLocation).eq("topic", selectedTopic),
-      ]);
-      const cleanupFailure = cleanupResults.find((item) => item.error);
-      if (cleanupFailure?.error) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + cleanupFailure.error.message);
-    }
 
     const topicNames = [...new Set(prompts.map((p) => String(p.topic ?? "General")))];
     const citationsMap = new Map<string, Record<string,unknown>>();
