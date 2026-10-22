@@ -38,7 +38,6 @@ export default function DashboardPage() {
   const [trackingMessage, setTrackingMessage] = useState("");
   const [showTopicPicker, setShowTopicPicker] = useState(false);
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
-  const [isSuperadmin, setIsSuperadmin] = useState(false);
 
   async function load() {
     setLoading(true); setError("");
