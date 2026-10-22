@@ -38,6 +38,7 @@ export default function DashboardPage() {
   const [trackingMessage, setTrackingMessage] = useState("");
   const [showTopicPicker, setShowTopicPicker] = useState(false);
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [resumableBatch, setResumableBatch] = useState<any | null>(null);
 
   async function load() {
     setLoading(true); setError("");
@@ -108,18 +109,43 @@ export default function DashboardPage() {
 
   async function runTracking() {
     const requestedTopics = [...selectedTopics];
-    if (!requestedTopics.length) {
+    if (!requestedTopics.length && !resumableBatch) {
       setError("Select at least one topic to run tracking.");
       return;
     }
     setTracking(true); setShowTopicPicker(false); setTrackingMessage(""); setError("");
     const outcomes: Array<{ topic: string; status: string; completed: number; total: number; message?: string }> = [];
-    let trackingBatchId = "";
+    let batchId: string | undefined = resumableBatch?.id;
     try {
-      // Every authorized user runs topics in sequence. Admins use one daily
-      // entitlement for the whole selection; Superadmins may rerun any subset.
-      const orderedTopics = requestedTopics;
-      for (const topic of orderedTopics) {
+      if (!batchId) {
+        const { data: authData } = await supabase.auth.getUser();
+        const { data: batch, error: batchError } = await supabase.from("tracking_batches").insert({
+          project_id: projectId, requested_by: authData.user?.id, status: "running",
+          topic_order: requestedTopics, started_at: new Date().toISOString(),
+        }).select("*").single();
+        if (batchError || !batch) throw new Error(batchError?.message || "Unable to create tracking batch.");
+        batchId = batch.id;
+        const { error: insertTopicsError } = await supabase.from("tracking_batch_topics").insert(requestedTopics.map((topic, ordinal) => ({
+          batch_id: batchId, topic, ordinal, status: "queued",
+        })));
+        if (insertTopicsError) {
+          await supabase.from("tracking_batches").update({status:"failed",last_error:insertTopicsError.message,completed_at:new Date().toISOString()}).eq("id",batchId);
+          throw new Error(insertTopicsError.message);
+        }
+      }
+      const { data: batchTopics, error: readTopicsError } = await supabase.from("tracking_batch_topics")
+        .select("*").eq("batch_id", batchId).order("ordinal");
+      if (readTopicsError || !batchTopics?.length) throw new Error(readTopicsError?.message || "No saved batch topics found.");
+      const orderedTopics = batchTopics as Array<{id:string;topic:string;status:string;tracking_run_id:string|null;ordinal:number}>;
+      for (const item of orderedTopics) {
+        const topic = item.topic;
+        if (item.status === "completed") {
+          outcomes.push({topic,status:"completed",completed:0,total:0});
+          continue;
+        }
+        await supabase.from("tracking_batch_topics").update({
+          status:"running",attempt_count:undefined,started_at:new Date().toISOString(),last_error:null,updated_at:new Date().toISOString(),
+        }).eq("id",item.id);
         setTrackingMessage("Tracking topic " + (outcomes.length + 1) + " of " + orderedTopics.length + ": " + topic + "…");
         const { data, error } = await supabase.functions.invoke("visibility-tracking", {
           body: {
@@ -127,7 +153,7 @@ export default function DashboardPage() {
             project_id: projectId,
             providers: ["chatgpt"],
             topic,
-            ...(!isSuperadmin && trackingBatchId ? { tracking_batch_id: trackingBatchId } : {}),
+            ...(!isSuperadmin && item.tracking_run_id ? { tracking_batch_id: item.tracking_run_id } : {}),
           },
         });
         if (error) {
@@ -135,12 +161,21 @@ export default function DashboardPage() {
           if (error.context instanceof Response) {
             try { const body = await error.context.clone().json(); message = body?.message || body?.error || message; } catch { /* use SDK message */ }
           }
+          await supabase.from("tracking_batch_topics").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
+          await supabase.from("tracking_batches").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",batchId);
           throw new Error(topic + ": " + message);
         }
-        if (data?.error) throw new Error(topic + ": " + (data.message || data.error));
+        if (data?.error) {
+          const message = String(data.message || data.error);
+          await supabase.from("tracking_batch_topics").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
+          await supabase.from("tracking_batches").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",batchId);
+          throw new Error(topic + ": " + message);
+        }
         const successful = data.status === "completed" && Number(data.failed_prompts ?? 0) === 0 &&
           Number(data.analysis_failures ?? 0) === 0 && Number(data.classification_failures?.length ?? 0) === 0;
         if (!successful) {
+          await supabase.from("tracking_batch_topics").update({status:"failed",tracking_run_id:data.run_id ?? null,last_error:data.message || "Topic did not complete successfully.",updated_at:new Date().toISOString()}).eq("id",item.id);
+          await supabase.from("tracking_batches").update({status:"failed",last_error:data.message || "Topic did not complete successfully.",updated_at:new Date().toISOString()}).eq("id",batchId);
           outcomes.push({
             topic,
             status: String(data.status ?? "partial"),
@@ -150,26 +185,40 @@ export default function DashboardPage() {
           });
           throw new Error(topic + " finished with status " + data.status + ". Remaining topics were not started to avoid masking an incomplete run.");
         }
+        await supabase.from("tracking_batch_topics").update({
+          status:"completed",tracking_run_id:data.run_id ?? null,completed_at:new Date().toISOString(),last_error:null,updated_at:new Date().toISOString(),
+        }).eq("id",item.id);
         outcomes.push({
           topic,
           status: "completed",
           completed: Number(data.completed_prompts ?? 0),
           total: Number(data.total_prompts ?? 0),
         });
-        if (!isSuperadmin && !trackingBatchId && data.run_id) trackingBatchId = String(data.run_id);
       }
+      await supabase.from("tracking_batches").update({status:"completed",completed_at:new Date().toISOString(),last_error:null,updated_at:new Date().toISOString()}).eq("id",batchId);
+      setResumableBatch(null);
       setTrackingMessage("Tracking completed successfully for " + outcomes.length + " topic(s): " +
-        outcomes.map((item) => item.topic + " (" + item.completed + "/" + item.total + " prompts)").join("; ") + ".");
+        outcomes.map((item) => item.topic + (item.total ? " (" + item.completed + "/" + item.total + " prompts)" : " (already completed)")).join("; ") + ".");
       await load();
     } catch (e) {
       const summary = outcomes.length
         ? " Completed: " + outcomes.map((item) => item.topic).join(", ") + "."
         : "";
       setError((e instanceof Error ? e.message : String(e)) + summary);
+      if (batchId) {
+        const { data: savedBatch } = await supabase.from("tracking_batches").select("*").eq("id",batchId).maybeSingle();
+        if (savedBatch) setResumableBatch(savedBatch);
+      }
       await load();
     } finally {
       setTracking(false);
     }
+  }
+
+  async function findResumableBatch() {
+    const { data } = await supabase.from("tracking_batches").select("*").eq("project_id",projectId)
+      .in("status",["queued","running","failed"]).order("created_at",{ascending:false}).limit(1);
+    setResumableBatch(data?.[0] ?? null);
   }
 
   async function exportRawResponses() {
@@ -241,7 +290,7 @@ export default function DashboardPage() {
     return () => { alive = false; };
   }, [projectId]);
 
-  useEffect(() => { void load(); }, [projectId, period, customStart, customEnd]);
+  useEffect(() => { void load(); void findResumableBatch(); }, [projectId, period, customStart, customEnd]);
 
   const cardTopics = useMemo(() => ["Overall", ...topics.filter((topic) => topic !== "Overall")], [topics]);
   const chartDateRange = useMemo(() => {
@@ -329,6 +378,20 @@ export default function DashboardPage() {
           </div>
         </div>}
 
+        {resumableBatch && canRunTracking && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+          <div><p className="font-semibold">An interrupted tracking batch can be resumed.</p><p className="mt-1">Completed topics will be skipped and remaining topics continue in saved order.</p></div>
+          <button type="button" className="platform-btn platform-btn-primary" disabled={tracking || exporting} onClick={() => {
+            setSelectedTopics([]);
+            setTracking(true);
+            setShowTopicPicker(false);
+            void (async () => {
+              const { data: rows } = await supabase.from("tracking_batch_topics").select("topic").eq("batch_id",resumableBatch.id).order("ordinal");
+              setSelectedTopics((rows ?? []).map((row: {topic:string}) => row.topic));
+              // runTracking reads the saved batch directly; state update is deferred, so use the saved batch state.
+              await runTracking();
+            })();
+          }}><Play size={14} /> Resume batch</button>
+        </div>}
         {trackingMessage && <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{trackingMessage}</div>}
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {!loading && metrics.length === 0 && <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
