@@ -485,6 +485,9 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(supabaseUrl, adminKey, { auth: { persistSession: false, autoRefreshToken: false } });
     activeAdmin = admin;
     const body = await req.json();
+    // Topic-scoped tracking is orchestrated client-side as one request per topic.
+    // The server validates and processes only that topic for each persistent run.
+
     const projectId = String(body?.project_id ?? "");
     const mode = body?.mode === "sample" ? "sample" : "persistent";
     if (!projectId) return json({ error: "PROJECT_ID_REQUIRED" }, 400);
@@ -519,6 +522,8 @@ Deno.serve(async (req: Request) => {
     if (providerIds.some((p) => p !== "chatgpt")) return json({ error: "CHATGPT_ONLY_IN_INITIAL_RELEASE", supported_providers: ["chatgpt"] }, 400);
 
     let promptQuery = admin.from("prompts").select("id,prompt_number,prompt,topic,language,active").eq("project_id", projectId).eq("active", true).order("prompt_number");
+    const selectedTopic = typeof body?.topic === "string" ? body.topic.trim() : "";
+    if (selectedTopic) promptQuery = promptQuery.eq("topic", selectedTopic);
     if (Array.isArray(body?.prompt_ids)) {
       const ids = body.prompt_ids.map(String).filter(Boolean);
       if (!ids.length) return json({ error: "SELECT_AT_LEAST_ONE_PROMPT" }, 400);
