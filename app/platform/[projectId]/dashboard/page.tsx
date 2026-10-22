@@ -115,14 +115,13 @@ export default function DashboardPage() {
     setTracking(true); setShowTopicPicker(false); setTrackingMessage(""); setError("");
     const outcomes: Array<{ topic: string; status: string; completed: number; total: number; message?: string }> = [];
     try {
-      // Admin users retain the single full-run entitlement. Superadmins can
-      // run selected topics independently, including rerunning them on the same day.
-      if (!isSuperadmin && requestedTopics.length !== topics.filter((topic) => topic !== "Overall").length) {
-        throw new Error("Selective topic runs are available to Superadmins. To use the standard daily tracking entitlement, select all topics.");
+      // Every authorized user runs topics in sequence. Admins still select all topics
+      // for the single daily entitlement; Superadmins can choose any subset to rerun.
+      const configuredTopics = topics.filter((topic) => topic !== "Overall");
+      if (!isSuperadmin && requestedTopics.length !== configuredTopics.length) {
+        throw new Error("Admins must select all topics for the standard daily tracking entitlement. Superadmins may select an individual topic or subset.");
       }
-      const orderedTopics = isSuperadmin
-        ? requestedTopics
-        : topics.filter((topic) => topic !== "Overall");
+      const orderedTopics = isSuperadmin ? requestedTopics : configuredTopics;
       for (const topic of orderedTopics) {
         setTrackingMessage("Tracking topic " + (outcomes.length + 1) + " of " + orderedTopics.length + ": " + topic + "…");
         const { data, error } = await supabase.functions.invoke("visibility-tracking", {
