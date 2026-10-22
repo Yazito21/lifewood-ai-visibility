@@ -140,15 +140,23 @@ export default function DashboardPage() {
         if (data?.error) throw new Error(topic + ": " + (data.message || data.error));
         const successful = data.status === "completed" && Number(data.failed_prompts ?? 0) === 0 &&
           Number(data.analysis_failures ?? 0) === 0 && Number(data.classification_failures?.length ?? 0) === 0;
+        if (!successful) {
+          outcomes.push({
+            topic,
+            status: String(data.status ?? "partial"),
+            completed: Number(data.completed_prompts ?? 0),
+            total: Number(data.total_prompts ?? 0),
+            message: data.message || "Topic did not complete successfully.",
+          });
+          throw new Error(topic + " finished with status " + data.status + ". Remaining topics were not started to avoid masking an incomplete run.");
+        }
         outcomes.push({
           topic,
-          status: successful ? "completed" : String(data.status ?? "partial"),
+          status: "completed",
           completed: Number(data.completed_prompts ?? 0),
           total: Number(data.total_prompts ?? 0),
-          message: successful ? undefined : (data.message || "Topic did not complete cleanly; the remaining topics were not started."),
         });
         if (!isSuperadmin && !trackingBatchId && data.run_id) trackingBatchId = String(data.run_id);
-        if (!successful) throw new Error(topic + " finished with status " + data.status + ". Remaining topics were not started to avoid masking an incomplete run.");
       }
       setTrackingMessage("Tracking completed successfully for " + outcomes.length + " topic(s): " +
         outcomes.map((item) => item.topic + " (" + item.completed + "/" + item.total + " prompts)").join("; ") + ".");
