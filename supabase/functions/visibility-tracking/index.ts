@@ -768,6 +768,27 @@ Deno.serve(async (req: Request) => {
     }).formatToParts(new Date());
     const day = `${dateParts.find((p) => p.type === "year")?.value}-${dateParts.find((p) => p.type === "month")?.value}-${dateParts.find((p) => p.type === "day")?.value}`;
 
+    // Topic-scoped reruns replace same-day aggregate rows for only the selected topic.
+    // Raw responses and historical run rows are intentionally retained.
+    if (isSuperadminRerun && isTopicScopedRun) {
+      const { error: competitorDeleteError } = await admin.from("competitors")
+        .delete().eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (competitorDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + competitorDeleteError.message);
+      const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations")
+        .delete().eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (directObservationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + directObservationDeleteError.message);
+      const { error: citationDeleteError } = await admin.from("citations")
+        .delete().eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic).eq("llm_provider", "chatgpt");
+      if (citationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
+      const { error: metricsDeleteError } = await admin.from("visibility_daily")
+        .delete().eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (metricsDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + metricsDeleteError.message);
+    }
+
     const topicNames = [...new Set(prompts.map((p) => String(p.topic ?? "General")))];
     const citationsMap = new Map<string, Record<string,unknown>>();
     const competitorMap = new Map<string, number>();
