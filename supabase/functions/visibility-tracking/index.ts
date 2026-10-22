@@ -584,9 +584,23 @@ Deno.serve(async (req: Request) => {
     let isSuperadminRerun = false;
     if (mode !== "sample") {
       runId = crypto.randomUUID();
-      if (isSuperadmin) {
-        // Superadmins may rerun tracking on the same Malaysia-time day.
-        // The daily claim is advanced to the newest run, while previous run history is retained.
+      const createTrackingRun = async () => {
+        const { error: runInsertError } = await admin.from("tracking_runs").insert({
+          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running", tracking_location: trackingLocationsForRun[0],
+          total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
+        });
+        if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
+        return null;
+      };
+
+      if (isSuperadmin && isTopicScopedRun) {
+        // A topic rerun gets its own run-history row but does not replace the
+        // project's full-run daily claim or supersede runs for other topics.
+        isSuperadminRerun = true;
+        const insertionError = await createTrackingRun();
+        if (insertionError) return insertionError;
+      } else if (isSuperadmin) {
+        // Full Superadmin reruns retain the existing daily-claim behavior.
         isSuperadminRerun = true;
         const todayMYT = new Intl.DateTimeFormat("en-CA", {
           timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
@@ -601,11 +615,8 @@ Deno.serve(async (req: Request) => {
           console.error("DAILY_TRACKING_CLAIM_LOOKUP_FAILED", existingClaimError.message);
           return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
         }
-        const { error: runInsertError } = await admin.from("tracking_runs").insert({
-          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running", tracking_location: trackingLocationsForRun[0],
-          total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
-        });
-        if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
+        const insertionError = await createTrackingRun();
+        if (insertionError) return insertionError;
         const now = new Date().toISOString();
         if (existingClaim?.run_id) {
           const { error: claimUpdateError } = await admin.from("tracking_run_daily_claims")
@@ -626,7 +637,7 @@ Deno.serve(async (req: Request) => {
             return json({ error: "DAILY_TRACKING_CLAIM_CREATE_FAILED", message: claimInsertError.message }, 500);
           }
         }
-      } else {
+      } else if (!isTopicScopedRun) {
         const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
           p_project_id: projectId,
           p_started_by: userId,
@@ -652,6 +663,13 @@ Deno.serve(async (req: Request) => {
             next_available_at: nextDate,
           }, 409);
         }
+      } else {
+        // Admins can only run a topic as part of the daily entitlement after the
+        // daily full-run claim is available. Do not create a new daily claim here.
+        return json({
+          error: "TOPIC_RUN_REQUIRES_SUPERADMIN",
+          message: "Only Superadmins can run selected topics independently. An Admin must use the regular full tracking entitlement.",
+        }, 403);
       }
       activeRunId = runId;
     }
