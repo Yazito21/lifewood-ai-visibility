@@ -500,6 +500,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   let activeRunId: string | null = null;
+  let activeStageKey: string | null = null;
   let activeAdmin: any = null;
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -515,6 +516,20 @@ Deno.serve(async (req: Request) => {
     if (!userId) return json({ error: "AUTH_USER_MISSING" }, 401);
     const admin = createClient(supabaseUrl, adminKey, { auth: { persistSession: false, autoRefreshToken: false } });
     activeAdmin = admin;
+    const startStage = async (stageKey: string, metadata: Record<string, unknown> = {}) => {
+      if (!activeRunId) return;
+      activeStageKey = stageKey;
+      const { data: prior, error: readError } = await admin.from("tracking_run_stages").select("attempt_count").eq("run_id", activeRunId).eq("stage_key", stageKey).maybeSingle();
+      if (readError) throw new Error("STAGE_JOURNAL_READ_FAILED: " + readError.message);
+      const { error } = await admin.from("tracking_run_stages").upsert({ run_id: activeRunId, stage_key: stageKey, status: "running", attempt_count: Number(prior?.attempt_count ?? 0) + 1, started_at: new Date().toISOString(), completed_at: null, error_message: null, metadata, updated_at: new Date().toISOString() }, { onConflict: "run_id,stage_key" });
+      if (error) throw new Error("STAGE_JOURNAL_START_FAILED: " + error.message);
+    };
+    const completeStage = async (stageKey: string, metadata: Record<string, unknown> = {}) => {
+      if (!activeRunId) return;
+      const { error } = await admin.from("tracking_run_stages").update({ status: "completed", completed_at: new Date().toISOString(), error_message: null, metadata, updated_at: new Date().toISOString() }).eq("run_id", activeRunId).eq("stage_key", stageKey);
+      if (error) throw new Error("STAGE_JOURNAL_COMPLETE_FAILED: " + error.message);
+      if (activeStageKey === stageKey) activeStageKey = null;
+    };
     const body = await req.json();
     // Topic-scoped tracking is orchestrated client-side as one request per topic.
     // The server validates and processes only that topic for each persistent run.
@@ -815,17 +830,21 @@ Deno.serve(async (req: Request) => {
       response_analysis: r.response_analysis ?? { status: "not_run", entities: [] },
       brand_name_snapshot: String(project.brand_name ?? ""),
     }));
+    await startStage("response_persistence", { response_rows: rawRows.length });
     const { error: rawError } = await admin.from("ai_responses").insert(rawRows);
     if (rawError) {
       await admin.from("tracking_runs").update({ status: "failed", failed_prompts: prompts.length, error_message: "RAW_RESPONSE_WRITE_FAILED", completed_at: new Date().toISOString() }).eq("id", runId);
       return json({ error: "RAW_RESPONSE_WRITE_FAILED" }, 500);
     }
 
+    await completeStage("response_persistence", { response_rows: rawRows.length });
+
     const dateParts = new Intl.DateTimeFormat("en-CA", {
       timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
     }).formatToParts(new Date());
     const day = `${dateParts.find((p) => p.type === "year")?.value}-${dateParts.find((p) => p.type === "month")?.value}-${dateParts.find((p) => p.type === "day")?.value}`;
 
+    await startStage("topic_cleanup", { topic: selectedTopic ?? null, topic_scoped: isTopicScopedRun });
     // Topic-scoped reruns replace same-day aggregate rows for only the selected topic.
     // Raw responses and historical run rows are intentionally retained.
     if (isSuperadminRerun && isTopicScopedRun) {
@@ -861,6 +880,7 @@ Deno.serve(async (req: Request) => {
       if (metricsDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + metricsDeleteError.message);
     }
 
+    await completeStage("topic_cleanup", { topic: selectedTopic ?? null, topic_scoped: isTopicScopedRun });
     const topicNames = [...new Set(prompts.map((p) => String(p.topic ?? "General")))];
     const citationsMap = new Map<string, Record<string,unknown>>();
     const competitorMap = new Map<string, number>();
@@ -911,11 +931,14 @@ Deno.serve(async (req: Request) => {
         }
       }
     }
+    await startStage("citation_persistence", { citation_rows: citationRows.length });
     if (citationRows.length) {
       const { error } = await admin.from("citations").upsert(citationRows, { onConflict: "project_id,metric_date,topic,llm_provider,url,tracking_location" });
       if (error) throw new Error("CITATIONS_WRITE_FAILED: " + error.message);
     }
 
+
+    await completeStage("citation_persistence", { citation_rows: citationRows.length });
 
     // Canonical, explicitly configured comparison set. No response-discovered
     // entity is automatically promoted to competitor status.
@@ -1179,6 +1202,7 @@ Deno.serve(async (req: Request) => {
       if (thirdPartyDeleteError) throw new Error("TOPIC_RERUN_MENTIONS_CLEANUP_FAILED: " + thirdPartyDeleteError.message);
     }
 
+    await startStage("evidence_and_mentions_persistence", { evidence_rows: evidenceRows.length, mention_rows: thirdPartyRows.length });
     // Collapse duplicate conflict keys without discarding evidence. The old Map
     // kept only the last row, which avoided Postgres' "cannot affect row a second
     // time" error but could lose counts, earliest positions and distinct excerpts.
@@ -1256,6 +1280,7 @@ Deno.serve(async (req: Request) => {
       });
       if (thirdPartyWriteError) throw new Error("THIRD_PARTY_MENTIONS_WRITE_FAILED: " + thirdPartyWriteError.message);
     }
+    await completeStage("evidence_and_mentions_persistence", { evidence_rows: uniqueEvidenceRows.length, mention_rows: uniqueThirdPartyRows.length });
     const brandName = String(project.brand_name ?? "Brand");
     const trackedRegistryAliases = [
       String(trackedRecord?.canonical_name ?? ""),
@@ -1354,6 +1379,7 @@ Deno.serve(async (req: Request) => {
       };
     }
 
+    await startStage("observations_and_metrics", { topics: isTopicScopedRun ? topicNames : ["Overall", ...topicNames] });
     const metricTopics = isTopicScopedRun ? topicNames : ["Overall", ...topicNames];
     for (const topic of metricTopics) {
       const subset = succeeded.filter((r) => topic !== "Overall" && isTopicScopedRun ? r.topic === topic : topic === "Overall" || r.topic === topic);
@@ -1397,6 +1423,8 @@ Deno.serve(async (req: Request) => {
       if (providerError) throw new Error("PROVIDER_METRICS_WRITE_FAILED for " + topic + ": " + providerError.message);
     }
 
+    await completeStage("observations_and_metrics", { topics_written: metricTopics.length });
+
         const extractionFailures = succeeded.filter((result) =>
       (result.response_analysis as Record<string, unknown> | undefined)?.status !== "completed"
     ).length;
@@ -1408,6 +1436,8 @@ Deno.serve(async (req: Request) => {
       ...(extractionFailures ? [String(extractionFailures) + " response analysis item(s) failed"] : []),
       ...(classificationFailures.length ? [String(classificationFailures.length) + " topic competitor classification(s) failed"] : []),
     ];
+    await startStage("run_finalization", { completed_prompts: succeeded.length, failed_prompts: failed.length, analysis_failures: extractionFailures, classification_failures: classificationFailures.length });
+    await completeStage("run_finalization", { intended_status: status });
     const { error: runStatusWriteError } = await admin.from("tracking_runs").update({
       status, completed_prompts: succeeded.length, failed_prompts: failed.length,
       error_message: runIssues.length ? runIssues.join("; ") + "." : null,
@@ -1431,6 +1461,12 @@ Deno.serve(async (req: Request) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("TRACKING_RUN_ERROR", message);
+    if (activeAdmin && activeRunId && activeStageKey) {
+      try {
+        const { error: stageError } = await activeAdmin.from("tracking_run_stages").update({ status: "failed", error_message: message.slice(0, 500), completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("run_id", activeRunId).eq("stage_key", activeStageKey);
+        if (stageError) console.error("STAGE_JOURNAL_FAILURE_WRITE_FAILED", stageError.message);
+      } catch (stageError) { console.error("STAGE_JOURNAL_FAILURE_WRITE_FAILED", stageError instanceof Error ? stageError.message : String(stageError)); }
+    }
     if (activeAdmin && activeRunId) {
       try {
         await activeAdmin.from("tracking_runs").update({
