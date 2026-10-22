@@ -745,21 +745,9 @@ Deno.serve(async (req: Request) => {
     // On a Superadmin rerun, remove this project's current-day data before writing
     // the replacement result set, so partial failures or stale citations do not linger.
     if (isSuperadminRerun && !isTopicScopedRun) {
-      // Preserve every previously stored raw AI response and citation row.
-      // Only replaceable daily summaries are rebuilt from the latest Superadmin run.
-      const datePartsForCleanup = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
-      }).formatToParts(new Date());
-      const rerunDay = `${datePartsForCleanup.find((p) => p.type === "year")?.value}-${datePartsForCleanup.find((p) => p.type === "month")?.value}-${datePartsForCleanup.find((p) => p.type === "day")?.value}`;
-      const { error: competitorsDeleteError } = await admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
-      if (competitorsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorsDeleteError.message }, 500);
-      // Remove only the replaceable daily observations; keep the append-only competitor registry intact.
-      const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
-      if (directObservationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: directObservationDeleteError.message }, 500);
-      const { error: topicObservationDeleteError } = await admin.from("topic_brand_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
-      if (topicObservationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: topicObservationDeleteError.message }, 500);
-      const { error: metricsDeleteError } = await admin.from("visibility_daily").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
-      if (metricsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsDeleteError.message }, 500);
+      // A full rerun replaces daily summaries topic by topic after each section
+      // has been recomputed. Do not pre-delete all topics: later failures would
+      // otherwise erase valid metrics from topics that have not run yet.
     }
     const rawRows = results.map((r) => ({
       project_id: projectId, prompt_id: r.prompt_id, llm_provider: "chatgpt", captured_at: r.completed_at, tracking_location: r.tracking_location ?? null,
