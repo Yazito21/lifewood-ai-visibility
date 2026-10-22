@@ -902,29 +902,23 @@ Deno.serve(async (req: Request) => {
       }
     }
     const citationRows = [...citationsMap.values()];
-    if (isSuperadminRerun && isTopicScopedRun) {
-      // Replace this topic's prior same-day citation aggregate, retaining other topics.
-      const { error: citationDeleteError } = await admin.from("citations").delete()
-        .eq("project_id", projectId).eq("metric_date", day)
-        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
-      if (citationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
-    } else if (isSuperadminRerun) {
-      // Retain historical URLs while rebuilding a full run, without double-counting
-      // existing rows for topics whose aggregates are already being replaced.
+    if (isSuperadminRerun && !isTopicScopedRun) {
+      // Preserve historical URLs independently for each location on full reruns.
       const { data: previousCitations, error: previousCitationError } = await admin.from("citations")
-        .select("topic,url,frequency,page_name,brand_name,is_brand_related,prompt_id")
+        .select("topic,url,frequency,page_name,brand_name,is_brand_related,prompt_id,tracking_location")
         .eq("project_id", projectId).eq("metric_date", day)
-        .eq("tracking_location", trackingLocationsForRun[0]).eq("llm_provider", "chatgpt");
+        .in("tracking_location", trackingLocationsForRun).eq("llm_provider", "chatgpt");
       if (previousCitationError) throw new Error("CITATION_HISTORY_READ_FAILED: " + previousCitationError.message);
-      const currentByKey = new Map(citationRows.map((row) => [String(row.topic) + "|" + String(row.url), row]));
+      const currentByKey = new Map(citationRows.map((row) => [JSON.stringify([row.tracking_location, row.topic, row.url]), row]));
       for (const previous of previousCitations ?? []) {
-        const key = String(previous.topic) + "|" + String(previous.url);
+        const previousLocation = String((previous as Record<string, unknown>).tracking_location ?? trackingLocationsForRun[0]);
+        const key = JSON.stringify([previousLocation, String(previous.topic), String(previous.url)]);
         const current = currentByKey.get(key);
-        if (current && !isTopicScopedRun) {
+        if (current) {
           current.frequency = Number(current.frequency ?? 0) + Number(previous.frequency ?? 0);
-        } else if (!current && (!isTopicScopedRun || String(previous.topic) !== selectedTopic)) {
+        } else {
           const preserved = {
-            project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0],
+            project_id: projectId, metric_date: day, tracking_location: previousLocation,
             llm_provider: "chatgpt", topic: previous.topic, url: previous.url,
             frequency: Number(previous.frequency ?? 0), page_name: previous.page_name,
             brand_name: previous.brand_name, is_brand_related: previous.is_brand_related,
@@ -1403,6 +1397,7 @@ Deno.serve(async (req: Request) => {
           .filter((citation) => {
             const citationTopic = String(citation.topic ?? "");
             if (topic !== "Overall" && citationTopic !== topic) return false;
+            if (String(citation.tracking_location ?? trackingLocationsForRun[0]) !== trackingLocation) return false;
             const host = hostOf(String(citation.url ?? ""));
             return (entity.websites ?? []).some((site) => host === site || host.endsWith("." + site));
           })
@@ -1426,7 +1421,7 @@ Deno.serve(async (req: Request) => {
         project_id: projectId, metric_date: day, tracking_location: trackingLocation, topic, llm_provider: "Overall",
         ...metrics,
         citation_count: citationRows
-          .filter((citation) => topic === "Overall" || String(citation.topic ?? "") === topic)
+          .filter((citation) => (topic === "Overall" || String(citation.topic ?? "") === topic) && String(citation.tracking_location ?? trackingLocationsForRun[0]) === trackingLocation)
           .reduce((sum, citation) => sum + Number(citation.frequency ?? 0), 0),
       };
       const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
