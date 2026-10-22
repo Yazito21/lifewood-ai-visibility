@@ -584,6 +584,7 @@ Deno.serve(async (req: Request) => {
     let isSuperadminRerun = false;
     const isTopicScopedRun = Boolean(selectedTopic);
     const trackingBatchId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
+    const newAdminBatchRun = !isSuperadmin && isTopicScopedRun && !trackingBatchId;
 
     if (mode !== "sample") {
       runId = crypto.randomUUID();
@@ -592,6 +593,7 @@ Deno.serve(async (req: Request) => {
         const { error: runInsertError } = await admin.from("tracking_runs").insert({
           id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running", tracking_location: trackingLocationsForRun[0],
           total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
+          ...(newAdminBatchRun ? { error_message: "TOPIC_BATCH:" + runId } : {}),
         });
         if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
         return null;
