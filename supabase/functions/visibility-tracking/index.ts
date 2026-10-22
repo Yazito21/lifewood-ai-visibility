@@ -1284,6 +1284,13 @@ Deno.serve(async (req: Request) => {
       completed_at: new Date().toISOString(),
     }).eq("id", runId);
     if (runStatusWriteError) throw new Error("TRACKING_RUN_STATUS_WRITE_FAILED: " + runStatusWriteError.message);
+    if (status !== "completed") {
+      return json({
+        mode, run_id: runId, status, total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
+        analysis_failures: extractionFailures, classification_failures: classificationFailures,
+        message: runIssues.join("; ") || "The topic did not complete successfully.",
+      });
+    }
     return json({
       mode, run_id: runId, status, total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
       analysis_failures: extractionFailures,
