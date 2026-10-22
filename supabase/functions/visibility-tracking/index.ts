@@ -695,10 +695,13 @@ Deno.serve(async (req: Request) => {
             .select("run_id,started_by").eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
           if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
           const { data: batchFirstRun, error: batchFirstRunError } = await admin.from("tracking_runs")
-            .select("id,started_by,status,completed_at").eq("id", trackingBatchId).eq("project_id", projectId).maybeSingle();
+            .select("id,started_by,status,completed_at,error_message").eq("id", trackingBatchId).eq("project_id", projectId).maybeSingle();
           if (batchFirstRunError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED" }, 500);
-          if (!claim?.run_id || claim.started_by !== userId || !batchFirstRun ||
-              batchFirstRun.started_by !== userId || batchFirstRun.status !== "completed" || !batchFirstRun.completed_at) {
+          const validBatchOwner = batchFirstRun?.started_by === userId &&
+            (batchFirstRun.error_message === "TOPIC_BATCH:" + trackingBatchId ||
+              (claim?.run_id === trackingBatchId && claim.started_by === userId));
+          if (!batchFirstRun || !validBatchOwner || batchFirstRun.status !== "completed" || !batchFirstRun.completed_at ||
+              !claim?.run_id || claim.started_by !== userId) {
             return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The previous topic must finish successfully before the next one starts." }, 409);
           }
           const insertionError = await createTrackingRun();
