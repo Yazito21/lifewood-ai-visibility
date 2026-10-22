@@ -811,9 +811,15 @@ Deno.serve(async (req: Request) => {
       }
     }
     const citationRows = [...citationsMap.values()];
-    if (isSuperadminRerun && !isTopicScopedRun) {
-      // Citation rows are a daily aggregate, while raw response history is append-only.
-      // Carry forward prior URLs/frequencies even if the replacement run no longer cites them.
+    if (isSuperadminRerun && isTopicScopedRun) {
+      // Replace this topic's prior same-day citation aggregate, retaining other topics.
+      const { error: citationDeleteError } = await admin.from("citations").delete()
+        .eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (citationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
+    } else if (isSuperadminRerun) {
+      // Retain historical URLs while rebuilding a full run, without double-counting
+      // existing rows for topics whose aggregates are already being replaced.
       const { data: previousCitations, error: previousCitationError } = await admin.from("citations")
         .select("topic,url,frequency,page_name,brand_name,is_brand_related,prompt_id")
         .eq("project_id", projectId).eq("metric_date", day)
@@ -823,9 +829,9 @@ Deno.serve(async (req: Request) => {
       for (const previous of previousCitations ?? []) {
         const key = String(previous.topic) + "|" + String(previous.url);
         const current = currentByKey.get(key);
-        if (current) {
+        if (current && !isTopicScopedRun) {
           current.frequency = Number(current.frequency ?? 0) + Number(previous.frequency ?? 0);
-        } else {
+        } else if (!current && (!isTopicScopedRun || String(previous.topic) !== selectedTopic)) {
           const preserved = {
             project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0],
             llm_provider: "chatgpt", topic: previous.topic, url: previous.url,
