@@ -679,9 +679,9 @@ Deno.serve(async (req: Request) => {
           const { data: parentRun, error: parentRunError } = await admin.from("tracking_runs")
             .select("id,started_by,status,completed_at").eq("id", trackingBatchId).eq("project_id", projectId).maybeSingle();
           if (parentRunError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED" }, 500);
-          if (!claim?.run_id || claim.started_by !== userId || !parentRun || parentRun.started_by !== userId ||
-              parentRun.status !== "completed" || !parentRun.completed_at) {
-            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The first topic must complete successfully under your daily tracking entitlement before continuing." }, 409);
+          if (!parentRun || parentRun.started_by !== userId || parentRun.status !== "completed" || !parentRun.completed_at ||
+              !claim?.run_id || claim.started_by !== userId) {
+            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The previous topic must complete successfully under your daily tracking entitlement before continuing." }, 409);
           }
           const insertionError = await createTrackingRun();
           if (insertionError) return insertionError;
