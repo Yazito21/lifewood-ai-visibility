@@ -109,7 +109,7 @@ export default function DashboardPage() {
 
   async function runTracking() {
     const requestedTopics = [...selectedTopics];
-    if (!requestedTopics.length) {
+    if (!requestedTopics.length && !resumableBatch) {
       setError("Select at least one topic to run tracking.");
       return;
     }
