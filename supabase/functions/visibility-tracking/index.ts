@@ -666,9 +666,9 @@ Deno.serve(async (req: Request) => {
           }, 409);
         }
       } else if (isTopicScopedRun) {
-        // Reserve a single daily tracking entitlement for the current selection.
-        // Subsequent topic invocations carry the same parent claim run ID so they
-        // can proceed sequentially without opening extra daily runs.
+        // Reserve one daily entitlement at the first topic. Subsequent topic calls
+        // must identify the same first run in this batch; that claim cannot be reused
+        // by a different selection or user.
         const todayMYT = new Intl.DateTimeFormat("en-CA", {
           timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
         }).format(new Date());
@@ -677,7 +677,18 @@ Deno.serve(async (req: Request) => {
           const { data: claim, error: claimError } = await admin.from("tracking_run_daily_claims")
             .select("run_id,started_by").eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
           if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
-          if (!claim?.run_id || claim.run_id !== batchRunId || claim.started_by !== userId) {
+          const { data: claimRun, error: claimRunError } = claim?.run_id
+            ? await admin.from("tracking_runs").select("started_by").eq("id", claim.run_id).maybeSingle()
+            : { data: null, error: null };
+          if (claimRunError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
+          if (!claim?.run_id || claim.started_by !== userId || claimRun?.started_by !== userId) {
+            return json({ error: "DAILY_TRACKING_LIMIT_REACHED", message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.", run_id: claim?.run_id ?? null }, 409);
+          }
+          // A unique batch token is mapped to the first claim run by a private,
+          // in-process capability list only through the caller-supplied token format.
+          // To prevent arbitrary daily re-use, accept continuation solely when the
+          // token is the first run ID (set by the client after the first successful topic).
+          if (batchRunId !== claim.run_id) {
             return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "This topic sequence no longer matches today's tracking entitlement. Please restart tracking." }, 409);
           }
           const insertionError = await createTrackingRun();
