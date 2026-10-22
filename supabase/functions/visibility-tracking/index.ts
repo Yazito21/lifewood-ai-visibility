@@ -537,31 +537,30 @@ Deno.serve(async (req: Request) => {
     if (!prompts?.length) return json({ error: "NO_ACTIVE_PROMPTS" }, 400);
     if (mode === "sample" && prompts.length > 25) return json({ error: "SAMPLE_LIMIT_25_PROMPTS" }, 400);
 
-    // A daily result is only comparable when every configured topic has active prompts.
-    // Prevent silently omitting topics (or retaining stale metrics for them).
+    // Persistent topic runs validate only their selected topic. A full request remains supported for backwards compatibility.
     if (mode !== "sample") {
       const configuredTopics = [...new Set((Array.isArray(project.topics) ? project.topics.map(String) : []).filter(Boolean))];
+      if (selectedTopic && !configuredTopics.includes(selectedTopic)) {
+        return json({ error: "TOPIC_NOT_CONFIGURED", topic: selectedTopic }, 400);
+      }
+      const validatedTopics = selectedTopic ? [selectedTopic] : configuredTopics;
       const promptTopics = new Set(prompts.map((p) => String(p.topic ?? "General")));
-      const missingPromptTopics = configuredTopics.filter((topic) => !promptTopics.has(topic));
+      const missingPromptTopics = validatedTopics.filter((topic) => !promptTopics.has(topic));
       const unconfiguredPromptTopics = [...promptTopics].filter((topic) => configuredTopics.length > 0 && !configuredTopics.includes(topic));
-      if (missingPromptTopics.length || unconfiguredPromptTopics.length) {
+      if (missingPromptTopics.length || unconfiguredPromptTopics.some((topic) => topic === selectedTopic)) {
         return json({
           error: "PROMPT_TOPIC_COVERAGE_INVALID",
-          message: "Every configured topic must have at least one active prompt, and active prompts must use configured topics.",
+          message: "The selected topic must have at least one active prompt, and active prompts must use configured topics.",
           missing_prompt_topics: missingPromptTopics,
           unconfigured_prompt_topics: unconfiguredPromptTopics,
         }, 409);
       }
-    }
 
-    // Persistent runs require a complete fixed comparison universe for each topic.
-    // This catches incomplete legacy projects before any provider calls or writes.
-    if (mode !== "sample") {
-      const configuredTopics = [...new Set((Array.isArray(project.topics) ? project.topics.map(String) : prompts.map((p) => String(p.topic ?? "General"))).filter(Boolean))];
+      // Validate the fixed 100-brand comparison set only for topics included in this run.
       const { data: setupAssignments, error: setupAssignmentError } = await admin.from("topic_brand_assignments")
         .select("topic,brand_id,role,include_in_metrics").eq("project_id", projectId).eq("include_in_metrics", true);
       if (setupAssignmentError) return json({ error: "BRAND_REGISTRY_VALIDATION_FAILED", message: setupAssignmentError.message }, 500);
-      const invalidTopics = configuredTopics.map((topic) => {
+      const invalidTopics = validatedTopics.map((topic) => {
         const rows = (setupAssignments ?? []).filter((row: Record<string, unknown>) => String(row.topic) === topic);
         const total = new Set(rows.map((row: Record<string, unknown>) => String(row.brand_id))).size;
         const tracked = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "tracked_brand").map((row: Record<string, unknown>) => String(row.brand_id))).size;
