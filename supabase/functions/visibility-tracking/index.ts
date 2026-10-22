@@ -833,7 +833,9 @@ Deno.serve(async (req: Request) => {
     await startStage("response_persistence", { response_rows: rawRows.length });
     const { error: rawError } = await admin.from("ai_responses").insert(rawRows);
     if (rawError) {
+      await admin.from("tracking_run_stages").update({ status: "failed", error_message: "RAW_RESPONSE_WRITE_FAILED: " + rawError.message, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("run_id", runId).eq("stage_key", "response_persistence");
       await admin.from("tracking_runs").update({ status: "failed", failed_prompts: prompts.length, error_message: "RAW_RESPONSE_WRITE_FAILED", completed_at: new Date().toISOString() }).eq("id", runId);
+      activeStageKey = null;
       return json({ error: "RAW_RESPONSE_WRITE_FAILED" }, 500);
     }
 
@@ -939,6 +941,8 @@ Deno.serve(async (req: Request) => {
 
 
     await completeStage("citation_persistence", { citation_rows: citationRows.length });
+
+    await startStage("evidence_and_mentions_persistence");
 
     // Canonical, explicitly configured comparison set. No response-discovered
     // entity is automatically promoted to competitor status.
@@ -1202,7 +1206,8 @@ Deno.serve(async (req: Request) => {
       if (thirdPartyDeleteError) throw new Error("TOPIC_RERUN_MENTIONS_CLEANUP_FAILED: " + thirdPartyDeleteError.message);
     }
 
-    await startStage("evidence_and_mentions_persistence", { evidence_rows: evidenceRows.length, mention_rows: thirdPartyRows.length });
+    // Include brand classification and evidence generation in this journaled stage.
+    // Counts are recorded at completion once the final row sets are known.
     // Collapse duplicate conflict keys without discarding evidence. The old Map
     // kept only the last row, which avoided Postgres' "cannot affect row a second
     // time" error but could lose counts, earliest positions and distinct excerpts.
