@@ -629,6 +629,7 @@ Deno.serve(async (req: Request) => {
     let runId: string | null = null;
     let isSuperadminRerun = false;
     const isTopicScopedRun = Boolean(selectedTopic);
+    // Daily replacement scope: project + MYT date + location + topic + provider; raw responses remain run-scoped.
     const trackingBatchId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
     const newAdminBatchRun = !isSuperadmin && isTopicScopedRun && !trackingBatchId;
 
@@ -850,36 +851,36 @@ Deno.serve(async (req: Request) => {
     // Topic-scoped reruns replace same-day aggregate rows for only the selected topic.
     // Raw responses and historical run rows are intentionally retained.
     if (isSuperadminRerun && isTopicScopedRun) {
-      // Only reset this topic's replaceable daily outputs; other topics and history remain untouched.
-      const { error: competitorDeleteError } = await admin.from("competitors")
-        .delete().eq("project_id", projectId).eq("metric_date", day)
-        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
-      if (competitorDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + competitorDeleteError.message);
-      // direct_competitor_observations is keyed by competitor_id and has no topic column.
-      // Resolve the selected topic's competitors first, then remove only observations
-      // belonging to those competitor records for this date and tracking location.
+      // Replace only this topic's daily aggregates at every configured location.
+      // Deletion before publication remains a TRK-04 recovery risk.
       const { data: topicCompetitors, error: topicCompetitorsError } = await admin.from("direct_competitors")
         .select("id").eq("project_id", projectId).eq("topic", selectedTopic);
       if (topicCompetitorsError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + topicCompetitorsError.message);
       const competitorIds = (topicCompetitors ?? []).map((row: { id: string }) => row.id);
-      if (competitorIds.length) {
-        const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations")
-          .delete().eq("project_id", projectId).eq("metric_date", day)
-          .eq("tracking_location", trackingLocationsForRun[0]).in("competitor_id", competitorIds);
-        if (directObservationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + directObservationDeleteError.message);
+      for (const trackingLocation of trackingLocationsForRun) {
+        const { error: competitorDeleteError } = await admin.from("competitors").delete()
+          .eq("project_id", projectId).eq("metric_date", day)
+          .eq("tracking_location", trackingLocation).eq("topic", selectedTopic);
+        if (competitorDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + competitorDeleteError.message);
+        if (competitorIds.length) {
+          const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations").delete()
+            .eq("project_id", projectId).eq("metric_date", day)
+            .eq("tracking_location", trackingLocation).in("competitor_id", competitorIds);
+          if (directObservationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + directObservationDeleteError.message);
+        }
+        const { error: topicObservationDeleteError } = await admin.from("topic_brand_observations").delete()
+          .eq("project_id", projectId).eq("metric_date", day)
+          .eq("tracking_location", trackingLocation).eq("topic", selectedTopic);
+        if (topicObservationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + topicObservationDeleteError.message);
+        const { error: citationDeleteError } = await admin.from("citations").delete()
+          .eq("project_id", projectId).eq("metric_date", day)
+          .eq("tracking_location", trackingLocation).eq("topic", selectedTopic);
+        if (citationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
+        const { error: metricsDeleteError } = await admin.from("visibility_daily").delete()
+          .eq("project_id", projectId).eq("metric_date", day)
+          .eq("tracking_location", trackingLocation).eq("topic", selectedTopic);
+        if (metricsDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + metricsDeleteError.message);
       }
-      const { error: topicObservationDeleteError } = await admin.from("topic_brand_observations")
-        .delete().eq("project_id", projectId).eq("metric_date", day)
-        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
-      if (topicObservationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + topicObservationDeleteError.message);
-      const { error: citationDeleteError } = await admin.from("citations")
-        .delete().eq("project_id", projectId).eq("metric_date", day)
-        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
-      if (citationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
-      const { error: metricsDeleteError } = await admin.from("visibility_daily")
-        .delete().eq("project_id", projectId).eq("metric_date", day)
-        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
-      if (metricsDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + metricsDeleteError.message);
     }
 
     await completeStage("topic_cleanup", { topic: selectedTopic ?? null, topic_scoped: isTopicScopedRun });
@@ -889,9 +890,10 @@ Deno.serve(async (req: Request) => {
     const competitorTopicMap = new Map<string, number>();
     for (const result of succeeded) {
       for (const c of result.citations as Array<Record<string,unknown>>) {
-        const key = String(c.url) + "|" + String(result.topic);
+        const resultLocation = String(result.tracking_location ?? trackingLocationsForRun[0]);
+        const key = JSON.stringify([resultLocation, String(result.topic), String(c.url)]);
         const old = citationsMap.get(key);
-        citationsMap.set(key, { project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0], topic: result.topic, llm_provider: "chatgpt", url: c.url, page_name: c.page_name, brand_name: c.brand_name, is_brand_related: c.is_brand_related, frequency: Number(old?.frequency ?? 0) + 1, prompt_id: result.prompt_id });
+        citationsMap.set(key, { project_id: projectId, metric_date: day, tracking_location: resultLocation, topic: result.topic, llm_provider: "chatgpt", url: c.url, page_name: c.page_name, brand_name: c.brand_name, is_brand_related: c.is_brand_related, frequency: Number(old?.frequency ?? 0) + 1, prompt_id: result.prompt_id });
       }
       for (const host of result.competitor_hosts as string[]) {
         competitorMap.set(host, (competitorMap.get(host) ?? 0) + 1);
@@ -900,29 +902,23 @@ Deno.serve(async (req: Request) => {
       }
     }
     const citationRows = [...citationsMap.values()];
-    if (isSuperadminRerun && isTopicScopedRun) {
-      // Replace this topic's prior same-day citation aggregate, retaining other topics.
-      const { error: citationDeleteError } = await admin.from("citations").delete()
-        .eq("project_id", projectId).eq("metric_date", day)
-        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
-      if (citationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
-    } else if (isSuperadminRerun) {
-      // Retain historical URLs while rebuilding a full run, without double-counting
-      // existing rows for topics whose aggregates are already being replaced.
+    if (isSuperadminRerun && !isTopicScopedRun) {
+      // Preserve historical URLs independently for each location on full reruns.
       const { data: previousCitations, error: previousCitationError } = await admin.from("citations")
-        .select("topic,url,frequency,page_name,brand_name,is_brand_related,prompt_id")
+        .select("topic,url,frequency,page_name,brand_name,is_brand_related,prompt_id,tracking_location")
         .eq("project_id", projectId).eq("metric_date", day)
-        .eq("tracking_location", trackingLocationsForRun[0]).eq("llm_provider", "chatgpt");
+        .in("tracking_location", trackingLocationsForRun).eq("llm_provider", "chatgpt");
       if (previousCitationError) throw new Error("CITATION_HISTORY_READ_FAILED: " + previousCitationError.message);
-      const currentByKey = new Map(citationRows.map((row) => [String(row.topic) + "|" + String(row.url), row]));
+      const currentByKey = new Map(citationRows.map((row) => [JSON.stringify([row.tracking_location, row.topic, row.url]), row]));
       for (const previous of previousCitations ?? []) {
-        const key = String(previous.topic) + "|" + String(previous.url);
+        const previousLocation = String((previous as Record<string, unknown>).tracking_location ?? trackingLocationsForRun[0]);
+        const key = JSON.stringify([previousLocation, String(previous.topic), String(previous.url)]);
         const current = currentByKey.get(key);
-        if (current && !isTopicScopedRun) {
+        if (current) {
           current.frequency = Number(current.frequency ?? 0) + Number(previous.frequency ?? 0);
-        } else if (!current && (!isTopicScopedRun || String(previous.topic) !== selectedTopic)) {
+        } else {
           const preserved = {
-            project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0],
+            project_id: projectId, metric_date: day, tracking_location: previousLocation,
             llm_provider: "chatgpt", topic: previous.topic, url: previous.url,
             frequency: Number(previous.frequency ?? 0), page_name: previous.page_name,
             brand_name: previous.brand_name, is_brand_related: previous.is_brand_related,
@@ -1178,7 +1174,7 @@ Deno.serve(async (req: Request) => {
         }
         thirdPartyRows.push({
           project_id: projectId, response_id: responseId ?? null, metric_date: day, topic,
-          llm_provider: "chatgpt", tracking_location: trackingLocationsForRun[0],
+          llm_provider: "chatgpt", tracking_location: String(result.tracking_location ?? trackingLocationsForRun[0]),
           url: source.url, canonical_url: canonicalUrl(source.url), hostname: host.replace(/^www\./, "").toLowerCase(),
           website_name: source.title || titleFromUrl(source.url), source_type: source.source_type,
           associated_brand_ids: sourceRelatedBrands.map((brand) => brand.id),
@@ -1201,9 +1197,11 @@ Deno.serve(async (req: Request) => {
           if (oldEvidenceDeleteError) throw new Error("TOPIC_RERUN_EVIDENCE_CLEANUP_FAILED: " + oldEvidenceDeleteError.message);
         }
       }
-      const { error: thirdPartyDeleteError } = await admin.from("third_party_mentions").delete()
-        .eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
-      if (thirdPartyDeleteError) throw new Error("TOPIC_RERUN_MENTIONS_CLEANUP_FAILED: " + thirdPartyDeleteError.message);
+      for (const trackingLocation of trackingLocationsForRun) {
+        const { error: thirdPartyDeleteError } = await admin.from("third_party_mentions").delete()
+          .eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocation).eq("topic", selectedTopic);
+        if (thirdPartyDeleteError) throw new Error("TOPIC_RERUN_MENTIONS_CLEANUP_FAILED: " + thirdPartyDeleteError.message);
+      }
     }
 
     // Include brand classification and evidence generation in this journaled stage.
@@ -1386,8 +1384,12 @@ Deno.serve(async (req: Request) => {
 
     await startStage("observations_and_metrics", { topics: isTopicScopedRun ? topicNames : ["Overall", ...topicNames] });
     const metricTopics = isTopicScopedRun ? topicNames : ["Overall", ...topicNames];
-    for (const topic of metricTopics) {
-      const subset = succeeded.filter((r) => topic !== "Overall" && isTopicScopedRun ? r.topic === topic : topic === "Overall" || r.topic === topic);
+    for (const trackingLocation of trackingLocationsForRun) {
+      for (const topic of metricTopics) {
+        const subset = succeeded.filter((r) =>
+          String(r.tracking_location ?? trackingLocationsForRun[0]) === trackingLocation &&
+          (topic !== "Overall" && isTopicScopedRun ? r.topic === topic : topic === "Overall" || r.topic === topic)
+        );
       const { metrics, competitorPresence, competitorAveragePosition } = analyzeSubset(subset, topic);
       const observations = (entitiesByTopic.get(topic) ?? []).map((entity) => {
         const entityMentions = Number(competitorPresence[entity.key] ?? 0);
@@ -1395,13 +1397,14 @@ Deno.serve(async (req: Request) => {
           .filter((citation) => {
             const citationTopic = String(citation.topic ?? "");
             if (topic !== "Overall" && citationTopic !== topic) return false;
+            if (String(citation.tracking_location ?? trackingLocationsForRun[0]) !== trackingLocation) return false;
             const host = hostOf(String(citation.url ?? ""));
             return (entity.websites ?? []).some((site) => host === site || host.endsWith("." + site));
           })
           .reduce((sum, citation) => sum + Number(citation.frequency ?? 0), 0);
         return {
           project_id: projectId, brand_id: entity.id, topic, metric_date: day,
-          tracking_location: trackingLocationsForRun[0], llm_provider: "chatgpt",
+          tracking_location: trackingLocation, llm_provider: "chatgpt",
           presence_count: entityMentions, response_count: subset.length,
           mention_count: subset.reduce((sum, result) => sum + cachedTermMatches(result, String(result.response_text ?? ""), entity.aliases).count, 0),
           citation_count: citations,
@@ -1415,10 +1418,10 @@ Deno.serve(async (req: Request) => {
         if (observationError) throw new Error("TOPIC_BRAND_OBSERVATION_WRITE_FAILED: " + observationError.message);
       }
       const row = {
-        project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0], topic, llm_provider: "Overall",
+        project_id: projectId, metric_date: day, tracking_location: trackingLocation, topic, llm_provider: "Overall",
         ...metrics,
         citation_count: citationRows
-          .filter((citation) => topic === "Overall" || String(citation.topic ?? "") === topic)
+          .filter((citation) => (topic === "Overall" || String(citation.topic ?? "") === topic) && String(citation.tracking_location ?? trackingLocationsForRun[0]) === trackingLocation)
           .reduce((sum, citation) => sum + Number(citation.frequency ?? 0), 0),
       };
       const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
@@ -1426,9 +1429,10 @@ Deno.serve(async (req: Request) => {
       const providerRow = { ...row, llm_provider: "chatgpt" };
       const { error: providerError } = await admin.from("visibility_daily").upsert(providerRow, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
       if (providerError) throw new Error("PROVIDER_METRICS_WRITE_FAILED for " + topic + ": " + providerError.message);
+      }
     }
 
-    await completeStage("observations_and_metrics", { topics_written: metricTopics.length });
+    await completeStage("observations_and_metrics", { topics_written: metricTopics.length * trackingLocationsForRun.length, locations: trackingLocationsForRun });
 
         const extractionFailures = succeeded.filter((result) =>
       (result.response_analysis as Record<string, unknown> | undefined)?.status !== "completed"
