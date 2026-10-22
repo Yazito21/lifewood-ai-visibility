@@ -1224,8 +1224,9 @@ Deno.serve(async (req: Request) => {
       };
     }
 
-    for (const topic of ["Overall", ...topicNames]) {
-      const subset = succeeded.filter((r) => topic === "Overall" || r.topic === topic);
+    const metricTopics = isTopicScopedRun ? topicNames : ["Overall", ...topicNames];
+    for (const topic of metricTopics) {
+      const subset = succeeded.filter((r) => topic !== "Overall" && isTopicScopedRun ? r.topic === topic : topic === "Overall" || r.topic === topic);
       const { metrics, competitorPresence, competitorAveragePosition } = analyzeSubset(subset, topic);
       const observations = (entitiesByTopic.get(topic) ?? []).map((entity) => {
         const entityMentions = Number(competitorPresence[entity.key] ?? 0);
