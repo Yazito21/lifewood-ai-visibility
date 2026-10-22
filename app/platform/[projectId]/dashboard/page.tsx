@@ -114,7 +114,7 @@ export default function DashboardPage() {
     }
     setTracking(true); setShowTopicPicker(false); setTrackingMessage(""); setError("");
     const outcomes: Array<{ topic: string; status: string; completed: number; total: number; message?: string }> = [];
-    const trackingBatchId = crypto.randomUUID();
+    let trackingBatchId = "";
     try {
       // Every authorized user runs topics in sequence. Admins use one daily
       // entitlement for the whole selection; Superadmins may rerun any subset.
@@ -127,7 +127,7 @@ export default function DashboardPage() {
             project_id: projectId,
             providers: ["chatgpt"],
             topic,
-            ...(isSuperadmin ? {} : { tracking_batch_id: trackingBatchId }),
+            ...(!isSuperadmin && trackingBatchId ? { tracking_batch_id: trackingBatchId } : {}),
           },
         });
         if (error) {
@@ -140,6 +140,7 @@ export default function DashboardPage() {
         if (data?.error) throw new Error(topic + ": " + (data.message || data.error));
         const successful = data.status === "completed" && Number(data.failed_prompts ?? 0) === 0 &&
           Number(data.analysis_failures ?? 0) === 0 && Number(data.classification_failures?.length ?? 0) === 0;
+        if (!isSuperadmin && !trackingBatchId && data.run_id) trackingBatchId = String(data.run_id);
         outcomes.push({
           topic,
           status: successful ? "completed" : String(data.status ?? "partial"),
