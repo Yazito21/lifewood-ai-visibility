@@ -582,6 +582,7 @@ Deno.serve(async (req: Request) => {
     if (!trackingLocationsForRun.length) return json({ error: "NO_VALID_TRACKING_LOCATIONS" }, 400);
     let runId: string | null = null;
     let isSuperadminRerun = false;
+    const isTopicScopedRun = Boolean(selectedTopic);
     if (mode !== "sample") {
       runId = crypto.randomUUID();
       const createTrackingRun = async () => {
