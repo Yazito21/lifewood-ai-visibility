@@ -583,6 +583,7 @@ Deno.serve(async (req: Request) => {
     let runId: string | null = null;
     let isSuperadminRerun = false;
     const isTopicScopedRun = Boolean(selectedTopic);
+    const trackingBatchId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
     if (mode !== "sample") {
       runId = crypto.randomUUID();
 
@@ -666,22 +667,21 @@ Deno.serve(async (req: Request) => {
           }, 409);
         }
       } else if (isTopicScopedRun) {
-        // Admins get one daily claim for a selected topic sequence. Continuations
-        // are accepted only for the exact initial run ID returned to that session.
+        // Standard Admins reserve the daily entitlement only for the first topic
+        // and continue the same sequential session using its original run ID.
         const todayMYT = new Intl.DateTimeFormat("en-CA", {
           timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
         }).format(new Date());
-        const batchRunId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
-        if (batchRunId) {
+        if (trackingBatchId) {
           const { data: claim, error: claimError } = await admin.from("tracking_run_daily_claims")
             .select("run_id,started_by").eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
           if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
-          const { data: firstRun, error: firstRunError } = await admin.from("tracking_runs")
-            .select("id,started_by,status,completed_at").eq("id", batchRunId).eq("project_id", projectId).maybeSingle();
-          if (firstRunError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED" }, 500);
-          if (!firstRun || firstRun.started_by !== userId || firstRun.status !== "completed" || !firstRun.completed_at ||
+          const { data: parentRun, error: parentRunError } = await admin.from("tracking_runs")
+            .select("id,started_by,status,completed_at").eq("id", trackingBatchId).eq("project_id", projectId).maybeSingle();
+          if (parentRunError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED" }, 500);
+          if (!parentRun || parentRun.started_by !== userId || parentRun.status !== "completed" || !parentRun.completed_at ||
               claim?.started_by !== userId) {
-            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The first topic must complete successfully before the next topic can start." }, 409);
+            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The previous topic must complete successfully under your daily tracking entitlement before continuing." }, 409);
           }
           const insertionError = await createTrackingRun();
           if (insertionError) return insertionError;
