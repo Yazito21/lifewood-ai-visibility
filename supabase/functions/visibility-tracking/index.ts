@@ -796,7 +796,7 @@ Deno.serve(async (req: Request) => {
       }
     }
     const citationRows = [...citationsMap.values()];
-    if (isSuperadminRerun) {
+    if (isSuperadminRerun && !isTopicScopedRun) {
       // Citation rows are a daily aggregate, while raw response history is append-only.
       // Carry forward prior URLs/frequencies even if the replacement run no longer cites them.
       const { data: previousCitations, error: previousCitationError } = await admin.from("citations")
