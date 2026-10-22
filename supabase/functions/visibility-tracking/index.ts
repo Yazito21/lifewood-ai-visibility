@@ -668,7 +668,7 @@ Deno.serve(async (req: Request) => {
         }
       } else if (isTopicScopedRun) {
         // Standard Admins reserve the daily entitlement only for the first topic
-        // and continue the same sequential session using its original run ID.
+        // and continue the sequence using the original run ID as their batch ID.
         const todayMYT = new Intl.DateTimeFormat("en-CA", {
           timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
         }).format(new Date());
@@ -679,9 +679,9 @@ Deno.serve(async (req: Request) => {
           const { data: parentRun, error: parentRunError } = await admin.from("tracking_runs")
             .select("id,started_by,status,completed_at").eq("id", trackingBatchId).eq("project_id", projectId).maybeSingle();
           if (parentRunError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED" }, 500);
-          if (!parentRun || parentRun.started_by !== userId || parentRun.status !== "completed" || !parentRun.completed_at ||
-              claim?.started_by !== userId) {
-            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The previous topic must complete successfully under your daily tracking entitlement before continuing." }, 409);
+          if (!claim?.run_id || claim.started_by !== userId || !parentRun || parentRun.started_by !== userId ||
+              parentRun.status !== "completed" || !parentRun.completed_at) {
+            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The first topic must complete successfully under your daily tracking entitlement before continuing." }, 409);
           }
           const insertionError = await createTrackingRun();
           if (insertionError) return insertionError;
