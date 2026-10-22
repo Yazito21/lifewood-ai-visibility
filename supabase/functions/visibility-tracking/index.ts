@@ -485,6 +485,9 @@ Deno.serve(async (req: Request) => {
     const admin = createClient(supabaseUrl, adminKey, { auth: { persistSession: false, autoRefreshToken: false } });
     activeAdmin = admin;
     const body = await req.json();
+    // Topic-scoped tracking is orchestrated client-side as one request per topic.
+    // The server validates and processes only that topic for each persistent run.
+
     const projectId = String(body?.project_id ?? "");
     const mode = body?.mode === "sample" ? "sample" : "persistent";
     if (!projectId) return json({ error: "PROJECT_ID_REQUIRED" }, 400);
@@ -519,6 +522,8 @@ Deno.serve(async (req: Request) => {
     if (providerIds.some((p) => p !== "chatgpt")) return json({ error: "CHATGPT_ONLY_IN_INITIAL_RELEASE", supported_providers: ["chatgpt"] }, 400);
 
     let promptQuery = admin.from("prompts").select("id,prompt_number,prompt,topic,language,active").eq("project_id", projectId).eq("active", true).order("prompt_number");
+    const selectedTopic = typeof body?.topic === "string" ? body.topic.trim() : "";
+    if (selectedTopic) promptQuery = promptQuery.eq("topic", selectedTopic);
     if (Array.isArray(body?.prompt_ids)) {
       const ids = body.prompt_ids.map(String).filter(Boolean);
       if (!ids.length) return json({ error: "SELECT_AT_LEAST_ONE_PROMPT" }, 400);
@@ -532,31 +537,30 @@ Deno.serve(async (req: Request) => {
     if (!prompts?.length) return json({ error: "NO_ACTIVE_PROMPTS" }, 400);
     if (mode === "sample" && prompts.length > 25) return json({ error: "SAMPLE_LIMIT_25_PROMPTS" }, 400);
 
-    // A daily result is only comparable when every configured topic has active prompts.
-    // Prevent silently omitting topics (or retaining stale metrics for them).
+    // Persistent topic runs validate only their selected topic. A full request remains supported for backwards compatibility.
     if (mode !== "sample") {
       const configuredTopics = [...new Set((Array.isArray(project.topics) ? project.topics.map(String) : []).filter(Boolean))];
+      if (selectedTopic && !configuredTopics.includes(selectedTopic)) {
+        return json({ error: "TOPIC_NOT_CONFIGURED", topic: selectedTopic }, 400);
+      }
+      const validatedTopics = selectedTopic ? [selectedTopic] : configuredTopics;
       const promptTopics = new Set(prompts.map((p) => String(p.topic ?? "General")));
-      const missingPromptTopics = configuredTopics.filter((topic) => !promptTopics.has(topic));
+      const missingPromptTopics = validatedTopics.filter((topic) => !promptTopics.has(topic));
       const unconfiguredPromptTopics = [...promptTopics].filter((topic) => configuredTopics.length > 0 && !configuredTopics.includes(topic));
-      if (missingPromptTopics.length || unconfiguredPromptTopics.length) {
+      if (missingPromptTopics.length || unconfiguredPromptTopics.some((topic) => topic === selectedTopic)) {
         return json({
           error: "PROMPT_TOPIC_COVERAGE_INVALID",
-          message: "Every configured topic must have at least one active prompt, and active prompts must use configured topics.",
+          message: "The selected topic must have at least one active prompt, and active prompts must use configured topics.",
           missing_prompt_topics: missingPromptTopics,
           unconfigured_prompt_topics: unconfiguredPromptTopics,
         }, 409);
       }
-    }
 
-    // Persistent runs require a complete fixed comparison universe for each topic.
-    // This catches incomplete legacy projects before any provider calls or writes.
-    if (mode !== "sample") {
-      const configuredTopics = [...new Set((Array.isArray(project.topics) ? project.topics.map(String) : prompts.map((p) => String(p.topic ?? "General"))).filter(Boolean))];
+      // Validate the fixed 100-brand comparison set only for topics included in this run.
       const { data: setupAssignments, error: setupAssignmentError } = await admin.from("topic_brand_assignments")
         .select("topic,brand_id,role,include_in_metrics").eq("project_id", projectId).eq("include_in_metrics", true);
       if (setupAssignmentError) return json({ error: "BRAND_REGISTRY_VALIDATION_FAILED", message: setupAssignmentError.message }, 500);
-      const invalidTopics = configuredTopics.map((topic) => {
+      const invalidTopics = validatedTopics.map((topic) => {
         const rows = (setupAssignments ?? []).filter((row: Record<string, unknown>) => String(row.topic) === topic);
         const total = new Set(rows.map((row: Record<string, unknown>) => String(row.brand_id))).size;
         const tracked = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "tracked_brand").map((row: Record<string, unknown>) => String(row.brand_id))).size;
@@ -578,11 +582,31 @@ Deno.serve(async (req: Request) => {
     if (!trackingLocationsForRun.length) return json({ error: "NO_VALID_TRACKING_LOCATIONS" }, 400);
     let runId: string | null = null;
     let isSuperadminRerun = false;
+    const isTopicScopedRun = Boolean(selectedTopic);
+    const trackingBatchId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
+    const newAdminBatchRun = !isSuperadmin && isTopicScopedRun && !trackingBatchId;
+
     if (mode !== "sample") {
       runId = crypto.randomUUID();
-      if (isSuperadmin) {
-        // Superadmins may rerun tracking on the same Malaysia-time day.
-        // The daily claim is advanced to the newest run, while previous run history is retained.
+
+      const createTrackingRun = async () => {
+        const { error: runInsertError } = await admin.from("tracking_runs").insert({
+          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running", tracking_location: trackingLocationsForRun[0],
+          total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
+          ...(newAdminBatchRun ? { error_message: "TOPIC_BATCH:" + runId } : {}),
+        });
+        if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
+        return null;
+      };
+
+      if (isSuperadmin && isTopicScopedRun) {
+        // A topic rerun gets its own run-history row but does not replace the
+        // project's full-run daily claim or supersede runs for other topics.
+        isSuperadminRerun = true;
+        const insertionError = await createTrackingRun();
+        if (insertionError) return insertionError;
+      } else if (isSuperadmin) {
+        // Full Superadmin reruns retain the existing daily-claim behavior.
         isSuperadminRerun = true;
         const todayMYT = new Intl.DateTimeFormat("en-CA", {
           timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
@@ -597,11 +621,8 @@ Deno.serve(async (req: Request) => {
           console.error("DAILY_TRACKING_CLAIM_LOOKUP_FAILED", existingClaimError.message);
           return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
         }
-        const { error: runInsertError } = await admin.from("tracking_runs").insert({
-          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running", tracking_location: trackingLocationsForRun[0],
-          total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
-        });
-        if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
+        const insertionError = await createTrackingRun();
+        if (insertionError) return insertionError;
         const now = new Date().toISOString();
         if (existingClaim?.run_id) {
           const { error: claimUpdateError } = await admin.from("tracking_run_daily_claims")
@@ -622,7 +643,7 @@ Deno.serve(async (req: Request) => {
             return json({ error: "DAILY_TRACKING_CLAIM_CREATE_FAILED", message: claimInsertError.message }, 500);
           }
         }
-      } else {
+      } else if (!isTopicScopedRun) {
         const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
           p_project_id: projectId,
           p_started_by: userId,
@@ -647,6 +668,35 @@ Deno.serve(async (req: Request) => {
             run_date: claim?.run_date ?? null,
             next_available_at: nextDate,
           }, 409);
+        }
+      } else if (isTopicScopedRun) {
+        // Standard Admins reserve today's full-run entitlement once. Continuation
+        // requires a successful topic run created within this sequential session.
+        if (isSuperadmin) return json({ error: "TOPIC_RERUN_AUTHORIZATION_INVALID" }, 400);
+        if (!trackingBatchId) {
+          const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
+            p_project_id: projectId,
+            p_started_by: userId,
+            p_run_id: runId,
+            p_total_prompts: prompts.length * trackingLocationsForRun.length,
+          });
+          if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_FAILED", message: "Could not reserve today's tracking run. Please contact an administrator." }, 500);
+          const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
+          if (!claim?.claimed) return json({
+            error: "DAILY_TRACKING_LIMIT_REACHED",
+            message: "A tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
+            run_id: claim?.run_id ?? null,
+          }, 409);
+        } else {
+          const { data: parentRun, error: parentRunError } = await admin.from("tracking_runs")
+            .select("id,started_by,status,completed_at,error_message").eq("id", trackingBatchId).eq("project_id", projectId).maybeSingle();
+          if (parentRunError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED" }, 500);
+          if (!parentRun || parentRun.started_by !== userId || parentRun.status !== "completed" ||
+              !parentRun.completed_at || parentRun.error_message !== "TOPIC_BATCH:" + trackingBatchId) {
+            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The previous topic must finish successfully before the next one starts." }, 409);
+          }
+          const insertionError = await createTrackingRun();
+          if (insertionError) return insertionError;
         }
       }
       activeRunId = runId;
@@ -721,22 +771,10 @@ Deno.serve(async (req: Request) => {
     const capturedAt = new Date().toISOString();
     // On a Superadmin rerun, remove this project's current-day data before writing
     // the replacement result set, so partial failures or stale citations do not linger.
-    if (isSuperadminRerun) {
-      // Preserve every previously stored raw AI response and citation row.
-      // Only replaceable daily summaries are rebuilt from the latest Superadmin run.
-      const datePartsForCleanup = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
-      }).formatToParts(new Date());
-      const rerunDay = `${datePartsForCleanup.find((p) => p.type === "year")?.value}-${datePartsForCleanup.find((p) => p.type === "month")?.value}-${datePartsForCleanup.find((p) => p.type === "day")?.value}`;
-      const { error: competitorsDeleteError } = await admin.from("competitors").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
-      if (competitorsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: competitorsDeleteError.message }, 500);
-      // Remove only the replaceable daily observations; keep the append-only competitor registry intact.
-      const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
-      if (directObservationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: directObservationDeleteError.message }, 500);
-      const { error: topicObservationDeleteError } = await admin.from("topic_brand_observations").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
-      if (topicObservationDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: topicObservationDeleteError.message }, 500);
-      const { error: metricsDeleteError } = await admin.from("visibility_daily").delete().eq("project_id", projectId).eq("metric_date", rerunDay).eq("tracking_location", trackingLocationsForRun[0]);
-      if (metricsDeleteError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsDeleteError.message }, 500);
+    if (isSuperadminRerun && !isTopicScopedRun) {
+      // A full rerun replaces daily summaries topic by topic after each section
+      // has been recomputed. Do not pre-delete all topics: later failures would
+      // otherwise erase valid metrics from topics that have not run yet.
     }
     const rawRows = results.map((r) => ({
       project_id: projectId, prompt_id: r.prompt_id, llm_provider: "chatgpt", captured_at: r.completed_at, tracking_location: r.tracking_location ?? null,
@@ -756,12 +794,33 @@ Deno.serve(async (req: Request) => {
       timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
     }).formatToParts(new Date());
     const day = `${dateParts.find((p) => p.type === "year")?.value}-${dateParts.find((p) => p.type === "month")?.value}-${dateParts.find((p) => p.type === "day")?.value}`;
-    if (isSuperadminRerun) {
-      // Remove today's old summary rows so metrics for disappeared topics are not retained.
-      const { error: metricsCleanupError } = await admin.from("visibility_daily")
-        .delete().eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocationsForRun[0]);
-      if (metricsCleanupError) return json({ error: "SUPERADMIN_RERUN_CLEANUP_FAILED", message: metricsCleanupError.message }, 500);
+
+    // Topic-scoped reruns replace same-day aggregate rows for only the selected topic.
+    // Raw responses and historical run rows are intentionally retained.
+    if (isSuperadminRerun && isTopicScopedRun) {
+      // Only reset this topic's replaceable daily outputs; other topics and history remain untouched.
+      const { error: competitorDeleteError } = await admin.from("competitors")
+        .delete().eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (competitorDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + competitorDeleteError.message);
+      const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations")
+        .delete().eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (directObservationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + directObservationDeleteError.message);
+      const { error: topicObservationDeleteError } = await admin.from("topic_brand_observations")
+        .delete().eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (topicObservationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + topicObservationDeleteError.message);
+      const { error: citationDeleteError } = await admin.from("citations")
+        .delete().eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (citationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
+      const { error: metricsDeleteError } = await admin.from("visibility_daily")
+        .delete().eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (metricsDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + metricsDeleteError.message);
     }
+
     const topicNames = [...new Set(prompts.map((p) => String(p.topic ?? "General")))];
     const citationsMap = new Map<string, Record<string,unknown>>();
     const competitorMap = new Map<string, number>();
@@ -779,9 +838,15 @@ Deno.serve(async (req: Request) => {
       }
     }
     const citationRows = [...citationsMap.values()];
-    if (isSuperadminRerun) {
-      // Citation rows are a daily aggregate, while raw response history is append-only.
-      // Carry forward prior URLs/frequencies even if the replacement run no longer cites them.
+    if (isSuperadminRerun && isTopicScopedRun) {
+      // Replace this topic's prior same-day citation aggregate, retaining other topics.
+      const { error: citationDeleteError } = await admin.from("citations").delete()
+        .eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (citationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
+    } else if (isSuperadminRerun) {
+      // Retain historical URLs while rebuilding a full run, without double-counting
+      // existing rows for topics whose aggregates are already being replaced.
       const { data: previousCitations, error: previousCitationError } = await admin.from("citations")
         .select("topic,url,frequency,page_name,brand_name,is_brand_related,prompt_id")
         .eq("project_id", projectId).eq("metric_date", day)
@@ -791,9 +856,9 @@ Deno.serve(async (req: Request) => {
       for (const previous of previousCitations ?? []) {
         const key = String(previous.topic) + "|" + String(previous.url);
         const current = currentByKey.get(key);
-        if (current) {
+        if (current && !isTopicScopedRun) {
           current.frequency = Number(current.frequency ?? 0) + Number(previous.frequency ?? 0);
-        } else {
+        } else if (!current && (!isTopicScopedRun || String(previous.topic) !== selectedTopic)) {
           const preserved = {
             project_id: projectId, metric_date: day, tracking_location: trackingLocationsForRun[0],
             llm_provider: "chatgpt", topic: previous.topic, url: previous.url,
@@ -1055,6 +1120,25 @@ Deno.serve(async (req: Request) => {
         });
       }
     }
+    if (isSuperadminRerun && isTopicScopedRun) {
+      // Remove only this topic's derived evidence and mention aggregates before replacing them.
+      const { data: selectedTopicResponses, error: selectedTopicResponsesError } = await admin.from("ai_responses")
+        .select("id").eq("project_id", projectId).eq("run_id", runId).eq("tracking_location", trackingLocationsForRun[0]);
+      if (selectedTopicResponsesError) throw new Error("TOPIC_RERUN_RESPONSE_LOOKUP_FAILED: " + selectedTopicResponsesError.message);
+      const selectedResponseIds = (selectedTopicResponses ?? []).map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
+      if (selectedResponseIds.length) {
+        for (let offset = 0; offset < selectedResponseIds.length; offset += 500) {
+          const responseIds = selectedResponseIds.slice(offset, offset + 500);
+          const { error: oldEvidenceDeleteError } = await admin.from("response_brand_evidence").delete()
+            .in("response_id", responseIds).eq("topic", selectedTopic);
+          if (oldEvidenceDeleteError) throw new Error("TOPIC_RERUN_EVIDENCE_CLEANUP_FAILED: " + oldEvidenceDeleteError.message);
+        }
+      }
+      const { error: thirdPartyDeleteError } = await admin.from("third_party_mentions").delete()
+        .eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (thirdPartyDeleteError) throw new Error("TOPIC_RERUN_MENTIONS_CLEANUP_FAILED: " + thirdPartyDeleteError.message);
+    }
+
     for (let offset = 0; offset < evidenceRows.length; offset += 500) {
       const batch = evidenceRows.slice(offset, offset + 500);
       const { error: evidenceWriteError } = await admin.from("response_brand_evidence").upsert(batch, {
@@ -1167,8 +1251,9 @@ Deno.serve(async (req: Request) => {
       };
     }
 
-    for (const topic of ["Overall", ...topicNames]) {
-      const subset = succeeded.filter((r) => topic === "Overall" || r.topic === topic);
+    const metricTopics = isTopicScopedRun ? topicNames : ["Overall", ...topicNames];
+    for (const topic of metricTopics) {
+      const subset = succeeded.filter((r) => topic !== "Overall" && isTopicScopedRun ? r.topic === topic : topic === "Overall" || r.topic === topic);
       const { metrics, competitorPresence, competitorAveragePosition } = analyzeSubset(subset, topic);
       const observations = (entitiesByTopic.get(topic) ?? []).map((entity) => {
         const entityMentions = Number(competitorPresence[entity.key] ?? 0);
@@ -1226,6 +1311,13 @@ Deno.serve(async (req: Request) => {
       completed_at: new Date().toISOString(),
     }).eq("id", runId);
     if (runStatusWriteError) throw new Error("TRACKING_RUN_STATUS_WRITE_FAILED: " + runStatusWriteError.message);
+    if (status !== "completed") {
+      return json({
+        mode, run_id: runId, status, total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
+        analysis_failures: extractionFailures, classification_failures: classificationFailures,
+        message: runIssues.join("; ") || "The topic did not complete successfully.",
+      });
+    }
     return json({
       mode, run_id: runId, status, total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
       analysis_failures: extractionFailures,
