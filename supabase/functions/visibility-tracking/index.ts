@@ -584,7 +584,6 @@ Deno.serve(async (req: Request) => {
     let isSuperadminRerun = false;
     const isTopicScopedRun = Boolean(selectedTopic);
     const trackingBatchId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
-    const isAdminBatchContinuation = Boolean(trackingBatchId) && !isSuperadmin;
     if (mode !== "sample") {
       runId = crypto.randomUUID();
 
