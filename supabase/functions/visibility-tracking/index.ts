@@ -666,34 +666,25 @@ Deno.serve(async (req: Request) => {
           }, 409);
         }
       } else if (isTopicScopedRun) {
-        // An ordered Admin topic selection claims the daily entitlement once.
-        // Every subsequent selected topic includes the first run ID as its batch ID.
+        // Standard Admins use one daily claim for the entire sequential selection.
         const todayMYT = new Intl.DateTimeFormat("en-CA", {
           timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
         }).format(new Date());
         const batchRunId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
-        if (batchRunId) {
+        if (!isSuperadmin && batchRunId) {
           const { data: claim, error: claimError } = await admin.from("tracking_run_daily_claims")
             .select("run_id,started_by").eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
           if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
           const { data: batchFirstRun, error: batchRunError } = await admin.from("tracking_runs")
-            .select("started_by,completed_at").eq("id", batchRunId).eq("project_id", projectId).maybeSingle();
+            .select("started_by,status,completed_at").eq("id", batchRunId).eq("project_id", projectId).maybeSingle();
           if (batchRunError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED" }, 500);
-          if (!batchFirstRun?.completed_at || batchFirstRun.started_by !== userId) {
-            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The first topic has not completed under your tracking session." }, 409);
+          if (!batchFirstRun || batchFirstRun.started_by !== userId || batchFirstRun.status !== "completed" ||
+              !claim?.run_id || claim.started_by !== userId) {
+            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The first topic must complete successfully under your current daily tracking claim before the next topic can start." }, 409);
           }
-          if (claim?.run_id && claim.started_by === userId && batchFirstRun.started_by === userId) {
-            // The sequence token must identify a run started by this user, and the
-            // daily claim must still belong to that user. The claim may rotate if
-            // the app's legacy full-run path is invoked during a sequence.
-            const insertionError = await createTrackingRun();
-            if (insertionError) return insertionError;
-          } else {
-            return json({ error: "DAILY_TRACKING_LIMIT_REACHED", message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.", run_id: claim?.run_id ?? null }, 409);
-          }
-        } else if (!isSuperadmin && isTopicScopedRun) {
-          // Admins starting a selected-topic sequence establish the regular
-          // daily claim on the first topic, then continue by passing its run ID.
+          const insertionError = await createTrackingRun();
+          if (insertionError) return insertionError;
+        } else if (!isSuperadmin) {
           const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
             p_project_id: projectId,
             p_started_by: userId,
@@ -707,6 +698,8 @@ Deno.serve(async (req: Request) => {
             message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
             run_id: claim?.run_id ?? null,
           }, 409);
+        } else {
+          return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "Superadmin topic reruns do not use the Admin daily batch token." }, 400);
         }
       }
       activeRunId = runId;
