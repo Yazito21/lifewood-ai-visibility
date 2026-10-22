@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const [tracking, setTracking] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [canRunTracking, setCanRunTracking] = useState(false);
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState("");
   const [showTopicPicker, setShowTopicPicker] = useState(false);
   const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
@@ -123,7 +124,7 @@ export default function DashboardPage() {
         if (error) {
           let message = error.message;
           if (error.context instanceof Response) {
-            try { message = (await error.context.clone().json())?.message || (await error.context.clone().json())?.error || message; } catch { /* use SDK message */ }
+            try { const body = await error.context.clone().json(); message = body?.message || body?.error || message; } catch { /* use SDK message */ }
           }
           throw new Error(topic + ": " + message);
         }
