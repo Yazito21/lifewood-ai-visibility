@@ -114,18 +114,21 @@ export default function DashboardPage() {
     }
     setTracking(true); setShowTopicPicker(false); setTrackingMessage(""); setError("");
     const outcomes: Array<{ topic: string; status: string; completed: number; total: number; message?: string }> = [];
+    const trackingBatchId = crypto.randomUUID();
     try {
-      // Every authorized user runs topics in sequence. Admins still select all topics
-      // for the single daily entitlement; Superadmins can choose any subset to rerun.
-      const configuredTopics = topics.filter((topic) => topic !== "Overall");
-      if (!isSuperadmin && requestedTopics.length !== configuredTopics.length) {
-        throw new Error("Admins must select all topics for the standard daily tracking entitlement. Superadmins may select an individual topic or subset.");
-      }
-      const orderedTopics = isSuperadmin ? requestedTopics : configuredTopics;
+      // Every authorized user runs topics in sequence. Admins use one daily
+      // entitlement for the whole selection; Superadmins may rerun any subset.
+      const orderedTopics = requestedTopics;
       for (const topic of orderedTopics) {
         setTrackingMessage("Tracking topic " + (outcomes.length + 1) + " of " + orderedTopics.length + ": " + topic + "…");
         const { data, error } = await supabase.functions.invoke("visibility-tracking", {
-          body: { mode: "persistent", project_id: projectId, providers: ["chatgpt"], ...(isSuperadmin ? { topic } : {}) },
+          body: {
+            mode: "persistent",
+            project_id: projectId,
+            providers: ["chatgpt"],
+            topic,
+            ...(isSuperadmin ? {} : { tracking_batch_id: trackingBatchId }),
+          },
         });
         if (error) {
           let message = error.message;
