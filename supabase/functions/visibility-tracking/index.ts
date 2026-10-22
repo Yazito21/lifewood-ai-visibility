@@ -803,10 +803,19 @@ Deno.serve(async (req: Request) => {
         .delete().eq("project_id", projectId).eq("metric_date", day)
         .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
       if (competitorDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + competitorDeleteError.message);
-      const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations")
-        .delete().eq("project_id", projectId).eq("metric_date", day)
-        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
-      if (directObservationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + directObservationDeleteError.message);
+      // direct_competitor_observations is keyed by competitor_id and has no topic column.
+      // Resolve the selected topic's competitors first, then remove only observations
+      // belonging to those competitor records for this date and tracking location.
+      const { data: topicCompetitors, error: topicCompetitorsError } = await admin.from("direct_competitors")
+        .select("id").eq("project_id", projectId).eq("topic", selectedTopic);
+      if (topicCompetitorsError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + topicCompetitorsError.message);
+      const competitorIds = (topicCompetitors ?? []).map((row: { id: string }) => row.id);
+      if (competitorIds.length) {
+        const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations")
+          .delete().eq("project_id", projectId).eq("metric_date", day)
+          .eq("tracking_location", trackingLocationsForRun[0]).in("competitor_id", competitorIds);
+        if (directObservationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + directObservationDeleteError.message);
+      }
       const { error: topicObservationDeleteError } = await admin.from("topic_brand_observations")
         .delete().eq("project_id", projectId).eq("metric_date", day)
         .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
