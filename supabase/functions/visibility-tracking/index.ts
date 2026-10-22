@@ -666,26 +666,19 @@ Deno.serve(async (req: Request) => {
           }, 409);
         }
       } else if (isTopicScopedRun) {
-        // Regular Admin topic runs are orchestrated by the dashboard as one ordered
-        // sequence. The client sends the selected topic, but the daily claim itself
-        // remains a full-run entitlement. Permit the first topic to claim it, then
-        // subsequent topic calls from the same user can continue via the claimed run.
+        // Reserve a single daily tracking entitlement for the current selection.
+        // Subsequent topic invocations carry the same parent claim run ID so they
+        // can proceed sequentially without opening extra daily runs.
         const todayMYT = new Intl.DateTimeFormat("en-CA", {
           timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
         }).format(new Date());
-        const { data: existingClaim, error: existingClaimError } = await admin
-          .from("tracking_run_daily_claims").select("run_id,started_by")
-          .eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
-        if (existingClaimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
-        if (existingClaim?.run_id) {
-          const { data: claimRun } = await admin.from("tracking_runs").select("started_by,status")
-            .eq("id", existingClaim.run_id).maybeSingle();
-          if (existingClaim.started_by !== userId || claimRun?.started_by !== userId) {
-            return json({
-              error: "DAILY_TRACKING_LIMIT_REACHED",
-              message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
-              run_id: existingClaim.run_id,
-            }, 409);
+        const batchRunId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
+        if (batchRunId) {
+          const { data: claim, error: claimError } = await admin.from("tracking_run_daily_claims")
+            .select("run_id,started_by").eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
+          if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
+          if (!claim?.run_id || claim.run_id !== batchRunId || claim.started_by !== userId) {
+            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "This topic sequence no longer matches today's tracking entitlement. Please restart tracking." }, 409);
           }
           const insertionError = await createTrackingRun();
           if (insertionError) return insertionError;
