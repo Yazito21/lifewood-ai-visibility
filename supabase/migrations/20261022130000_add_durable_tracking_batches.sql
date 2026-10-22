@@ -61,7 +61,10 @@ with check (
 );
 create policy "Project admins can read batch topics"
 on public.tracking_batch_topics for select to authenticated
-using (exists (select 1 from public.tracking_batches b where b.id = tracking_batch_topics.batch_id));
+using (exists (select 1 from public.tracking_batches b where b.id = tracking_batch_topics.batch_id and (
+  exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'superadmin')
+  or exists (select 1 from public.project_members pm where pm.project_id = b.project_id and pm.user_id = auth.uid() and pm.role in ('admin','superadmin'))
+)));
 create policy "Project admins can insert batch topics"
 on public.tracking_batch_topics for insert to authenticated
 with check (exists (select 1 from public.tracking_batches b where b.id = tracking_batch_topics.batch_id and (
