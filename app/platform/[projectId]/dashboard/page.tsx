@@ -35,6 +35,9 @@ export default function DashboardPage() {
   const [exporting, setExporting] = useState(false);
   const [canRunTracking, setCanRunTracking] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState("");
+  const [showTopicPicker, setShowTopicPicker] = useState(false);
+  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [isSuperadmin, setIsSuperadmin] = useState(false);
 
   async function load() {
     setLoading(true); setError("");
@@ -96,25 +99,58 @@ export default function DashboardPage() {
     setLoading(false);
   }
 
+  function openTopicPicker() {
+    setSelectedTopics(topics.filter((topic) => topic !== "Overall"));
+    setShowTopicPicker(true);
+    setError("");
+    setTrackingMessage("");
+  }
+
   async function runTracking() {
-    setTracking(true); setTrackingMessage(""); setError("");
+    const requestedTopics = [...selectedTopics];
+    if (!requestedTopics.length) {
+      setError("Select at least one topic to run tracking.");
+      return;
+    }
+    setTracking(true); setShowTopicPicker(false); setTrackingMessage(""); setError("");
+    const outcomes: Array<{ topic: string; status: string; completed: number; total: number; message?: string }> = [];
     try {
-      const { data, error } = await supabase.functions.invoke("visibility-tracking", {
-        body: { mode: "persistent", project_id: projectId, providers: ["chatgpt"] },
-      });
-      if (error) {
-        let message = error.message;
-        if (error.context instanceof Response) {
-          try { message = (await error.context.clone().json())?.error || message; } catch { /* use SDK message */ }
+      for (const topic of requestedTopics) {
+        setTrackingMessage("Tracking topic " + (outcomes.length + 1) + " of " + requestedTopics.length + ": " + topic + "…");
+        const { data, error } = await supabase.functions.invoke("visibility-tracking", {
+          body: { mode: "persistent", project_id: projectId, providers: ["chatgpt"], topic },
+        });
+        if (error) {
+          let message = error.message;
+          if (error.context instanceof Response) {
+            try { message = (await error.context.clone().json())?.message || (await error.context.clone().json())?.error || message; } catch { /* use SDK message */ }
+          }
+          throw new Error(topic + ": " + message);
         }
-        throw new Error(message);
+        if (data?.error) throw new Error(topic + ": " + (data.message || data.error));
+        const successful = data.status === "completed" && Number(data.failed_prompts ?? 0) === 0 &&
+          Number(data.analysis_failures ?? 0) === 0 && Number(data.classification_failures?.length ?? 0) === 0;
+        outcomes.push({
+          topic,
+          status: successful ? "completed" : String(data.status ?? "partial"),
+          completed: Number(data.completed_prompts ?? 0),
+          total: Number(data.total_prompts ?? 0),
+          message: successful ? undefined : (data.message || "Topic did not complete cleanly; the remaining topics were not started."),
+        });
+        if (!successful) throw new Error(topic + " finished with status " + data.status + ". Remaining topics were not started to avoid masking an incomplete run.");
       }
-      if (data?.error) throw new Error(data.error);
-      setTrackingMessage("Tracking " + data.status + ": " + data.completed_prompts + " of " + data.total_prompts + " prompts completed.");
+      setTrackingMessage("Tracking completed successfully for " + outcomes.length + " topic(s): " +
+        outcomes.map((item) => item.topic + " (" + item.completed + "/" + item.total + " prompts)").join("; ") + ".");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally { setTracking(false); }
+      const summary = outcomes.length
+        ? " Completed: " + outcomes.map((item) => item.topic).join(", ") + "."
+        : "";
+      setError((e instanceof Error ? e.message : String(e)) + summary);
+      await load();
+    } finally {
+      setTracking(false);
+    }
   }
 
   async function exportRawResponses() {
@@ -174,10 +210,13 @@ export default function DashboardPage() {
         supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
         supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle(),
       ]);
-      if (alive) setCanRunTracking(
-        profile?.role === "superadmin" || profile?.role === "admin" ||
-        member?.role === "superadmin" || member?.role === "admin"
-      );
+      if (alive) {
+        setIsSuperadmin(profile?.role === "superadmin");
+        setCanRunTracking(
+          profile?.role === "superadmin" || profile?.role === "admin" ||
+          member?.role === "superadmin" || member?.role === "admin"
+        );
+      }
     }
     void loadPermissions();
     return () => { alive = false; };
@@ -238,6 +277,39 @@ export default function DashboardPage() {
           </div>
         </section>
 
+        {showTopicPicker && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="topic-picker-title" className="w-full max-w-xl rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="page-eyebrow">{isSuperadmin ? "Tracking / Superadmin rerun" : "Tracking"}</p>
+                <h3 id="topic-picker-title" className="mt-1 text-xl font-semibold tracking-tight">Select topics to run</h3>
+                <p className="mt-2 text-sm text-[var(--muted-foreground)]">Topics are processed one at a time. The next topic starts only after the current topic completes successfully.</p>
+              </div>
+              <button type="button" onClick={() => setShowTopicPicker(false)} className="platform-btn" aria-label="Close topic picker">Close</button>
+            </div>
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3">
+              <p className="text-sm font-semibold">{selectedTopics.length} of {topics.filter((topic) => topic !== "Overall").length} selected</p>
+              <div className="flex gap-2">
+                <button type="button" className="platform-btn" onClick={() => setSelectedTopics(topics.filter((topic) => topic !== "Overall"))}>Select all</button>
+                <button type="button" className="platform-btn" onClick={() => setSelectedTopics([])}>Clear</button>
+              </div>
+            </div>
+            <div className="mt-3 max-h-72 space-y-1 overflow-y-auto">
+              {topics.filter((topic) => topic !== "Overall").map((topic) => <label key={topic} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-3 text-sm hover:bg-[var(--soft)]">
+                <input type="checkbox" checked={selectedTopics.includes(topic)} onChange={(event) => setSelectedTopics((current) => event.target.checked ? [...current, topic] : current.filter((value) => value !== topic))} className="h-4 w-4 accent-[var(--primary)]" />
+                <span className="font-medium">{topic}</span>
+              </label>)}
+              {!topics.filter((topic) => topic !== "Overall").length && <p className="px-3 py-6 text-sm text-[var(--muted-foreground)]">No topics are configured for this project.</p>}
+            </div>
+            <div className="mt-5 flex justify-end gap-2 border-t border-[var(--border)] pt-4">
+              <button type="button" className="platform-btn" onClick={() => setShowTopicPicker(false)}>Cancel</button>
+              <button type="button" className="platform-btn platform-btn-primary disabled:opacity-50" disabled={!selectedTopics.length || tracking} onClick={() => void runTracking()}>
+                <Play size={14} /> Run {selectedTopics.length || ""} topic{selectedTopics.length === 1 ? "" : "s"}
+              </button>
+            </div>
+          </div>
+        </div>}
+
         {trackingMessage && <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">{trackingMessage}</div>}
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {!loading && metrics.length === 0 && <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -249,7 +321,7 @@ export default function DashboardPage() {
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest ranking, score and movement within the selected period.</p></div>
-            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={runTracking} disabled={tracking || exporting} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
+            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={openTopicPicker} disabled={tracking || exporting || topics.filter((topic) => topic !== "Overall").length === 0} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
           {!loading && cardTopics.some((topic) => !(competitorCounts[topic] > 0)) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">One or more topics have no verified direct competitors in the selected period. Their competitive rank is unavailable; this is not a first-place result.</div>}
