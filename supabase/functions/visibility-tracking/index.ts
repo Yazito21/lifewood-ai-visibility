@@ -1093,6 +1093,25 @@ Deno.serve(async (req: Request) => {
         });
       }
     }
+    if (isSuperadminRerun && isTopicScopedRun) {
+      // Remove only this topic's derived evidence and mention aggregates before replacing them.
+      const { data: selectedTopicResponses, error: selectedTopicResponsesError } = await admin.from("ai_responses")
+        .select("id").eq("project_id", projectId).eq("run_id", runId).eq("tracking_location", trackingLocationsForRun[0]);
+      if (selectedTopicResponsesError) throw new Error("TOPIC_RERUN_RESPONSE_LOOKUP_FAILED: " + selectedTopicResponsesError.message);
+      const selectedResponseIds = (selectedTopicResponses ?? []).map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
+      if (selectedResponseIds.length) {
+        for (let offset = 0; offset < selectedResponseIds.length; offset += 500) {
+          const responseIds = selectedResponseIds.slice(offset, offset + 500);
+          const { error: oldEvidenceDeleteError } = await admin.from("response_brand_evidence").delete()
+            .in("response_id", responseIds).eq("topic", selectedTopic);
+          if (oldEvidenceDeleteError) throw new Error("TOPIC_RERUN_EVIDENCE_CLEANUP_FAILED: " + oldEvidenceDeleteError.message);
+        }
+      }
+      const { error: thirdPartyDeleteError } = await admin.from("third_party_mentions").delete()
+        .eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (thirdPartyDeleteError) throw new Error("TOPIC_RERUN_MENTIONS_CLEANUP_FAILED: " + thirdPartyDeleteError.message);
+    }
+
     for (let offset = 0; offset < evidenceRows.length; offset += 500) {
       const batch = evidenceRows.slice(offset, offset + 500);
       const { error: evidenceWriteError } = await admin.from("response_brand_evidence").upsert(batch, {
