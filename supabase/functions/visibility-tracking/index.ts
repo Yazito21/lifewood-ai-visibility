@@ -1148,15 +1148,27 @@ Deno.serve(async (req: Request) => {
       if (thirdPartyDeleteError) throw new Error("TOPIC_RERUN_MENTIONS_CLEANUP_FAILED: " + thirdPartyDeleteError.message);
     }
 
-    for (let offset = 0; offset < evidenceRows.length; offset += 500) {
-      const batch = evidenceRows.slice(offset, offset + 500);
+    // A single response can match the same alias more than once through
+    // overlapping registry terms. Postgres rejects an upsert batch when the same
+    // conflict key appears twice, so collapse duplicates deterministically first.
+    const uniqueEvidenceRows = [...new Map(evidenceRows.map((row: Record<string, unknown>) => [
+      [row.response_id, row.brand_id, row.topic, row.match_source, row.matched_value].map((value) => String(value ?? "")).join("\\u0000"),
+      row,
+    ])).values()];
+    const uniqueThirdPartyRows = [...new Map(thirdPartyRows.map((row: Record<string, unknown>) => [
+      [row.project_id, row.response_id, row.canonical_url, row.source_type, row.topic, row.tracking_location].map((value) => String(value ?? "")).join("\\u0000"),
+      row,
+    ])).values()];
+
+    for (let offset = 0; offset < uniqueEvidenceRows.length; offset += 500) {
+      const batch = uniqueEvidenceRows.slice(offset, offset + 500);
       const { error: evidenceWriteError } = await admin.from("response_brand_evidence").upsert(batch, {
         onConflict: "response_id,brand_id,topic,match_source,matched_value",
       });
       if (evidenceWriteError) throw new Error("RESPONSE_BRAND_EVIDENCE_WRITE_FAILED: " + evidenceWriteError.message);
     }
-    for (let offset = 0; offset < thirdPartyRows.length; offset += 500) {
-      const batch = thirdPartyRows.slice(offset, offset + 500);
+    for (let offset = 0; offset < uniqueThirdPartyRows.length; offset += 500) {
+      const batch = uniqueThirdPartyRows.slice(offset, offset + 500);
       const { error: thirdPartyWriteError } = await admin.from("third_party_mentions").upsert(batch, {
         onConflict: "project_id,response_id,canonical_url,source_type,topic,tracking_location",
       });
