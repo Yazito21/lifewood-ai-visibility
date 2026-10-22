@@ -676,15 +676,24 @@ Deno.serve(async (req: Request) => {
           const { data: claim, error: claimError } = await admin.from("tracking_run_daily_claims")
             .select("run_id,started_by").eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
           if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED" }, 500);
-          const { data: parentRun, error: parentRunError } = await admin.from("tracking_runs")
+          const { data: batchFirstRun, error: batchRunError } = await admin.from("tracking_runs")
             .select("started_by,completed_at").eq("id", batchRunId).eq("project_id", projectId).maybeSingle();
-          if (parentRunError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED" }, 500);
-          if (!claim?.run_id || claim.run_id !== batchRunId || claim.started_by !== userId ||
-              parentRun?.started_by !== userId || !parentRun.completed_at) {
-            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "This topic sequence no longer matches the completed daily claim. Please restart tracking." }, 409);
+          if (batchRunError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED" }, 500);
+          if (!batchFirstRun?.completed_at || batchFirstRun.started_by !== userId) {
+            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The first topic has not completed under your tracking session." }, 409);
           }
-          const insertionError = await createTrackingRun();
-          if (insertionError) return insertionError;
+          if (claim?.run_id === batchRunId && claim.started_by === userId) {
+            // Normal sequence continuation: this batch owns today's daily claim.
+            const insertionError = await createTrackingRun();
+            if (insertionError) return insertionError;
+          } else if (claim?.run_id && claim.started_by === userId) {
+            // An Admin's daily claim can also be updated by a legacy Full run.
+            // Only continue if the original batch row still belongs to this user.
+            const insertionError = await createTrackingRun();
+            if (insertionError) return insertionError;
+          } else {
+            return json({ error: "DAILY_TRACKING_LIMIT_REACHED", message: "A full tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.", run_id: claim?.run_id ?? null }, 409);
+          }
         } else {
           const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
             p_project_id: projectId,
