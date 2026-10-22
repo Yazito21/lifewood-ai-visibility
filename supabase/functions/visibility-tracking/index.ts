@@ -771,6 +771,7 @@ Deno.serve(async (req: Request) => {
     // Topic-scoped reruns replace same-day aggregate rows for only the selected topic.
     // Raw responses and historical run rows are intentionally retained.
     if (isSuperadminRerun && isTopicScopedRun) {
+      // Only reset this topic's replaceable daily outputs; other topics and history remain untouched.
       const { error: competitorDeleteError } = await admin.from("competitors")
         .delete().eq("project_id", projectId).eq("metric_date", day)
         .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
@@ -779,9 +780,13 @@ Deno.serve(async (req: Request) => {
         .delete().eq("project_id", projectId).eq("metric_date", day)
         .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
       if (directObservationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + directObservationDeleteError.message);
+      const { error: topicObservationDeleteError } = await admin.from("topic_brand_observations")
+        .delete().eq("project_id", projectId).eq("metric_date", day)
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
+      if (topicObservationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + topicObservationDeleteError.message);
       const { error: citationDeleteError } = await admin.from("citations")
         .delete().eq("project_id", projectId).eq("metric_date", day)
-        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic).eq("llm_provider", "chatgpt");
+        .eq("tracking_location", trackingLocationsForRun[0]).eq("topic", selectedTopic);
       if (citationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
       const { error: metricsDeleteError } = await admin.from("visibility_daily")
         .delete().eq("project_id", projectId).eq("metric_date", day)
