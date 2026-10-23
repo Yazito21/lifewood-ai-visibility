@@ -502,6 +502,9 @@ Deno.serve(async (req: Request) => {
   let activeRunId: string | null = null;
   let activeStageKey: string | null = null;
   let activeAdmin: any = null;
+  let activeCounters = { total: 0, attempted: 0, providerSuccessful: 0, providerFailed: 0, analysisSuccessful: 0, published: 0 };
+  let activeErrorCode: string | null = null;
+  let activeStageCode: string | null = null;
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const publicKey = getConfiguredKey("SUPABASE_PUBLISHABLE_KEY", "SUPABASE_PUBLISHABLE_KEYS") ?? Deno.env.get("SUPABASE_ANON_KEY");
@@ -519,6 +522,7 @@ Deno.serve(async (req: Request) => {
     const startStage = async (stageKey: string, metadata: Record<string, unknown> = {}) => {
       if (!activeRunId) return;
       activeStageKey = stageKey;
+      activeStageCode = stageKey.toUpperCase();
       const { data: prior, error: readError } = await admin.from("tracking_run_stages").select("attempt_count").eq("run_id", activeRunId).eq("stage_key", stageKey).maybeSingle();
       if (readError) throw new Error("STAGE_JOURNAL_READ_FAILED: " + readError.message);
       const { error } = await admin.from("tracking_run_stages").upsert({ run_id: activeRunId, stage_key: stageKey, status: "running", attempt_count: Number(prior?.attempt_count ?? 0) + 1, started_at: new Date().toISOString(), completed_at: null, error_message: null, metadata, updated_at: new Date().toISOString() }, { onConflict: "run_id,stage_key" });
@@ -748,9 +752,16 @@ Deno.serve(async (req: Request) => {
       }
       activeRunId = runId;
     }
+    activeCounters.total = prompts.length * trackingLocationsForRun.length;
+    activeCounters.attempted = activeCounters.total;
     const results = await processPrompts(prompts as Array<Record<string,unknown>>, providerIds, project as Record<string,unknown>, { chatgpt: apiKey }, trackingLocationsForRun);
     const succeeded = results.filter((r) => r.status === "completed");
     const failed = results.filter((r) => r.status === "failed");
+    activeCounters.providerSuccessful = succeeded.length;
+    activeCounters.providerFailed = failed.length;
+    activeCounters.analysisSuccessful = succeeded.filter((r) =>
+      (r.response_analysis as Record<string, unknown> | undefined)?.status === "completed"
+    ).length;
 
     // Sample mode is temporary and writes no result rows. It uses the same fixed
     // topic-specific competitor registry as persistent tracking; citation domains
@@ -835,7 +846,15 @@ Deno.serve(async (req: Request) => {
     const { error: rawError } = await admin.from("ai_responses").insert(rawRows);
     if (rawError) {
       await admin.from("tracking_run_stages").update({ status: "failed", error_message: "RAW_RESPONSE_WRITE_FAILED: " + rawError.message, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("run_id", runId).eq("stage_key", "response_persistence");
-      await admin.from("tracking_runs").update({ status: "failed", failed_prompts: prompts.length, error_message: "RAW_RESPONSE_WRITE_FAILED", completed_at: new Date().toISOString() }).eq("id", runId);
+      activeErrorCode = "RAW_RESPONSE_WRITE_FAILED";
+      await admin.from("tracking_runs").update({
+        status: "failed", completed_prompts: 0, failed_prompts: activeCounters.attempted,
+        attempted_prompts: activeCounters.attempted, provider_successful_prompts: activeCounters.providerSuccessful,
+        provider_failed_prompts: activeCounters.providerFailed, analysis_successful_prompts: activeCounters.analysisSuccessful,
+        published_prompts: 0, stage_code: "RESPONSE_PERSISTENCE", error_code: activeErrorCode,
+        error_details: rawError.message, error_message: "RAW_RESPONSE_WRITE_FAILED: " + rawError.message,
+        completed_at: new Date().toISOString()
+      }).eq("id", runId);
       activeStageKey = null;
       return json({ error: "RAW_RESPONSE_WRITE_FAILED" }, 500);
     }
@@ -1439,7 +1458,9 @@ Deno.serve(async (req: Request) => {
     ).length;
     const status = failed.length === 0 && extractionFailures === 0 && classificationFailures.length === 0
       ? "completed"
-      : succeeded.length ? "partial" : "failed";
+      : activeCounters.analysisSuccessful > 0 ? "partial" : "failed";
+    activeCounters.published = status === "completed" || status === "partial"
+      ? activeCounters.analysisSuccessful : 0;
     const runIssues = [
       ...(failed.length ? [String(failed.length) + " prompt(s) failed"] : []),
       ...(extractionFailures ? [String(extractionFailures) + " response analysis item(s) failed"] : []),
@@ -1447,8 +1468,14 @@ Deno.serve(async (req: Request) => {
     ];
     await startStage("run_finalization", { completed_prompts: succeeded.length, failed_prompts: failed.length, analysis_failures: extractionFailures, classification_failures: classificationFailures.length });
     await completeStage("run_finalization", { intended_status: status });
+    const finalErrorCode = failed.length ? "PROVIDER_FAILURE" : extractionFailures ? "ANALYSIS_FAILURE" : classificationFailures.length ? "CLASSIFICATION_FAILURE" : null;
+    const finalStageCode = failed.length ? "PROVIDER_EXECUTION" : extractionFailures ? "RESPONSE_ANALYSIS" : classificationFailures.length ? "COMPETITOR_CLASSIFICATION" : "PUBLISHED";
     const { error: runStatusWriteError } = await admin.from("tracking_runs").update({
-      status, completed_prompts: succeeded.length, failed_prompts: failed.length,
+      status, completed_prompts: activeCounters.published, failed_prompts: activeCounters.providerFailed + (activeCounters.providerSuccessful - activeCounters.analysisSuccessful),
+      attempted_prompts: activeCounters.attempted, provider_successful_prompts: activeCounters.providerSuccessful,
+      provider_failed_prompts: activeCounters.providerFailed, analysis_successful_prompts: activeCounters.analysisSuccessful,
+      published_prompts: activeCounters.published, stage_code: finalStageCode, error_code: finalErrorCode,
+      error_details: runIssues.length ? runIssues.join("; ") + "." : null,
       error_message: runIssues.length ? runIssues.join("; ") + "." : null,
       completed_at: new Date().toISOString(),
     }).eq("id", runId);
@@ -1469,6 +1496,7 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    activeErrorCode = message.split(":")[0].replace(/[^A-Z0-9_]/g, "_").slice(0, 100) || "TRACKING_RUN_ERROR";
     console.error("TRACKING_RUN_ERROR", message);
     if (activeAdmin && activeRunId && activeStageKey) {
       try {
@@ -1479,7 +1507,17 @@ Deno.serve(async (req: Request) => {
     if (activeAdmin && activeRunId) {
       try {
         await activeAdmin.from("tracking_runs").update({
-          status: "failed",
+          status: activeCounters.published > 0 ? "partial" : "failed",
+          completed_prompts: activeCounters.published,
+          failed_prompts: Math.max(0, activeCounters.attempted - activeCounters.published),
+          attempted_prompts: activeCounters.attempted,
+          provider_successful_prompts: activeCounters.providerSuccessful,
+          provider_failed_prompts: activeCounters.providerFailed,
+          analysis_successful_prompts: activeCounters.analysisSuccessful,
+          published_prompts: activeCounters.published,
+          stage_code: activeStageCode ?? "UNHANDLED",
+          error_code: activeErrorCode,
+          error_details: message.slice(0, 1000),
           error_message: message.slice(0, 500),
           completed_at: new Date().toISOString(),
         }).eq("id", activeRunId).eq("status", "running");
