@@ -84,7 +84,7 @@ begin
     select c.entity_name,
       count(*) filter (where
         position(c.entity_name in lower(coalesce(r.response_text,''))) > 0
-        or exists (select 1 from unnest(c.aliases) a where length(a)>1 and position(a in lower(coalesce(r.response_text,'')))>0)
+
       )::integer as response_count
     from competitors c cross join responses r
     group by c.entity_name
