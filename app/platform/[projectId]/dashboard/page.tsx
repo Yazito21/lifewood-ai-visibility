@@ -410,7 +410,7 @@ export default function DashboardPage() {
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
               {cardTopics.map((topic) => {
-                const snapshot = latestByTopic.get(topic); const competitorCount = competitorCounts[topic] ?? 0; const denominator = competitorCount + 1; const currentRank = competitorCount > 0 ? (snapshot?.visibility_rank ?? null) : null; const previousRank = snapshot?.previousRank ?? null;
+                const snapshot = latestByTopic.get(topic); const competitorCount = competitorCounts[topic] ?? 0; const denominator = competitorCount + 1; const currentRank = snapshot?.visibility_rank ?? null; const previousRank = snapshot?.previousRank ?? null;
                 const change = currentRank !== null && previousRank !== null ? previousRank - currentRank : null;
                 return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (topic === "Overall" ? "platform-card-overall" : "")}>
                   <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (topic === "Overall" ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>{snapshot?.metric_date ?? "No data"}</span></div>
