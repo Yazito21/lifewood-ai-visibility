@@ -65,8 +65,8 @@ export function MetricChart({
   // Rank axes use whole-number ranks starting at 1 (best) at the top.
   const rankMax = Math.max(2, Math.ceil(rawMax));
   const max = rawMax > 0 ? rawMax * 1.08 : 1;
-  // 4:3 chart canvas with a larger plot area and readable typography.
-  const w = 1100, h = 825, left = 150, right = 42, top = 58, bottom = 150;
+  // 16:9 chart canvas with room for larger x-axis labels and title.
+  const w = 1440, h = 810, left = 160, right = 48, top = 58, bottom = 150;
   const plotW = w - left - right, plotH = h - top - bottom;
   const points = allPoints.map((point, index) => {
     const x = left + (index / Math.max(allPoints.length - 1, 1)) * plotW;
@@ -114,10 +114,10 @@ export function MetricChart({
           <line x1={x} y1={top} x2={x} y2={top + plotH} stroke="var(--muted-foreground)" strokeOpacity="0.10" strokeDasharray="3 6" />
           <text
             x={x}
-            y={top + plotH + (axisDates.length <= 14 ? 38 : 26)}
+            y={top + plotH + (axisDates.length <= 14 ? 42 : 32)}
             transform={axisDates.length <= 14 ? "rotate(-35 " + x + " " + (top + plotH + 38) + ")" : undefined}
             textAnchor={axisDates.length <= 14 ? "end" : index === 0 ? "start" : index === axisDates.length - 1 ? "end" : "middle"}
-            fontSize="13"
+            fontSize="22"
             fontWeight="600"
             fill="var(--muted-foreground)"
           >{dateLabel(date)}</text>
@@ -126,7 +126,7 @@ export function MetricChart({
       <line x1={left} y1={top} x2={left} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="2.2" />
       <line x1={left} y1={top + plotH} x2={w - right} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="2.2" />
       <text x={22} y={top + plotH / 2} transform={"rotate(-90 22 " + (top + plotH / 2) + ")"} textAnchor="middle" fontSize="24" fontWeight="700" fill="var(--foreground)">{yAxisTitle}</text>
-      <text x={left + plotW / 2} y={h - 18} textAnchor="middle" fontSize="17" fontWeight="700" fill="var(--foreground)">Tracking date</text>
+      <text x={left + plotW / 2} y={h - 22} textAnchor="middle" fontSize="25" fontWeight="700" fill="var(--foreground)">Tracking date</text>
       <path d={path} fill="none" stroke={tone === "overall" ? "var(--orange)" : "var(--primary)"} strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
       {points.map((point) => point.value === null || !Number.isFinite(point.value) ? null : <circle key={point.label} cx={point.x} cy={point.y} r={activeDate === point.label ? 13 : 11} fill={tone === "overall" ? "var(--orange)" : "var(--primary)"} stroke="var(--card)" strokeWidth="3" tabIndex={0} role="button" aria-label={dateLabel(point.label) + ": " + display(point.value)} onMouseEnter={() => setActiveDate(point.label)} onMouseLeave={() => setActiveDate(null)} onFocus={() => setActiveDate(point.label)} onBlur={() => setActiveDate(null)}><title>{dateLabel(point.label)}: {display(point.value)}</title></circle>)}
       {active && active.value !== null && <g pointerEvents="none">
