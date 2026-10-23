@@ -1,3 +1,4 @@
+import { reduceEvidenceRows } from "./evidence-reducer.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -1209,40 +1210,7 @@ Deno.serve(async (req: Request) => {
     // Collapse duplicate conflict keys without discarding evidence. The old Map
     // kept only the last row, which avoided Postgres' "cannot affect row a second
     // time" error but could lose counts, earliest positions and distinct excerpts.
-    const evidenceKey = (row: Record<string, unknown>) =>
-      [row.response_id, row.brand_id, row.topic, row.match_source, row.matched_value]
-        .map((value) => String(value ?? "")).join("\u0000");
-    const uniqueEvidenceByKey = new Map<string, Record<string, unknown>>();
-    for (const row of evidenceRows) {
-      const key = evidenceKey(row);
-      const existing = uniqueEvidenceByKey.get(key);
-      if (!existing) {
-        uniqueEvidenceByKey.set(key, { ...row });
-        continue;
-      }
-      const existingPosition = typeof existing.first_position === "number" ? existing.first_position : null;
-      const incomingPosition = typeof row.first_position === "number" ? row.first_position : null;
-      const positions = [existingPosition, incomingPosition].filter((value): value is number => value !== null && Number.isFinite(value));
-      const excerpts = [...new Set(
-        [existing.evidence_text, row.evidence_text]
-          .map((value) => String(value ?? "").trim())
-          .filter(Boolean)
-      )];
-      const confidenceRank: Record<string, number> = { deterministic: 3, high: 3, review_required: 2, medium: 2, low: 1 };
-      const existingConfidence = String(existing.confidence ?? "");
-      const incomingConfidence = String(row.confidence ?? "");
-      const mergedConfidence = (confidenceRank[incomingConfidence] ?? 0) > (confidenceRank[existingConfidence] ?? 0)
-        ? incomingConfidence
-        : existingConfidence;
-      uniqueEvidenceByKey.set(key, {
-        ...existing,
-        first_position: positions.length ? Math.min(...positions) : null,
-        occurrence_count: Math.max(0, Number(existing.occurrence_count ?? 0)) + Math.max(0, Number(row.occurrence_count ?? 0)),
-        confidence: mergedConfidence || incomingConfidence || existingConfidence || null,
-        evidence_text: excerpts.join("\n---\n").slice(0, 4000),
-      });
-    }
-    const uniqueEvidenceRows = [...uniqueEvidenceByKey.values()];
+    const uniqueEvidenceRows = reduceEvidenceRows(evidenceRows);
 
     const thirdPartyKey = (row: Record<string, unknown>) =>
       [row.project_id, row.response_id, row.canonical_url, row.source_type, row.topic, row.tracking_location]
