@@ -118,9 +118,9 @@ export function MetricChart({
         </g>;
       })}
       <line x1={left} y1={top} x2={left} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="2.2" />
-      <line x1={left} y1={top + plotH} x2={w - right} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="1.8" />
+      <line x1={left} y1={top + plotH} x2={w - right} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="2.2" />
       <text x={22} y={top + plotH / 2} transform={"rotate(-90 22 " + (top + plotH / 2) + ")"} textAnchor="middle" fontSize="17" fontWeight="700" fill="var(--foreground)">{yAxisTitle}</text>
-      <text x={left + plotW / 2} y={h - 18} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--foreground)">Tracking date</text>
+      <text x={left + plotW / 2} y={h - 18} textAnchor="middle" fontSize="17" fontWeight="700" fill="var(--foreground)">Tracking date</text>
       <path d={path} fill="none" stroke={tone === "overall" ? "var(--orange)" : "var(--primary)"} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
       {points.map((point) => point.value === null || !Number.isFinite(point.value) ? null : <circle key={point.label} cx={point.x} cy={point.y} r={activeDate === point.label ? 9 : 7} fill={tone === "overall" ? "var(--orange)" : "var(--primary)"} stroke="var(--card)" strokeWidth="3" tabIndex={0} role="button" aria-label={dateLabel(point.label) + ": " + display(point.value)} onMouseEnter={() => setActiveDate(point.label)} onMouseLeave={() => setActiveDate(null)} onFocus={() => setActiveDate(point.label)} onBlur={() => setActiveDate(null)}><title>{dateLabel(point.label)}: {display(point.value)}</title></circle>)}
       {active && active.value !== null && <g pointerEvents="none">
