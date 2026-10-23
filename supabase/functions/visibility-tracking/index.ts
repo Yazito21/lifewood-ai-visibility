@@ -1429,10 +1429,14 @@ Deno.serve(async (req: Request) => {
     ];
     await startStage("run_finalization", { completed_prompts: succeeded.length, failed_prompts: failed.length, analysis_failures: extractionFailures, classification_failures: classificationFailures.length });
     await completeStage("run_finalization", { intended_status: status });
+    const finalizedAt = new Date().toISOString();
     const { error: runStatusWriteError } = await admin.from("tracking_runs").update({
       status, completed_prompts: succeeded.length, failed_prompts: failed.length,
       error_message: runIssues.length ? runIssues.join("; ") + "." : null,
-      completed_at: new Date().toISOString(),
+      completed_at: finalizedAt,
+      // Only a fully successful run is a published canonical candidate. Partial
+      // runs retain their raw data and diagnostics but do not enter lineage.
+      published_at: status === "completed" ? finalizedAt : null,
     }).eq("id", runId);
     if (runStatusWriteError) throw new Error("TRACKING_RUN_STATUS_WRITE_FAILED: " + runStatusWriteError.message);
     if (status !== "completed") {
