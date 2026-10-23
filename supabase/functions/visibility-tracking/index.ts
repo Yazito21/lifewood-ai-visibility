@@ -832,7 +832,7 @@ Deno.serve(async (req: Request) => {
       brand_name_snapshot: String(project.brand_name ?? ""),
     }));
     await startStage("response_persistence", { response_rows: rawRows.length });
-    const { error: rawError } = await admin.from("ai_responses").insert(rawRows);
+    const { error: rawError } = await admin.from("ai_responses").upsert(rawRows, { onConflict: "run_id,prompt_id,llm_provider,tracking_location" });
     if (rawError) {
       await admin.from("tracking_run_stages").update({ status: "failed", error_message: "RAW_RESPONSE_WRITE_FAILED: " + rawError.message, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("run_id", runId).eq("stage_key", "response_persistence");
       await admin.from("tracking_runs").update({ status: "failed", failed_prompts: prompts.length, error_message: "RAW_RESPONSE_WRITE_FAILED", completed_at: new Date().toISOString() }).eq("id", runId);
