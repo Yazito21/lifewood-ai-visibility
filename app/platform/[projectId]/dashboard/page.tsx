@@ -153,6 +153,8 @@ export default function DashboardPage() {
             project_id: projectId,
             providers: ["chatgpt"],
             topic,
+            idempotency_key: item.id,
+            generation_key: item.id,
             ...(!isSuperadmin && item.tracking_run_id ? { tracking_batch_id: item.tracking_run_id } : {}),
           },
         });
