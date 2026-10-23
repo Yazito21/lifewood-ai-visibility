@@ -66,10 +66,7 @@ begin
     from responses r
   ),
   competitors as (
-    select lower(trim(coalesce(e->>'name',''))) as entity_name,
-           array(select lower(trim(a)) from jsonb_array_elements_text(
-             case when jsonb_typeof(e->'aliases') = 'array' then e->'aliases' else '[]'::jsonb end
-           ) a) as aliases
+    select lower(trim(coalesce(e->>'name',''))) as entity_name
     from responses r
     cross join lateral jsonb_array_elements(
       case when jsonb_typeof(r.response_analysis->'entities') = 'array'
@@ -81,7 +78,7 @@ begin
         where length(trim(term)) > 1
           and lower(trim(term)) = lower(trim(coalesce(e->>'name','')))
       )
-    group by lower(trim(coalesce(e->>'name',''))), e->'aliases'
+    group by lower(trim(coalesce(e->>'name','')))
   ),
   competitor_counts as (
     select c.entity_name,
