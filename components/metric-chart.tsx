@@ -38,6 +38,9 @@ export function MetricChart({
   dateRange?: { start: string; end: string };
 }) {
   const [activeDate, setActiveDate] = useState<string | null>(null);
+  const chartDescription = description ?? (format === "percent"
+    ? "Daily visibility score expressed as a percentage of recorded AI responses. Only observed dates are plotted."
+    : "Daily visibility rank from recorded results; lower values indicate a stronger position. Only observed dates are plotted.");
   const valueByDate = new Map(data.map((point) => [point.label, point.value]));
   const observedDates = data
     .filter((point) => point.value !== null && Number.isFinite(point.value))
@@ -56,12 +59,12 @@ export function MetricChart({
   const valid = allPoints.filter((point): point is { label: string; value: number } => point.value !== null && Number.isFinite(point.value));
   const display = (value: number) => format === "percent" ? value.toFixed(1) + "%" : Number.isInteger(value) ? String(value) : value.toFixed(1);
   const cardClass = "platform-card min-w-0 p-5 sm:p-6 " + (tone === "overall" ? "platform-card-overall" : "");
-  if (!valid.length) return <div className={cardClass + " min-h-[19rem]"}><h4 className="text-base font-semibold">{title}</h4>{description && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{description}</p>}<div className="flex min-h-[13rem] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">No recorded values for this period. A new tracking run may be needed to populate this metric.</div></div>;
+  if (!valid.length) return <div className={cardClass + " min-h-[19rem]"}><h4 className="text-base font-semibold">{title}</h4>{chartDescription && <p className="mt-1 text-base leading-relaxed text-[var(--muted-foreground)]">{chartDescription}</p>}<div className="flex min-h-[13rem] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">No recorded values for this period. A new tracking run may be needed to populate this metric.</div></div>;
 
   const rawMax = Math.max(0, ...valid.map((point) => point.value));
   // Score metrics start at zero at the bottom. Rank/position metrics start at zero at the top.
   const max = rawMax > 0 ? rawMax * 1.08 : 1;
-  const w = 900, h = 390, left = 94, right = 30, top = 38, bottom = 98;
+  const w = 1100, h = 500, left = 126, right = 38, top = 44, bottom = 126;
   const plotW = w - left - right, plotH = h - top - bottom;
   const points = allPoints.map((point, index) => {
     const x = left + (index / Math.max(allPoints.length - 1, 1)) * plotW;
@@ -89,13 +92,13 @@ export function MetricChart({
   const tooltipY = active ? Math.max(top + 23, active.y - 34) : 0;
 
   return <div className={cardClass}>
-    <div className="mb-3"><h4 className="text-base font-semibold">{title}</h4>{description && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{description}</p>}</div>
-    <svg viewBox={"0 0 " + w + " " + h} className="h-[330px] w-full overflow-visible sm:h-[350px]" role="img" aria-label={title}>
+    <div className="mb-4"><h4 className="text-lg font-semibold">{title}</h4>{chartDescription && <p className="mt-1 text-base leading-relaxed text-[var(--muted-foreground)]">{chartDescription}</p>}</div>
+    <svg viewBox={"0 0 " + w + " " + h} className="block h-[420px] w-full overflow-visible sm:h-[460px] lg:h-[500px]" role="img" aria-label={title}>
       {tickValues.map((value, i) => {
         const y = top + (i / 4) * plotH;
         return <g key={i}>
-          <line x1={left} y1={y} x2={w - right} y2={y} stroke="var(--muted-foreground)" strokeOpacity="0.18" strokeDasharray="4 6" strokeWidth="1.2" />
-          <text x={left - 14} y={y + 5} textAnchor="end" fontSize="14" fontWeight="600" fill="var(--muted-foreground)">{display(value)}</text>
+          <line x1={left} y1={y} x2={w - right} y2={y} stroke="var(--muted-foreground)" strokeOpacity="0.18" strokeDasharray="4 6" strokeWidth="1.5" />
+          <text x={left - 14} y={y + 5} textAnchor="end" fontSize="18" fontWeight="600" fill="var(--muted-foreground)">{display(value)}</text>
         </g>;
       })}
       {tickIndexes.map((index) => {
@@ -114,16 +117,16 @@ export function MetricChart({
           >{dateLabel(date)}</text>
         </g>;
       })}
-      <line x1={left} y1={top} x2={left} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="1.8" />
-      <line x1={left} y1={top + plotH} x2={w - right} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="1.8" />
-      <text x={22} y={top + plotH / 2} transform={"rotate(-90 22 " + (top + plotH / 2) + ")"} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--foreground)">{yAxisTitle}</text>
-      <text x={left + plotW / 2} y={h - 12} textAnchor="middle" fontSize="13" fontWeight="700" fill="var(--foreground)">Tracking date</text>
-      <path d={path} fill="none" stroke={tone === "overall" ? "var(--orange)" : "var(--primary)"} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-      {points.map((point) => point.value === null || !Number.isFinite(point.value) ? null : <circle key={point.label} cx={point.x} cy={point.y} r={activeDate === point.label ? 7 : 5} fill={tone === "overall" ? "var(--orange)" : "var(--primary)"} stroke="var(--card)" strokeWidth="2.5" tabIndex={0} role="button" aria-label={dateLabel(point.label) + ": " + display(point.value)} onMouseEnter={() => setActiveDate(point.label)} onMouseLeave={() => setActiveDate(null)} onFocus={() => setActiveDate(point.label)} onBlur={() => setActiveDate(null)}><title>{dateLabel(point.label)}: {display(point.value)}</title></circle>)}
+      <line x1={left} y1={top} x2={left} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="2.2" />
+      <line x1={left} y1={top + plotH} x2={w - right} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="2.2" />
+      <text x={22} y={top + plotH / 2} transform={"rotate(-90 22 " + (top + plotH / 2) + ")"} textAnchor="middle" fontSize="17" fontWeight="700" fill="var(--foreground)">{yAxisTitle}</text>
+      <text x={left + plotW / 2} y={h - 18} textAnchor="middle" fontSize="17" fontWeight="700" fill="var(--foreground)">Tracking date</text>
+      <path d={path} fill="none" stroke={tone === "overall" ? "var(--orange)" : "var(--primary)"} strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
+      {points.map((point) => point.value === null || !Number.isFinite(point.value) ? null : <circle key={point.label} cx={point.x} cy={point.y} r={activeDate === point.label ? 9 : 7} fill={tone === "overall" ? "var(--orange)" : "var(--primary)"} stroke="var(--card)" strokeWidth="3" tabIndex={0} role="button" aria-label={dateLabel(point.label) + ": " + display(point.value)} onMouseEnter={() => setActiveDate(point.label)} onMouseLeave={() => setActiveDate(null)} onFocus={() => setActiveDate(point.label)} onBlur={() => setActiveDate(null)}><title>{dateLabel(point.label)}: {display(point.value)}</title></circle>)}
       {active && active.value !== null && <g pointerEvents="none">
         <line x1={active.x} y1={active.y} x2={active.x} y2={top + plotH} stroke="var(--primary)" strokeOpacity="0.38" strokeDasharray="4 4" />
         <rect x={tooltipX - 54} y={tooltipY - 22} width="108" height="30" rx="8" fill="var(--foreground)" />
-        <text x={tooltipX} y={tooltipY - 2} textAnchor="middle" fontSize="14" fontWeight="700" fill="var(--background)">{display(active.value)}</text>
+        <text x={tooltipX} y={tooltipY - 2} textAnchor="middle" fontSize="17" fontWeight="700" fill="var(--background)">{display(active.value)}</text>
       </g>}
     </svg>
   </div>;
