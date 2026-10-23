@@ -631,6 +631,8 @@ Deno.serve(async (req: Request) => {
     const isTopicScopedRun = Boolean(selectedTopic);
     // Daily replacement scope: project + MYT date + location + topic + provider; raw responses remain run-scoped.
     const trackingBatchId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
+    const callerIdempotencyKey = typeof body?.idempotency_key === "string" ? body.idempotency_key.trim() : "";
+    const deliberateGeneration = typeof body?.generation_key === "string" ? body.generation_key.trim() : "";
     const newAdminBatchRun = !isSuperadmin && isTopicScopedRun && !trackingBatchId;
 
     if (mode !== "sample") {
