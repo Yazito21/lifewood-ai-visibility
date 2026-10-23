@@ -38,6 +38,9 @@ export function MetricChart({
   dateRange?: { start: string; end: string };
 }) {
   const [activeDate, setActiveDate] = useState<string | null>(null);
+  const chartDescription = description ?? (format === "percent"
+    ? "Daily visibility score expressed as a percentage of recorded AI responses. Only observed dates are plotted."
+    : "Daily visibility rank from recorded results; lower values indicate a stronger position. Only observed dates are plotted.");
   const valueByDate = new Map(data.map((point) => [point.label, point.value]));
   const observedDates = data
     .filter((point) => point.value !== null && Number.isFinite(point.value))
@@ -56,7 +59,7 @@ export function MetricChart({
   const valid = allPoints.filter((point): point is { label: string; value: number } => point.value !== null && Number.isFinite(point.value));
   const display = (value: number) => format === "percent" ? value.toFixed(1) + "%" : Number.isInteger(value) ? String(value) : value.toFixed(1);
   const cardClass = "platform-card min-w-0 p-5 sm:p-6 " + (tone === "overall" ? "platform-card-overall" : "");
-  if (!valid.length) return <div className={cardClass + " min-h-[19rem]"}><h4 className="text-base font-semibold">{title}</h4>{description && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{description}</p>}<div className="flex min-h-[13rem] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">No recorded values for this period. A new tracking run may be needed to populate this metric.</div></div>;
+  if (!valid.length) return <div className={cardClass + " min-h-[19rem]"}><h4 className="text-base font-semibold">{title}</h4>{chartDescription && <p className="mt-1 text-base leading-relaxed text-[var(--muted-foreground)]">{chartDescription}</p>}<div className="flex min-h-[13rem] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">No recorded values for this period. A new tracking run may be needed to populate this metric.</div></div>;
 
   const rawMax = Math.max(0, ...valid.map((point) => point.value));
   // Score metrics start at zero at the bottom. Rank/position metrics start at zero at the top.
@@ -89,7 +92,7 @@ export function MetricChart({
   const tooltipY = active ? Math.max(top + 23, active.y - 34) : 0;
 
   return <div className={cardClass}>
-    <div className="mb-3"><h4 className="text-base font-semibold">{title}</h4>{description && <p className="mt-1 text-sm text-[var(--muted-foreground)]">{description}</p>}</div>
+    <div className="mb-4"><h4 className="text-lg font-semibold">{title}</h4>{chartDescription && <p className="mt-1 text-base leading-relaxed text-[var(--muted-foreground)]">{chartDescription}</p>}</div>
     <svg viewBox={"0 0 " + w + " " + h} className="block h-[420px] w-full overflow-visible sm:h-[460px] lg:h-[500px]" role="img" aria-label={title}>
       {tickValues.map((value, i) => {
         const y = top + (i / 4) * plotH;
