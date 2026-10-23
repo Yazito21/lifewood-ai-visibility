@@ -14,3 +14,5 @@ jobs:
           deno-version: v2.x
       - name: Type-check visibility tracking function
         run: deno check --node-modules-dir=none supabase/functions/visibility-tracking/index.ts
+      - name: Test evidence merge integrity (DATA-01)
+        run: deno test --no-check --node-modules-dir=none supabase/functions/visibility-tracking/evidence-reducer.test.ts

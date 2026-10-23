@@ -1,3 +1,4 @@
+import { reduceEvidenceRows } from "./evidence-reducer.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -637,8 +638,22 @@ Deno.serve(async (req: Request) => {
       runId = crypto.randomUUID();
 
       const createTrackingRun = async () => {
+        // Record the previous published run for the exact topic/provider/location grain.
+        // This is lineage only: prior rows and raw responses remain immutable/auditable.
+        let supersedesRunId: string | null = null;
+        if (isTopicScopedRun) {
+          const { data: priorPublished, error: priorError } = await admin.from("tracking_runs")
+            .select("id").eq("project_id", projectId).eq("topic", selectedTopic)
+            .eq("provider", "chatgpt").eq("tracking_location", trackingLocationsForRun[0])
+            .not("published_at", "is", null).eq("status", "completed")
+            .order("published_at", { ascending: false }).limit(1).maybeSingle();
+          if (priorError) return json({ error: "PUBLISHED_RUN_LOOKUP_FAILED", message: priorError.message }, 500);
+          supersedesRunId = priorPublished?.id ?? null;
+        }
         const { error: runInsertError } = await admin.from("tracking_runs").insert({
-          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running", tracking_location: trackingLocationsForRun[0],
+          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running",
+          tracking_location: trackingLocationsForRun[0], topic: isTopicScopedRun ? selectedTopic : null,
+          supersedes_run_id: supersedesRunId,
           total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
           ...(newAdminBatchRun ? { error_message: "TOPIC_BATCH:" + runId } : {}),
         });
@@ -1209,40 +1224,7 @@ Deno.serve(async (req: Request) => {
     // Collapse duplicate conflict keys without discarding evidence. The old Map
     // kept only the last row, which avoided Postgres' "cannot affect row a second
     // time" error but could lose counts, earliest positions and distinct excerpts.
-    const evidenceKey = (row: Record<string, unknown>) =>
-      [row.response_id, row.brand_id, row.topic, row.match_source, row.matched_value]
-        .map((value) => String(value ?? "")).join("\u0000");
-    const uniqueEvidenceByKey = new Map<string, Record<string, unknown>>();
-    for (const row of evidenceRows) {
-      const key = evidenceKey(row);
-      const existing = uniqueEvidenceByKey.get(key);
-      if (!existing) {
-        uniqueEvidenceByKey.set(key, { ...row });
-        continue;
-      }
-      const existingPosition = typeof existing.first_position === "number" ? existing.first_position : null;
-      const incomingPosition = typeof row.first_position === "number" ? row.first_position : null;
-      const positions = [existingPosition, incomingPosition].filter((value): value is number => value !== null && Number.isFinite(value));
-      const excerpts = [...new Set(
-        [existing.evidence_text, row.evidence_text]
-          .map((value) => String(value ?? "").trim())
-          .filter(Boolean)
-      )];
-      const confidenceRank: Record<string, number> = { deterministic: 3, high: 3, review_required: 2, medium: 2, low: 1 };
-      const existingConfidence = String(existing.confidence ?? "");
-      const incomingConfidence = String(row.confidence ?? "");
-      const mergedConfidence = (confidenceRank[incomingConfidence] ?? 0) > (confidenceRank[existingConfidence] ?? 0)
-        ? incomingConfidence
-        : existingConfidence;
-      uniqueEvidenceByKey.set(key, {
-        ...existing,
-        first_position: positions.length ? Math.min(...positions) : null,
-        occurrence_count: Math.max(0, Number(existing.occurrence_count ?? 0)) + Math.max(0, Number(row.occurrence_count ?? 0)),
-        confidence: mergedConfidence || incomingConfidence || existingConfidence || null,
-        evidence_text: excerpts.join("\n---\n").slice(0, 4000),
-      });
-    }
-    const uniqueEvidenceRows = [...uniqueEvidenceByKey.values()];
+    const uniqueEvidenceRows = reduceEvidenceRows(evidenceRows);
 
     const thirdPartyKey = (row: Record<string, unknown>) =>
       [row.project_id, row.response_id, row.canonical_url, row.source_type, row.topic, row.tracking_location]
@@ -1447,10 +1429,14 @@ Deno.serve(async (req: Request) => {
     ];
     await startStage("run_finalization", { completed_prompts: succeeded.length, failed_prompts: failed.length, analysis_failures: extractionFailures, classification_failures: classificationFailures.length });
     await completeStage("run_finalization", { intended_status: status });
+    const finalizedAt = new Date().toISOString();
     const { error: runStatusWriteError } = await admin.from("tracking_runs").update({
       status, completed_prompts: succeeded.length, failed_prompts: failed.length,
       error_message: runIssues.length ? runIssues.join("; ") + "." : null,
-      completed_at: new Date().toISOString(),
+      completed_at: finalizedAt,
+      // Only a fully successful run is a published canonical candidate. Partial
+      // runs retain their raw data and diagnostics but do not enter lineage.
+      published_at: status === "completed" ? finalizedAt : null,
     }).eq("id", runId);
     if (runStatusWriteError) throw new Error("TRACKING_RUN_STATUS_WRITE_FAILED: " + runStatusWriteError.message);
     if (status !== "completed") {
