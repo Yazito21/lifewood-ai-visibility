@@ -638,8 +638,22 @@ Deno.serve(async (req: Request) => {
       runId = crypto.randomUUID();
 
       const createTrackingRun = async () => {
+        // Record the previous published run for the exact topic/provider/location grain.
+        // This is lineage only: prior rows and raw responses remain immutable/auditable.
+        let supersedesRunId: string | null = null;
+        if (isTopicScopedRun) {
+          const { data: priorPublished, error: priorError } = await admin.from("tracking_runs")
+            .select("id").eq("project_id", projectId).eq("topic", selectedTopic)
+            .eq("provider", "chatgpt").eq("tracking_location", trackingLocationsForRun[0])
+            .not("published_at", "is", null).eq("status", "completed")
+            .order("published_at", { ascending: false }).limit(1).maybeSingle();
+          if (priorError) return json({ error: "PUBLISHED_RUN_LOOKUP_FAILED", message: priorError.message }, 500);
+          supersedesRunId = priorPublished?.id ?? null;
+        }
         const { error: runInsertError } = await admin.from("tracking_runs").insert({
-          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running", tracking_location: trackingLocationsForRun[0],
+          id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running",
+          tracking_location: trackingLocationsForRun[0], topic: isTopicScopedRun ? selectedTopic : null,
+          supersedes_run_id: supersedesRunId,
           total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
           ...(newAdminBatchRun ? { error_message: "TOPIC_BATCH:" + runId } : {}),
         });
