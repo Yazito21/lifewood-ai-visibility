@@ -32,7 +32,7 @@ AS $function$
   brand_hosts AS MATERIALIZED (
     SELECT DISTINCT
       CASE
-        WHEN left(host, 4) = 'www.' THEN substring(host FROM 5)
+        WHEN left(normalized.host, 4) = 'www.' THEN substring(normalized.host FROM 5)
         ELSE host
       END AS host
     FROM public.brand_registry b
