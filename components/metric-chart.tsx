@@ -69,14 +69,11 @@ export function MetricChart({
     const y = invert ? top + normalized * plotH : top + (1 - normalized) * plotH;
     return { x, y, ...point };
   });
-  // Break the line whenever a date has no recorded value. Connecting across a gap
-  // would imply a trend for a day when no tracking data exists.
+  // Connect consecutive observed values across missing dates. This is only a
+  // visual bridge: null dates remain without markers or fabricated values.
   let drawingSegment = false;
   const path = points.map((point) => {
-    if (point.value === null || !Number.isFinite(point.value)) {
-      drawingSegment = false;
-      return "";
-    }
+    if (point.value === null || !Number.isFinite(point.value)) return "";
     const command = drawingSegment ? "L" : "M";
     drawingSegment = true;
     return command + point.x.toFixed(1) + " " + point.y.toFixed(1);
