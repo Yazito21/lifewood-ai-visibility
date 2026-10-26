@@ -190,20 +190,16 @@ export default function LeaderboardsPage() {
       return [...unique.values()];
     }
     async function fetchPublishedRunIds(range: DateRange, location: string, selectedTopic: string) {
-      const { data, error: queryError } = await supabase.from("tracking_runs")
-        .select("id,topic,provider,status,published_at,tracking_location")
-        .eq("project_id", projectId).eq("provider", "chatgpt").eq("status", "completed")
-        .eq("tracking_location", location).not("published_at", "is", null);
+      const { data, error: queryError } = await supabase.rpc("get_published_run_ids_for_leaderboard", {
+        p_project_id: projectId,
+        p_start_date: range.start,
+        p_end_date: range.end,
+        p_topic: selectedTopic,
+        p_provider: "chatgpt",
+        p_tracking_location: location,
+      });
       if (queryError) throw queryError;
-      const byDate = new Map<string, { id: string; publishedAt: string }>();
-      for (const run of (data ?? []) as Array<{id:string;topic:string|null;provider:string;status:string;published_at:string;tracking_location:string}>) {
-        if (selectedTopic === "Overall" ? run.topic !== null : (run.topic !== null && run.topic !== selectedTopic)) continue;
-        const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(run.published_at));
-        if (date < range.start || date > range.end) continue;
-        const previous = byDate.get(date);
-        if (!previous || run.published_at > previous.publishedAt) byDate.set(date, { id: run.id, publishedAt: run.published_at });
-      }
-      return new Map([...byDate].map(([date, value]) => [date, value.id]));
+      return new Map(((data ?? []) as Array<{ metric_date: string; run_id: string }>).map((row) => [row.metric_date, row.run_id]));
     }
     async function fetchObservations(ids: string[], range: DateRange, location: string, engines: string[], selectedTopic: string) {
       if (!ids.length || !engines.length) return [] as DirectObservation[];
