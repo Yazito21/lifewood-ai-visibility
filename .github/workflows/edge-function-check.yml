@@ -16,3 +16,7 @@ jobs:
         run: deno check --node-modules-dir=none supabase/functions/visibility-tracking/index.ts
       - name: Test evidence merge integrity (DATA-01)
         run: deno test --no-check --node-modules-dir=none supabase/functions/visibility-tracking/evidence-reducer.test.ts
+      - name: Test citation occurrence normalization (Issue 04)
+        run: deno test --no-check --node-modules-dir=none supabase/functions/visibility-tracking/citation-occurrences.test.ts
+      - name: Test shared visibility metric (Issue 03)
+        run: deno test --no-check --node-modules-dir=none supabase/functions/visibility-tracking/visibility-score.test.ts
