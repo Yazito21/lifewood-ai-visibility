@@ -1,6 +1,7 @@
 import { reduceEvidenceRows } from "./evidence-reducer.ts";
 import { rankAgainstEligiblePopulation } from "./rank-population.ts";
 import { calculateEntityVisibility } from "./visibility-score.ts";
+import { buildCitationOccurrenceRows } from "./citation-occurrences.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -1111,6 +1112,22 @@ Deno.serve(async (req: Request) => {
         return parsed.toString().replace(/\/$/, "");
       } catch { return url; }
     }
+    const citationOccurrenceRows = buildCitationOccurrenceRows(
+      succeeded.map((result) => ({
+        response_id: responseIdByKey.get(String(result.prompt_id) + "|" + String(result.tracking_location ?? "")) ?? "",
+        project_id: projectId,
+        topic: String(result.topic ?? "General"),
+        metric_date: day,
+        provider: String(result.provider ?? "chatgpt"),
+        tracking_location: String(result.tracking_location ?? trackingLocationsForRun[0]),
+        run_id: runId ?? null,
+        citations: Array.isArray(result.citations) ? result.citations as Array<{ url: string }> : [],
+      })).filter((response) => Boolean(response.response_id)),
+      new Map([...entitiesByTopic.entries()].map(([topic, entities]) => [topic, entities.map((entity) => ({ id: entity.id, websites: entity.websites }))])),
+      fixedTrackedId,
+      Array.isArray(project.brand_domains) ? project.brand_domains.map(String) : [],
+    );
+
     const evidenceRows: Array<Record<string, unknown>> = [];
     const thirdPartyRows: Array<Record<string, unknown>> = [];
     for (const result of succeeded) {
@@ -1253,6 +1270,14 @@ Deno.serve(async (req: Request) => {
     }
     const uniqueThirdPartyRows = [...uniqueThirdPartyByKey.values()];
 
+    for (let offset = 0; offset < citationOccurrenceRows.length; offset += 500) {
+      const batch = citationOccurrenceRows.slice(offset, offset + 500);
+      const { error: citationOccurrenceError } = await admin.from("citation_occurrences").upsert(batch, {
+        onConflict: "response_id,entity_id,canonical_url",
+      });
+      if (citationOccurrenceError) throw new Error("CITATION_OCCURRENCE_WRITE_FAILED: " + citationOccurrenceError.message);
+    }
+
     for (let offset = 0; offset < uniqueEvidenceRows.length; offset += 500) {
       const batch = uniqueEvidenceRows.slice(offset, offset + 500);
       const { error: evidenceWriteError } = await admin.from("response_brand_evidence").upsert(batch, {
@@ -1387,15 +1412,11 @@ Deno.serve(async (req: Request) => {
       const { metrics, competitorPresence, competitorAveragePosition } = analyzeSubset(subset, topic);
       const observations = (entitiesByTopic.get(topic) ?? []).map((entity) => {
         const entityMentions = Number(competitorPresence[entity.key] ?? 0);
-        const citations = citationRows
-          .filter((citation) => {
-            const citationTopic = String(citation.topic ?? "");
-            if (topic !== "Overall" && citationTopic !== topic) return false;
-            if (String(citation.tracking_location ?? trackingLocationsForRun[0]) !== trackingLocation) return false;
-            const host = hostOf(String(citation.url ?? ""));
-            return (entity.websites ?? []).some((site) => host === site || host.endsWith("." + site));
-          })
-          .reduce((sum, citation) => sum + Number(citation.frequency ?? 0), 0);
+        const citations = citationOccurrenceRows.filter((citation) =>
+          String(citation.entity_id ?? "") === entity.id &&
+          (topic === "Overall" || String(citation.topic ?? "") === topic) &&
+          String(citation.tracking_location ?? trackingLocationsForRun[0]) === trackingLocation
+        ).length;
         return {
           project_id: projectId, brand_id: entity.id, topic, metric_date: day, run_id: runId,
           tracking_location: trackingLocation, llm_provider: "chatgpt",
@@ -1414,9 +1435,11 @@ Deno.serve(async (req: Request) => {
       const row = {
         project_id: projectId, metric_date: day, tracking_location: trackingLocation, topic, llm_provider: "Overall", run_id: runId,
         ...metrics,
-        citation_count: citationRows
-          .filter((citation) => (topic === "Overall" || String(citation.topic ?? "") === topic) && String(citation.tracking_location ?? trackingLocationsForRun[0]) === trackingLocation)
-          .reduce((sum, citation) => sum + Number(citation.frequency ?? 0), 0),
+        citation_count: citationOccurrenceRows.filter((citation) =>
+          String(citation.entity_id ?? "") === fixedTrackedId &&
+          (topic === "Overall" || String(citation.topic ?? "") === topic) &&
+          String(citation.tracking_location ?? trackingLocationsForRun[0]) === trackingLocation
+        ).length,
       };
       const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
       if (error) throw new Error("METRICS_WRITE_FAILED for " + topic + ": " + error.message);
