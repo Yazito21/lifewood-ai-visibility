@@ -894,6 +894,10 @@ Deno.serve(async (req: Request) => {
           .eq("project_id", projectId).eq("metric_date", day)
           .eq("tracking_location", trackingLocation).eq("topic", selectedTopic);
         if (citationDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
+        const { error: occurrenceDeleteError } = await admin.from("citation_occurrences").delete()
+          .eq("project_id", projectId).eq("metric_date", day)
+          .eq("tracking_location", trackingLocation).eq("topic", selectedTopic);
+        if (occurrenceDeleteError) throw new Error("TOPIC_RERUN_CLEANUP_FAILED: " + occurrenceDeleteError.message);
         const { error: metricsDeleteError } = await admin.from("visibility_daily").delete()
           .eq("project_id", projectId).eq("metric_date", day)
           .eq("tracking_location", trackingLocation).eq("topic", selectedTopic);
