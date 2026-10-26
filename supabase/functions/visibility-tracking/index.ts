@@ -1331,7 +1331,8 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      totalBrandMentions = [...mentionCounts.values()].reduce((sum, count) => sum + count, 0);\n      const brandMentions = mentionCounts.get(brandKey) ?? 0;
+      totalBrandMentions = [...mentionCounts.values()].reduce((sum, count) => sum + count, 0);
+      const brandMentions = mentionCounts.get(brandKey) ?? 0;
       const shareOfVoice = totalBrandMentions > 0 ? Math.round(brandMentions / totalBrandMentions * 1000) / 10 : 0;
       const averagePosition = targetPositionSamples > 0
         ? Math.round(targetPositionTotal / targetPositionSamples * 100) / 100
