@@ -26,7 +26,7 @@ create or replace function public.get_published_competitor_observations(
  with canonical_run as (
   select tr.id,tr.published_at,tr.status from public.tracking_runs tr
   where tr.project_id=p_project_id and tr.topic=p_topic and tr.provider=p_provider
-   and tr.tracking_location=p_tracking_location and tr.status='completed' and tr.published_at is not null
+   and tr.tracking_location=p_tracking_location and (tr.topic=p_topic or tr.topic is null) and tr.status='completed' and tr.published_at is not null
    and (tr.published_at at time zone 'Asia/Kuala_Lumpur')::date=p_metric_date
   order by tr.published_at desc,tr.id desc limit 1
  ), eligible as (
