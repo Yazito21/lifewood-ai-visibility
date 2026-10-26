@@ -14,6 +14,8 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npx tsc --noEmit
+      - name: Test rank card/chart consistency (Issues 01, 02, 09)
+        run: node --experimental-strip-types --test lib/*.test.ts
       - name: Build application
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://jhauufmrxpsbfrahgclv.supabase.co

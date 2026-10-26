@@ -48,3 +48,20 @@ Required environment variables:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+
+## Metric integrity
+
+Visibility score, rank, population and citation counts follow one definition per metric
+(`public.metric_definitions`, mirrored in `lib/metric-definitions.ts` and shown by the info icons in the UI).
+
+- **One rank implementation:** `public.canonical_scoped_rank` (Postgres). It compares exact
+  presence/response fractions; ties share a rank; the population is the tracked brand plus competitors with
+  valid observations for the same run/topic/date/engine/location. The dashboard cards, charts and leaderboard
+  read the stored result and never recompute it (`lib/rank-snapshot.ts`).
+- **Publication gate:** a run is published by setting `tracking_runs.published_at`. A trigger supersedes the
+  previous run for the same scope/day, recomputes the tracked score from raw evidence (the update fails if it
+  disagrees with the stored score) and stamps counts, rank and population.
+- **Overall:** pooled responses of the latest published topic runs of the day (`publish_overall_metrics`),
+  recorded as an `overall_aggregate` run. It is not an average of topic scores.
+- **Checks:** run `select * from public.check_metric_integrity();` or execute
+  `supabase/tests/metric_integrity_contract.sql` after migrations. Any `error` row means a metric must not be trusted.
