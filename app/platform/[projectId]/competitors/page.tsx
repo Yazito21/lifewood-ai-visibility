@@ -23,6 +23,7 @@ type DirectObservation = {
   response_count: number;
   citation_count: number;
   tracking_location: string;
+  run_id: string | null;
 };
 type OwnMetric = {
   metric_date: string;
@@ -30,6 +31,7 @@ type OwnMetric = {
   llm_provider: string;
   visibility_score: number | string | null;
   citation_count: number | null;
+  run_id: string | null;
 };
 type BrandMetric = {
   key: string;
@@ -67,7 +69,7 @@ function numberValue(value: number | string | null | undefined) {
 }
 function aggregateCompetitorRows(directCompetitors: DirectCompetitor[], observations: DirectObservation[], ownMetrics: OwnMetric[]): BrandMetric[] {
   const byId = new Map<string, DirectObservation[]>();
-  const ownScopeKeys = new Set(ownMetrics.filter((row) => row.visibility_score !== null).map((row) => `${row.metric_date}::${row.llm_provider}`));
+  const ownScopeKeys = new Set(ownMetrics.filter((row) => row.visibility_score !== null && row.run_id).map((row) => `${row.metric_date}::${row.llm_provider}::${row.run_id}`));
   for (const observation of observations) {
     const bucket = byId.get(observation.brand_id) ?? [];
     bucket.push(observation);
@@ -75,7 +77,7 @@ function aggregateCompetitorRows(directCompetitors: DirectCompetitor[], observat
   }
   return directCompetitors.map((competitor) => {
     const records = byId.get(competitor.id) ?? [];
-    const matchedRecords = records.filter((row) => numberValue(row.response_count) > 0 && ownScopeKeys.has(`${row.metric_date}::${row.llm_provider}`));
+    const matchedRecords = records.filter((row) => numberValue(row.response_count) > 0 && ownScopeKeys.has(`${row.metric_date}::${row.llm_provider}::${row.run_id}`));
     const scores = matchedRecords.map((row) => 100 * numberValue(row.presence_count) / numberValue(row.response_count));
     return {
       key: competitor.normalized_domain,
@@ -100,8 +102,8 @@ function competitorsObservedInPeriod(directCompetitors: DirectCompetitor[], obse
   // A competitor enters this period leaderboard only when its observation has
   // a valid response count and a tracked-brand metric exists for the exact
   // same date and engine. Missing/stale scope rows are not zero-valued entries.
-  const ownScopes = new Set(ownMetrics.filter((row) => row.visibility_score !== null).map((row) => `${row.metric_date}::${row.llm_provider}`));
-  const eligibleIds = new Set(observations.filter((row) => numberValue(row.response_count) > 0 && ownScopes.has(`${row.metric_date}::${row.llm_provider}`)).map((row) => row.brand_id));
+  const ownScopes = new Set(ownMetrics.filter((row) => row.visibility_score !== null && row.run_id).map((row) => `${row.metric_date}::${row.llm_provider}::${row.run_id}`));
+  const eligibleIds = new Set(observations.filter((row) => numberValue(row.response_count) > 0 && ownScopes.has(`${row.metric_date}::${row.llm_provider}::${row.run_id}`)).map((row) => row.brand_id));
   return directCompetitors.filter((competitor) => eligibleIds.has(competitor.id));
 }
 function rankBrands(rows: BrandMetric[]) {
@@ -187,6 +189,22 @@ export default function LeaderboardsPage() {
       }
       return [...unique.values()];
     }
+    async function fetchPublishedRunIds(range: DateRange, location: string, selectedTopic: string) {
+      const { data, error: queryError } = await supabase.from("tracking_runs")
+        .select("id,topic,provider,status,published_at,tracking_location")
+        .eq("project_id", projectId).eq("provider", "chatgpt").eq("status", "completed")
+        .eq("tracking_location", location).not("published_at", "is", null);
+      if (queryError) throw queryError;
+      const byDate = new Map<string, { id: string; publishedAt: string }>();
+      for (const run of (data ?? []) as Array<{id:string;topic:string|null;provider:string;status:string;published_at:string;tracking_location:string}>) {
+        if (selectedTopic === "Overall" ? run.topic !== null : (run.topic !== null && run.topic !== selectedTopic)) continue;
+        const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(run.published_at));
+        if (date < range.start || date > range.end) continue;
+        const previous = byDate.get(date);
+        if (!previous || run.published_at > previous.publishedAt) byDate.set(date, { id: run.id, publishedAt: run.published_at });
+      }
+      return new Map([...byDate].map(([date, value]) => [date, value.id]));
+    }
     async function fetchObservations(ids: string[], range: DateRange, location: string, engines: string[], selectedTopic: string) {
       if (!ids.length || !engines.length) return [] as DirectObservation[];
       const all: DirectObservation[] = [];
@@ -194,7 +212,7 @@ export default function LeaderboardsPage() {
         const chunk = ids.slice(i, i + 80);
         for (let offset = 0; ; offset += 1000) {
           const { data, error: queryError } = await supabase.from("topic_brand_observations")
-            .select("brand_id,metric_date,llm_provider,presence_count,response_count,citation_count,tracking_location")
+            .select("brand_id,metric_date,llm_provider,presence_count,response_count,citation_count,tracking_location,run_id")
             .eq("project_id", projectId).eq("topic", selectedTopic).eq("tracking_location", location)
             .gte("metric_date", range.start).lte("metric_date", range.end)
             .in("brand_id", chunk).in("llm_provider", engines)
@@ -212,7 +230,7 @@ export default function LeaderboardsPage() {
       const all: OwnMetric[] = [];
       for (let offset = 0; ; offset += 1000) {
         const { data, error: queryError } = await supabase.from("visibility_daily")
-          .select("metric_date,topic,llm_provider,visibility_score,citation_count")
+          .select("metric_date,topic,llm_provider,visibility_score,citation_count,run_id")
           .eq("project_id", projectId).eq("tracking_location", location)
           .eq("topic", selectedTopic).gte("metric_date", range.start).lte("metric_date", range.end)
           .in("llm_provider", engines).order("metric_date", { ascending: true }).range(offset, offset + 999);
@@ -235,14 +253,20 @@ export default function LeaderboardsPage() {
         const registry = await fetchCompetitorRegistry(selectedTopic);
         const ids = registry.map((row) => row.id);
         const currentRange = { start, end };
-        const [currentObservations, currentOwn] = await Promise.all([
+        const [currentObservationsRaw, currentOwnRaw, currentPublishedRuns] = await Promise.all([
           fetchObservations(ids, currentRange, location, llms, selectedTopic),
           fetchOwnMetrics(currentRange, location, selectedTopic, llms),
+          fetchPublishedRunIds(currentRange, location, selectedTopic),
         ]);
-        const [previousObservations, previousOwn] = previousRange ? await Promise.all([
+        const currentObservations = currentObservationsRaw.filter((row) => row.run_id && currentPublishedRuns.get(row.metric_date) === row.run_id);
+        const currentOwn = currentOwnRaw.filter((row) => row.run_id && currentPublishedRuns.get(row.metric_date) === row.run_id);
+        const [previousObservationsRaw, previousOwnRaw, previousPublishedRuns] = previousRange ? await Promise.all([
           fetchObservations(ids, previousRange, location, llms, selectedTopic),
           fetchOwnMetrics(previousRange, location, selectedTopic, llms),
-        ]) : [[], []] as [DirectObservation[], OwnMetric[]];
+          fetchPublishedRunIds(previousRange, location, selectedTopic),
+        ]) : [[], [], new Map<string,string>()] as [DirectObservation[], OwnMetric[], Map<string,string>];
+        const previousObservations = previousObservationsRaw.filter((row) => row.run_id && previousPublishedRuns.get(row.metric_date) === row.run_id);
+        const previousOwn = previousOwnRaw.filter((row) => row.run_id && previousPublishedRuns.get(row.metric_date) === row.run_id);
         if (cancelled) return;
         const domains = (project?.brand_domains ?? []).map((value: string) => hostFromUrl(value)).filter(Boolean);
         // Preserve registry identity and exclude the tracked brand here. The
