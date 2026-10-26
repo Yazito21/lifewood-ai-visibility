@@ -1,5 +1,6 @@
 import { reduceEvidenceRows } from "./evidence-reducer.ts";
 import { rankAgainstEligiblePopulation } from "./rank-population.ts";
+import { calculateEntityVisibility } from "./visibility-score.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -1281,13 +1282,21 @@ Deno.serve(async (req: Request) => {
 
     function analyzeSubset(subset: Array<Record<string, unknown>>, topic: string) {
       const entities = [{ key: brandKey, id: brandKey, domain: "", websites: [] as string[], aliases: brandTerms, brand_name: brandName, website: "" }, ...(entitiesByTopic.get(topic) ?? [])];
-      const brandResponseCount = subset.filter((result) =>
-        cachedTermMatches(result, String(result.response_text ?? ""), brandTerms).count > 0
-      ).length;
-      const visibilityScore = subset.length ? Math.round(brandResponseCount / subset.length * 1000) / 10 : 0;
+      // The same response-presence calculator produces numerator, denominator,
+      // and score for the tracked brand and every competitor. Each call receives
+      // the identical successful response subset and applies distinct-response
+      // de-duplication before calculating its metric.
+      const visibilityByEntity = new Map(entities.map((entity) => [entity.key,
+        calculateEntityVisibility(subset, (response) =>
+          cachedTermMatches(response, String(response.response_text ?? ""), entity.aliases).count
+        ),
+      ]));
+      const trackedVisibility = visibilityByEntity.get(brandKey)!;
+      const brandResponseCount = trackedVisibility.presence_count;
+      const visibilityScore = trackedVisibility.visibility_score;
 
-      const mentionCounts = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
-      const presenceCounts = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
+      const mentionCounts = new Map<string, number>(entities.map((entity) => [entity.key, visibilityByEntity.get(entity.key)?.mention_count ?? 0]));
+      const presenceCounts = new Map<string, number>(entities.map((entity) => [entity.key, visibilityByEntity.get(entity.key)?.presence_count ?? 0]));
       const positionTotals = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
       const positionSamples = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
       let totalBrandMentions = 0;
@@ -1299,13 +1308,11 @@ Deno.serve(async (req: Request) => {
         const firstPositions = new Map<string, number>();
         for (const entity of entities) {
           const matches = cachedTermMatches(result, text, entity.aliases);
-          mentionCounts.set(entity.key, (mentionCounts.get(entity.key) ?? 0) + matches.count);
           if (matches.count > 0) {
-            presenceCounts.set(entity.key, (presenceCounts.get(entity.key) ?? 0) + 1);
             firstPositions.set(entity.key, matches.firstStart ?? 0);
           }
         }
-        totalBrandMentions += entities.reduce((sum, entity) => sum + cachedTermMatches(result, text, entity.aliases).count, 0);
+
         if (firstPositions.has(brandKey)) {
           const ordered = [...firstPositions.entries()].sort((a, b) => a[1] - b[1]);
           const targetPosition = ordered.findIndex(([key]) => key === brandKey) + 1;
@@ -1324,7 +1331,7 @@ Deno.serve(async (req: Request) => {
         }
       }
 
-      const brandMentions = mentionCounts.get(brandKey) ?? 0;
+      totalBrandMentions = [...mentionCounts.values()].reduce((sum, count) => sum + count, 0);\n      const brandMentions = mentionCounts.get(brandKey) ?? 0;
       const shareOfVoice = totalBrandMentions > 0 ? Math.round(brandMentions / totalBrandMentions * 1000) / 10 : 0;
       const averagePosition = targetPositionSamples > 0
         ? Math.round(targetPositionTotal / targetPositionSamples * 100) / 100
@@ -1333,9 +1340,9 @@ Deno.serve(async (req: Request) => {
       // is eligible only when this run has at least one valid response in the
       // exact project/topic/provider/location scope. Missing observations are
       // excluded; observed zero-presence competitors remain eligible.
-      const eligibleCompetitorKeys = subset.length > 0 ? entities.slice(1).map((entity) => entity.key) : [];
-      const visibilityRanking = rankAgainstEligiblePopulation(subset.length > 0 ? brandResponseCount : null, eligibleCompetitorKeys.map((key) => presenceCounts.get(key) ?? 0));
-      const shareOfVoiceRanking = rankAgainstEligiblePopulation(subset.length > 0 ? brandMentions : null, eligibleCompetitorKeys.map((key) => mentionCounts.get(key) ?? 0));
+      const eligibleCompetitorKeys = trackedVisibility.response_count > 0 ? entities.slice(1).map((entity) => entity.key) : [];
+      const visibilityRanking = rankAgainstEligiblePopulation(trackedVisibility.response_count > 0 ? brandResponseCount : null, eligibleCompetitorKeys.map((key) => presenceCounts.get(key) ?? 0));
+      const shareOfVoiceRanking = rankAgainstEligiblePopulation(trackedVisibility.response_count > 0 ? brandMentions : null, eligibleCompetitorKeys.map((key) => mentionCounts.get(key) ?? 0));
       const rankPopulationCount = visibilityRanking.populationCount;
       const visibilityRank = visibilityRanking.rank;
       const shareOfVoiceRank = shareOfVoiceRanking.rank;
@@ -1389,9 +1396,9 @@ Deno.serve(async (req: Request) => {
           })
           .reduce((sum, citation) => sum + Number(citation.frequency ?? 0), 0);
         return {
-          project_id: projectId, brand_id: entity.id, topic, metric_date: day,
+          project_id: projectId, brand_id: entity.id, topic, metric_date: day, run_id: runId,
           tracking_location: trackingLocation, llm_provider: "chatgpt",
-          presence_count: entityMentions, response_count: subset.length,
+          presence_count: entityMentions, response_count: trackedVisibility.response_count,
           mention_count: subset.reduce((sum, result) => sum + cachedTermMatches(result, String(result.response_text ?? ""), entity.aliases).count, 0),
           citation_count: citations,
           average_position: competitorAveragePosition[entity.key] ?? null,
@@ -1404,7 +1411,7 @@ Deno.serve(async (req: Request) => {
         if (observationError) throw new Error("TOPIC_BRAND_OBSERVATION_WRITE_FAILED: " + observationError.message);
       }
       const row = {
-        project_id: projectId, metric_date: day, tracking_location: trackingLocation, topic, llm_provider: "Overall",
+        project_id: projectId, metric_date: day, tracking_location: trackingLocation, topic, llm_provider: "Overall", run_id: runId,
         ...metrics,
         citation_count: citationRows
           .filter((citation) => (topic === "Overall" || String(citation.topic ?? "") === topic) && String(citation.tracking_location ?? trackingLocationsForRun[0]) === trackingLocation)
