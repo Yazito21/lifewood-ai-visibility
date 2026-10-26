@@ -1356,7 +1356,7 @@ Deno.serve(async (req: Request) => {
       return {
         metrics: {
           visibility_score: visibilityScore,
-          visibility_rank: visibilityRank,\n          rank_population_count: rankPopulationCount,
+          visibility_rank: visibilityRank,\n          rank_population_count: rankPopulationCount,\n          rank_population_status: rankPopulationCount > 0 ? "verified" : "no_eligible_observations",
           share_of_voice_score: shareOfVoice,
           share_of_voice_rank: shareOfVoiceRank,
           average_position: averagePosition,
