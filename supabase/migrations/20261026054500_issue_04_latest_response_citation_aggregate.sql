@@ -1,4 +1,5 @@
--- For repeated same-day runs, count the latest completed response for each prompt/scope.
+-- Reconcile reruns by selecting the latest completed response per prompt and scope first.
+-- This prevents old citation URLs from surviving when a newer response omitted them.
 create or replace function public.get_scoped_citation_occurrence_counts(
   p_project_id uuid,
   p_start_date date,
@@ -11,28 +12,39 @@ returns table(entity_id uuid, citation_occurrences bigint, unique_pages bigint, 
 language sql stable
 set search_path to 'public'
 as $function$
-  with scoped as (
-    select c.entity_id, c.canonical_url, c.canonical_domain, c.metric_date, c.topic,
-           c.provider, c.tracking_location, r.prompt_id, r.captured_at,
-           row_number() over (
-             partition by c.project_id, c.metric_date, c.topic, c.provider,
-                          c.tracking_location, c.entity_id, r.prompt_id, c.canonical_url
-             order by r.captured_at desc, c.response_id desc
-           ) as response_version
-    from public.citation_occurrences c
-    join public.ai_responses r on r.id = c.response_id and r.project_id = c.project_id
-    where c.project_id = p_project_id
-      and c.metric_date between p_start_date and p_end_date
-      and c.tracking_location = coalesce(p_tracking_location, (select p.tracking_market from public.projects p where p.id=p_project_id), 'LEGACY')
-      and (p_topic is null or c.topic = p_topic)
-      and (coalesce(array_length(p_engines,1),0)=0 or c.provider = any(p_engines))
+  with latest_responses as (
+    select distinct on (
+      r.project_id, (timezone('Asia/Kuala_Lumpur', r.captured_at))::date,
+      p.topic, r.llm_provider, r.tracking_location, r.prompt_id
+    )
+      r.id as response_id,
+      r.project_id,
+      (timezone('Asia/Kuala_Lumpur', r.captured_at))::date as metric_date,
+      p.topic,
+      r.llm_provider as provider,
+      r.tracking_location,
+      r.prompt_id
+    from public.ai_responses r
+    join public.prompts p on p.id = r.prompt_id and p.project_id = r.project_id
+    where r.project_id = p_project_id
       and r.response_status = 'completed'
+      and (timezone('Asia/Kuala_Lumpur', r.captured_at))::date between p_start_date and p_end_date
+      and r.tracking_location = coalesce(p_tracking_location, (select pr.tracking_market from public.projects pr where pr.id=p_project_id), 'LEGACY')
+      and (p_topic is null or p.topic = p_topic)
+      and (coalesce(array_length(p_engines,1),0)=0 or r.llm_provider = any(p_engines))
+    order by r.project_id, (timezone('Asia/Kuala_Lumpur', r.captured_at))::date,
+      p.topic, r.llm_provider, r.tracking_location, r.prompt_id, r.captured_at desc, r.id desc
   )
-  select s.entity_id, count(*)::bigint,
-         count(distinct s.canonical_url)::bigint,
-         count(distinct s.canonical_domain)::bigint
-  from scoped s where s.response_version = 1 group by s.entity_id;
+  select c.entity_id, count(*)::bigint,
+         count(distinct c.canonical_url)::bigint,
+         count(distinct c.canonical_domain)::bigint
+  from public.citation_occurrences c
+  join latest_responses lr on lr.response_id = c.response_id
+    and lr.project_id = c.project_id and lr.metric_date = c.metric_date
+    and lr.topic = c.topic and lr.provider = c.provider
+    and lr.tracking_location = c.tracking_location
+  group by c.entity_id;
 $function$;
 
 comment on function public.get_scoped_citation_occurrence_counts(uuid,date,date,text,text[],text) is
-  'Aggregates normalized citations per prompt scope, retaining only latest captured response version for repeated daily runs. Unit: one canonical URL per entity per prompt response.';
+  'Aggregates normalized citation evidence only from the latest completed response per prompt/date/topic/provider/location. Unit: one canonical URL per entity per response; no stale URL survives when a newer response omitted it.';
