@@ -1328,14 +1328,17 @@ Deno.serve(async (req: Request) => {
       const averagePosition = targetPositionSamples > 0
         ? Math.round(targetPositionTotal / targetPositionSamples * 100) / 100
         : null;
-      // Compare against the entire configured topic set, including brands with
-      // zero observed mentions. Registry membership must not depend on response content.
-      const configuredCompetitorKeys = entities.slice(1).map((entity) => entity.key);
-      const visibilityRank = configuredCompetitorKeys.length
-        ? 1 + configuredCompetitorKeys.filter((key) => (presenceCounts.get(key) ?? 0) > brandResponseCount).length
+      // Ranking population is scoped to this successful run subset. A competitor
+      // is eligible only when this run has at least one valid response in the
+      // exact project/topic/provider/location scope. Missing observations are
+      // excluded; observed zero-presence competitors remain eligible.
+      const eligibleCompetitorKeys = subset.length > 0 ? entities.slice(1).map((entity) => entity.key) : [];
+      const rankPopulationCount = subset.length > 0 ? 1 + eligibleCompetitorKeys.length : 0;
+      const visibilityRank = rankPopulationCount > 0
+        ? 1 + eligibleCompetitorKeys.filter((key) => (presenceCounts.get(key) ?? 0) > brandResponseCount).length
         : null;
-      const shareOfVoiceRank = configuredCompetitorKeys.length
-        ? 1 + configuredCompetitorKeys.filter((key) => (mentionCounts.get(key) ?? 0) > brandMentions).length
+      const shareOfVoiceRank = rankPopulationCount > 0
+        ? 1 + eligibleCompetitorKeys.filter((key) => (mentionCounts.get(key) ?? 0) > brandMentions).length
         : null;
       const competitorAveragePositions = [...positionTotals.entries()]
         .filter(([key]) => key !== brandKey)
@@ -1353,7 +1356,7 @@ Deno.serve(async (req: Request) => {
       return {
         metrics: {
           visibility_score: visibilityScore,
-          visibility_rank: visibilityRank,
+          visibility_rank: visibilityRank,\n          rank_population_count: rankPopulationCount,
           share_of_voice_score: shareOfVoice,
           share_of_voice_rank: shareOfVoiceRank,
           average_position: averagePosition,
