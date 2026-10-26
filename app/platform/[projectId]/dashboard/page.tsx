@@ -8,9 +8,8 @@ import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
 import { MIN_TRACKING_DATE, malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 
-type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null };
+type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null; rank_population_count: number | null };
 type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
-type TopicBrandAssignment = { topic: string; brand_id: string; role: string };
 type RankSnapshot = Metric & { previousRank: number | null };
 
 const periods = REPORTING_PERIODS;
@@ -23,7 +22,6 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [trackingLocation, setTrackingLocation] = useState("MY");
   const [citationsByTopic, setCitationsByTopic] = useState<Record<string, AggregatedCitation[]>>({});
-  const [rankDenominators, setRankDenominators] = useState<Record<string, number>>({});
   const [topics, setTopics] = useState<string[]>([]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
@@ -55,10 +53,10 @@ export default function DashboardPage() {
     setTopics(topicList);
     const start = dateStart(period, customStart, customEnd);
     const end = period === "Custom" ? customEnd : malaysiaDateString();
-    const [{ data: chartRows, error: metricsError }, { data: assignmentRows, error: assignmentError }] = await Promise.all([
-      supabase.from("visibility_daily").select("metric_date,topic,visibility_score,visibility_rank").eq("project_id", projectId).eq("llm_provider", "Overall").eq("tracking_location", dataLocation).gte("metric_date", start).lte("metric_date", end).order("metric_date"),
-      supabase.from("topic_brand_assignments").select("topic,brand_id,role").eq("project_id", projectId).eq("include_in_metrics", true),
-    ]);
+    const { data: chartRows, error: metricsError } = await supabase.from("visibility_daily")
+      .select("metric_date,topic,visibility_score,visibility_rank,rank_population_count")
+      .eq("project_id", projectId).eq("llm_provider", "Overall").eq("tracking_location", dataLocation)
+      .gte("metric_date", start).lte("metric_date", end).order("metric_date");
 
     // Aggregate citations in Postgres, using the same RPC and brand-related filter as the Citations page.
     // Fetching raw citation rows can silently truncate at the API row limit, leaving later topics blank.
@@ -85,25 +83,11 @@ export default function DashboardPage() {
       }
     }
 
-    const firstError = projectError || metricsError || assignmentError;
+    const firstError = projectError || metricsError;
     if (firstError) setError(firstError.message || "Unable to load dashboard data.");
     setMetrics(chartRows ?? []); setCitationsByTopic(citations);
-    // Rank and denominator must describe the same fixed topic registry. The
-    // tracking pipeline ranks against every configured brand assignment,
-    // including zero-observation brands; direct-competitor observations are a
-    // different universe and must not supply this dashboard denominator.
-    const brandsByTopic = new Map<string, Set<string>>();
-    const allConfiguredBrands = new Set<string>();
-    for (const row of (assignmentRows ?? []) as TopicBrandAssignment[]) {
-      if (!row.topic || !row.brand_id) continue;
-      const topicBrands = brandsByTopic.get(row.topic) ?? new Set<string>();
-      topicBrands.add(row.brand_id);
-      brandsByTopic.set(row.topic, topicBrands);
-      allConfiguredBrands.add(row.brand_id);
-    }
-    const denominators: Record<string, number> = { Overall: allConfiguredBrands.size };
-    for (const [topic, brands] of brandsByTopic) denominators[topic] = brands.size;
-    setRankDenominators(denominators);
+    // Rank and population size are persisted together by the tracking pipeline
+    // for this exact reporting scope; the UI does not reconstruct either value.
     setLoading(false);
   }
 
@@ -408,11 +392,11 @@ export default function DashboardPage() {
             <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={openTopicPicker} disabled={tracking || exporting || topics.filter((topic) => topic !== "Overall").length === 0} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
-          {!loading && cardTopics.some((topic) => !(rankDenominators[topic] > 0)) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">The configured brand registry is unavailable for one or more topics. Their rank denominator cannot be verified.</div>}
+          {!loading && cardTopics.some((topic) => !(latestByTopic.get(topic)?.rank_population_count && latestByTopic.get(topic)!.rank_population_count! > 0)) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">No eligible observation population is available for one or more topics. Rank is unavailable for those scopes.</div>}
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
               {cardTopics.map((topic) => {
-                const snapshot = latestByTopic.get(topic); const denominator = rankDenominators[topic] ?? 0; const currentRank = denominator > 0 ? (snapshot?.visibility_rank ?? null) : null; const previousRank = snapshot?.previousRank ?? null;
+                const snapshot = latestByTopic.get(topic); const denominator = snapshot?.rank_population_count ?? 0; const currentRank = denominator > 0 ? (snapshot?.visibility_rank ?? null) : null; const previousRank = snapshot?.previousRank ?? null;
                 const change = currentRank !== null && previousRank !== null ? previousRank - currentRank : null;
                 return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (topic === "Overall" ? "platform-card-overall" : "")}>
                   <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (topic === "Overall" ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>{snapshot?.metric_date ?? "No data"}</span></div>
