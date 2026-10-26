@@ -1334,8 +1334,8 @@ Deno.serve(async (req: Request) => {
       // exact project/topic/provider/location scope. Missing observations are
       // excluded; observed zero-presence competitors remain eligible.
       const eligibleCompetitorKeys = subset.length > 0 ? entities.slice(1).map((entity) => entity.key) : [];
-      const visibilityRanking = rankAgainstEligiblePopulation(brandResponseCount, eligibleCompetitorKeys.map((key) => presenceCounts.get(key) ?? 0));
-      const shareOfVoiceRanking = rankAgainstEligiblePopulation(brandMentions, eligibleCompetitorKeys.map((key) => mentionCounts.get(key) ?? 0));
+      const visibilityRanking = rankAgainstEligiblePopulation(subset.length > 0 ? brandResponseCount : null, eligibleCompetitorKeys.map((key) => presenceCounts.get(key) ?? 0));
+      const shareOfVoiceRanking = rankAgainstEligiblePopulation(subset.length > 0 ? brandMentions : null, eligibleCompetitorKeys.map((key) => mentionCounts.get(key) ?? 0));
       const rankPopulationCount = visibilityRanking.populationCount;
       const visibilityRank = visibilityRanking.rank;
       const shareOfVoiceRank = shareOfVoiceRanking.rank;
