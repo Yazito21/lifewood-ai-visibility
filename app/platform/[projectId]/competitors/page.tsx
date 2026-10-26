@@ -65,8 +65,9 @@ function numberValue(value: number | string | null | undefined) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? number : 0;
 }
-function aggregateCompetitorRows(directCompetitors: DirectCompetitor[], observations: DirectObservation[]): BrandMetric[] {
+function aggregateCompetitorRows(directCompetitors: DirectCompetitor[], observations: DirectObservation[], ownMetrics: OwnMetric[]): BrandMetric[] {
   const byId = new Map<string, DirectObservation[]>();
+  const ownScopeKeys = new Set(ownMetrics.filter((row) => row.visibility_score !== null).map((row) => `${row.metric_date}::${row.llm_provider}`));
   for (const observation of observations) {
     const bucket = byId.get(observation.brand_id) ?? [];
     bucket.push(observation);
@@ -74,14 +75,14 @@ function aggregateCompetitorRows(directCompetitors: DirectCompetitor[], observat
   }
   return directCompetitors.map((competitor) => {
     const records = byId.get(competitor.id) ?? [];
-    const scores = records.filter((row) => numberValue(row.response_count) > 0)
-      .map((row) => 100 * numberValue(row.presence_count) / numberValue(row.response_count));
+    const matchedRecords = records.filter((row) => numberValue(row.response_count) > 0 && ownScopeKeys.has(`${row.metric_date}::${row.llm_provider}`));
+    const scores = matchedRecords.map((row) => 100 * numberValue(row.presence_count) / numberValue(row.response_count));
     return {
       key: competitor.normalized_domain,
       brand_name: competitor.brand_name || competitor.normalized_domain,
       website: rootWebsite(competitor.website || competitor.normalized_domain),
       visibility_score: scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : 0,
-      citations: records.reduce((sum, row) => sum + numberValue(row.citation_count), 0),
+      citations: matchedRecords.reduce((sum, row) => sum + numberValue(row.citation_count), 0),
     };
   });
 }
@@ -95,12 +96,16 @@ function aggregateOwnRow(metrics: OwnMetric[], projectName: string, projectWebsi
     citations: metrics.reduce((sum, row) => sum + numberValue(row.citation_count), 0),
   };
 }
-function competitorsObservedInPeriod(directCompetitors: DirectCompetitor[], _observations: DirectObservation[]) {
-  // Keep every configured competitor in the comparison universe. A brand with
-  // no observations is a zero-visibility row, not a reason to drop the brand.
-  return directCompetitors;
+function competitorsObservedInPeriod(directCompetitors: DirectCompetitor[], observations: DirectObservation[], ownMetrics: OwnMetric[]) {
+  // A competitor enters this period leaderboard only when its observation has
+  // a valid response count and a tracked-brand metric exists for the exact
+  // same date and engine. Missing/stale scope rows are not zero-valued entries.
+  const ownScopes = new Set(ownMetrics.filter((row) => row.visibility_score !== null).map((row) => `${row.metric_date}::${row.llm_provider}`));
+  const eligibleIds = new Set(observations.filter((row) => numberValue(row.response_count) > 0 && ownScopes.has(`${row.metric_date}::${row.llm_provider}`)).map((row) => row.brand_id));
+  return directCompetitors.filter((competitor) => eligibleIds.has(competitor.id));
 }
 function rankBrands(rows: BrandMetric[]) {
+  // Deterministic tie-breaks: visibility score, citations, then canonical name.
   return [...rows].sort((a, b) => b.visibility_score - a.visibility_score || b.citations - a.citations || a.brand_name.localeCompare(b.brand_name))
     .map((row, index) => ({ ...row, rank: index + 1 }));
 }
@@ -271,20 +276,20 @@ export default function LeaderboardsPage() {
   // Build the previous-period ranking from its own active set so rank deltas
   // compare like-for-like periods rather than today's registry against old data.
   const currentActiveCompetitors = useMemo(
-    () => competitorsObservedInPeriod(directCompetitors, currentCompetitorObservations),
-    [directCompetitors, currentCompetitorObservations],
+    () => competitorsObservedInPeriod(directCompetitors, currentCompetitorObservations, currentOwnMetrics),
+    [directCompetitors, currentCompetitorObservations, currentOwnMetrics],
   );
   const previousActiveCompetitors = useMemo(
-    () => competitorsObservedInPeriod(directCompetitors, previousCompetitorObservations),
-    [directCompetitors, previousCompetitorObservations],
+    () => competitorsObservedInPeriod(directCompetitors, previousCompetitorObservations, previousOwnMetrics),
+    [directCompetitors, previousCompetitorObservations, previousOwnMetrics],
   );
   const currentRows = useMemo(() => rankBrands([
     aggregateOwnRow(currentOwnMetrics, projectName, projectWebsite),
-    ...aggregateCompetitorRows(currentActiveCompetitors, currentCompetitorObservations),
+    ...aggregateCompetitorRows(currentActiveCompetitors, currentCompetitorObservations, currentOwnMetrics),
   ]), [projectName, projectWebsite, currentOwnMetrics, currentActiveCompetitors, currentCompetitorObservations]);
   const previousRows = useMemo(() => rankBrands([
     aggregateOwnRow(previousOwnMetrics, projectName, projectWebsite),
-    ...aggregateCompetitorRows(previousActiveCompetitors, previousCompetitorObservations),
+    ...aggregateCompetitorRows(previousActiveCompetitors, previousCompetitorObservations, previousOwnMetrics),
   ]), [projectName, projectWebsite, previousOwnMetrics, previousActiveCompetitors, previousCompetitorObservations]);
   const previousByKey = useMemo(() => new Map(previousRows.map((row) => [row.key, row])), [previousRows]);
   const rows: RankedBrand[] = currentRows.map((row) => {
@@ -298,7 +303,7 @@ export default function LeaderboardsPage() {
   return <ProjectShell><div className="ops-page">
     <p className="page-eyebrow">Competitive Landscape</p>
     <h2 className="page-title mt-1">Leaderboards</h2>
-    <p className="page-description mt-2">See where {projectName} ranks against its tracked brand and direct competitors. Competitor rankings use the project’s fixed, topic-specific brand registry. Each canonical brand is counted once, including in Overall.</p>
+    <p className="page-description mt-2">See where {projectName} ranks against its tracked brand and direct competitors. Competitor rankings include only brands with valid observations matching the selected period, topic, engine, and location. The tracked brand is included once; ties are ordered consistently by visibility, citations, then canonical name.</p>
     <div className="mt-8 ops-filter-panel">
       <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{REPORTING_PERIODS.map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} min={MIN_TRACKING_DATE} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || MIN_TRACKING_DATE} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}</div>
       <div className="ops-filter-row"><span className="ops-filter-label">Topic</span><button onClick={() => setTopic("All")} className={`ops-filter-pill ${topic === "All" ? "is-active" : ""}`}>All</button>{topics.map((value) => <button key={value} onClick={() => setTopic(value)} className={`ops-filter-pill ${topic === value ? "is-active" : ""}`}>{value}</button>)}</div>
