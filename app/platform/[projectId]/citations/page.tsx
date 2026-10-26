@@ -7,6 +7,7 @@ import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 import { MIN_TRACKING_DATE, malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 import { brandDisplayName } from "@/lib/brand-display";
+import { MetricInfo } from "@/components/metric-info";
 
 type AggregatedRow = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
 type ThirdPartyRow = { hostname:string; website_name:string|null; frequency:number; response_frequency:number; brand_coverage:number; source_types:string[]; example_url:string|null };
@@ -47,7 +48,7 @@ function CitationTable({ title, data }: { title: string; data: AggregatedRow[] }
       <div className="mt-4 overflow-x-auto">
         <table className="platform-table min-w-[760px]">
           <thead><tr className="border-b border-[var(--line)] text-xs uppercase tracking-[0.12em] text-[#66736c]">
-            <th className="px-3 py-3">No.</th><th className="px-3 py-3">Page</th><th className="px-3 py-3">Page Name</th><th className="px-3 py-3">Brand Name</th><th className="px-3 py-3">Frequency</th>
+            <th className="px-3 py-3">No.</th><th className="px-3 py-3">Page</th><th className="px-3 py-3">Page Name</th><th className="px-3 py-3">Brand Name</th><th className="px-3 py-3">Citation Occurrences<MetricInfo metric="citation_occurrences" /></th>
           </tr></thead>
           <tbody>
             {visibleData.map((row, index) => <tr key={row.url} className="border-b border-[#eef0ee]">

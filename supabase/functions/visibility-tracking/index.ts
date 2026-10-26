@@ -1366,15 +1366,12 @@ Deno.serve(async (req: Request) => {
       const averagePosition = targetPositionSamples > 0
         ? Math.round(targetPositionTotal / targetPositionSamples * 100) / 100
         : null;
-      // Ranking population is scoped to this successful run subset. A competitor
-      // is eligible only when this run has at least one valid response in the
-      // exact project/topic/provider/location scope. Missing observations are
-      // excluded; observed zero-presence competitors remain eligible.
+      // Visibility rank and its population are NOT computed here. Postgres
+      // (canonical_scoped_rank, applied by the publication guard on tracking_runs)
+      // is the single implementation, so the edge function cannot drift from it.
+      // Share-of-voice ranking keeps the scoped helper below.
       const eligibleCompetitorKeys = trackedVisibility.response_count > 0 ? entities.slice(1).map((entity) => entity.key) : [];
-      const visibilityRanking = rankAgainstEligiblePopulation(trackedVisibility.response_count > 0 ? brandResponseCount : null, eligibleCompetitorKeys.map((key) => presenceCounts.get(key) ?? 0));
       const shareOfVoiceRanking = rankAgainstEligiblePopulation(trackedVisibility.response_count > 0 ? brandMentions : null, eligibleCompetitorKeys.map((key) => mentionCounts.get(key) ?? 0));
-      const rankPopulationCount = visibilityRanking.populationCount;
-      const visibilityRank = visibilityRanking.rank;
       const shareOfVoiceRank = shareOfVoiceRanking.rank;
       const competitorAveragePositions = [...positionTotals.entries()]
         .filter(([key]) => key !== brandKey)
@@ -1392,9 +1389,13 @@ Deno.serve(async (req: Request) => {
       return {
         metrics: {
           visibility_score: visibilityScore,
-          visibility_rank: visibilityRank,
-          rank_population_count: rankPopulationCount,
-          rank_population_status: rankPopulationCount > 0 ? "verified" : "no_eligible_observations",
+          // Placeholders until publication: the guard stamps rank, population and counts.
+          visibility_rank: null,
+          rank_population_count: null,
+          rank_population_status: "unverified",
+          presence_count: brandResponseCount,
+          response_count: trackedVisibility.response_count,
+          metric_version: "v2",
           share_of_voice_score: shareOfVoice,
           share_of_voice_rank: shareOfVoiceRank,
           average_position: averagePosition,

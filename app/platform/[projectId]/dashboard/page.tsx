@@ -7,10 +7,11 @@ import { ProjectShell } from "@/components/project-shell";
 import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
 import { MIN_TRACKING_DATE, malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
+import { chartSeries, latestSnapshots, rankDisplay, type DailyMetric } from "@/lib/rank-snapshot";
+import { MetricInfo } from "@/components/metric-info";
 
-type Metric = { metric_date: string; topic: string; visibility_score: number | null; visibility_rank: number | null; rank_population_count: number | null; rank_population_status: string };
+type Metric = DailyMetric;
 type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
-type RankSnapshot = Metric & { previousRank: number | null };
 
 const periods = REPORTING_PERIODS;
 function dateStart(period: string, customStart: string, customEnd = "") { return reportingDateRange(period, customStart, customEnd).start; }
@@ -293,24 +294,12 @@ export default function DashboardPage() {
       end: period === "Custom" ? customEnd : malaysiaDateString(),
     };
   }, [period, customStart, customEnd, metrics]);
-  const latestByTopic = useMemo(() => {
-    const grouped = new Map<string, Metric[]>();
-    for (const row of metrics) grouped.set(row.topic, [...(grouped.get(row.topic) ?? []), row]);
-    const snapshots = new Map<string, RankSnapshot>();
-    for (const topic of cardTopics) {
-      const rows = (grouped.get(topic) ?? []).slice().sort((a, b) => b.metric_date.localeCompare(a.metric_date));
-      const current = rows[0];
-      const previous = rows.find((row) => row.metric_date !== current?.metric_date && row.visibility_rank !== null && (row.rank_population_count ?? 0) > 0);
-      if (current) snapshots.set(topic, { ...current, previousRank: previous?.visibility_rank ?? null });
-    }
-    return snapshots;
-  }, [metrics, cardTopics]);
+  // Cards and charts read the same canonical daily rows (see lib/rank-snapshot.ts);
+  // no rank or population is recalculated in the browser.
+  const latestByTopic = useMemo(() => latestSnapshots(metrics, cardTopics), [metrics, cardTopics]);
 
   function chart(topic: string, key: "visibility_score" | "visibility_rank") {
-    const rows = metrics.filter((row) => row.topic === topic);
-    // Cards and charts both consume the canonical daily metric. Do not hide
-    // historical ranks based on a separate direct-competitor RPC.
-    return rows.map((row) => ({ label: row.metric_date, value: row[key] }));
+    return chartSeries(metrics, topic, key);
   }
 
   return (
@@ -392,15 +381,15 @@ export default function DashboardPage() {
             <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={openTopicPicker} disabled={tracking || exporting || topics.filter((topic) => topic !== "Overall").length === 0} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
-          {!loading && cardTopics.some((topic) => !(latestByTopic.get(topic)?.rank_population_count && latestByTopic.get(topic)!.rank_population_count! > 0)) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">Some ranks have no verified eligible population. Legacy ranks with missing run lineage are marked unverified and are not displayed with a fabricated denominator.</div>}
+          {!loading && cardTopics.some((topic) => rankDisplay(latestByTopic.get(topic)).note) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">Some ranks are shown without a verified population (older runs without verified lineage) or have no eligible competitor observations. The rank shown is the same value plotted in the charts below; no denominator is invented.</div>}
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
               {cardTopics.map((topic) => {
-                const snapshot = latestByTopic.get(topic); const denominator = snapshot?.rank_population_count ?? 0; const currentRank = denominator > 0 ? (snapshot?.visibility_rank ?? null) : null; const previousRank = snapshot?.previousRank ?? null;
+                const snapshot = latestByTopic.get(topic); const display = rankDisplay(snapshot); const currentRank = display.rank; const previousRank = snapshot?.previousRank ?? null;
                 const change = currentRank !== null && previousRank !== null ? previousRank - currentRank : null;
                 return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (topic === "Overall" ? "platform-card-overall" : "")}>
                   <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (topic === "Overall" ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>{snapshot?.metric_date ?? "No data"}</span></div>
-                  <div className="mt-4 flex items-end justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Rank</p><p className={"mt-1 text-4xl font-semibold tracking-tight " + (topic === "Overall" ? "platform-overall-value" : "")}>{currentRank ?? "—"}{currentRank !== null && denominator > 0 ? "/" + denominator : ""}</p>{snapshot?.rank_population_status === "unverified" && snapshot.visibility_rank !== null && <p className="mt-1 text-[10px] font-medium text-amber-700">Historical population unverified</p>}</div><div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Score</p><p className={"mt-1 text-lg font-semibold " + (topic === "Overall" ? "platform-overall-value" : "")}>{snapshot?.visibility_score != null ? snapshot.visibility_score.toFixed(1) + "%" : "—"}</p></div></div>
+                  <div className="mt-4 flex items-end justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Rank<MetricInfo metric="visibility_rank" /></p><p className={"mt-1 text-4xl font-semibold tracking-tight " + (topic === "Overall" ? "platform-overall-value" : "")}>{display.text}</p>{display.note && <p className="mt-1 text-[10px] font-medium text-amber-700">{display.note}</p>}</div><div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Score<MetricInfo metric="visibility_score" /></p><p className={"mt-1 text-lg font-semibold " + (topic === "Overall" ? "platform-overall-value" : "")}>{snapshot?.visibility_score != null ? snapshot.visibility_score.toFixed(1) + "%" : "—"}</p></div></div>
                   <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[color-mix(in_srgb,var(--border)_35%,transparent)] pt-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Previous Rank</p><p className="mt-1 text-sm font-semibold">{previousRank ?? "—"}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Rank Change</p><p className={"mt-1 text-sm font-semibold " + (change === null ? "text-[var(--muted-foreground)]" : change > 0 ? "text-[var(--primary)]" : change < 0 ? "text-[var(--danger)]" : "text-[var(--muted-foreground)]")}>{change === null ? "—" : change > 0 ? "↑ " + change : change < 0 ? "↓ " + Math.abs(change) : "No change"}</p></div></div>
                 </article>;
               })}
@@ -420,7 +409,7 @@ export default function DashboardPage() {
             const rows = citationsByTopic[topic] ?? [];
             return <div key={topic} className="platform-card p-5 sm:p-6">
               <div className="flex items-center gap-2"><span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--soft)] text-[var(--primary)]"><CalendarDays size={16} /></span><h4 className="text-base font-semibold">{topic}</h4></div>
-              <div className="mt-4 overflow-x-auto"><table className="platform-table min-w-[760px]"><thead><tr><th>No.</th><th>Page</th><th>Page Name</th><th>Brand Name</th><th>Frequency</th></tr></thead><tbody>
+              <div className="mt-4 overflow-x-auto"><table className="platform-table min-w-[760px]"><thead><tr><th>No.</th><th>Page</th><th>Page Name</th><th>Brand Name</th><th>Citation Occurrences<MetricInfo metric="citation_occurrences" /></th></tr></thead><tbody>
                 {rows.map((row, index) => <tr key={row.url}><td>{index + 1}</td><td className="max-w-[380px]"><a href={row.url} target="_blank" rel="noreferrer" className="inline-flex max-w-[360px] items-center gap-1 truncate font-semibold text-[var(--green)] hover:underline">{row.url}<ExternalLink size={13} /></a></td><td>{row.page_name || "—"}</td><td>{row.brand_name || "—"}</td><td className="font-semibold">{row.frequency}</td></tr>)}
                 {!rows.length && <tr><td colSpan={5} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No citations recorded for this topic and period.</td></tr>}
               </tbody></table></div>

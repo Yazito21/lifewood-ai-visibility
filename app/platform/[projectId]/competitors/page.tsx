@@ -7,6 +7,7 @@ import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 import { MIN_TRACKING_DATE, malaysiaDateString, shiftDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 import { brandDisplayName } from "@/lib/brand-display";
+import { MetricInfo } from "@/components/metric-info";
 
 type DirectCompetitor = {
   id: string;
@@ -335,7 +336,7 @@ export default function LeaderboardsPage() {
       <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-lg font-semibold">Direct competitor rankings</h3><span className="text-sm text-[#66736c]">{searchResults.length.toLocaleString()} entries including tracked brand</span></div>
       <label className="mt-4 flex w-full max-w-xl items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 focus-within:border-[var(--green)]"><Search size={16} className="shrink-0 text-[#66736c]" aria-hidden="true" /><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setExpanded(false); }} placeholder="Search brand or website…" aria-label="Search brands" className="w-full bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[#87918b]" /></label>
       <div className="mt-4 overflow-x-auto"><table className="platform-table min-w-[980px]"><thead><tr className="border-b border-[var(--line)] text-xs uppercase tracking-[0.12em] text-[#66736c]">
-        <th className="px-3 py-3 text-left">Rank</th><th className="px-3 py-3 text-left">Brand Name</th><th className="px-3 py-3 text-left">Website</th><th className="px-3 py-3 text-left">Visibility Score</th><th className="px-3 py-3 text-left">Citation Occurrences</th>
+        <th className="px-3 py-3 text-left">Rank<MetricInfo metric="visibility_rank" /></th><th className="px-3 py-3 text-left">Brand Name</th><th className="px-3 py-3 text-left">Website</th><th className="px-3 py-3 text-left">Visibility Score<MetricInfo metric="visibility_score" /></th><th className="px-3 py-3 text-left">Citation Occurrences<MetricInfo metric="citation_occurrences" /></th>
       </tr></thead><tbody>
         {loading ? <tr><td colSpan={5} className="px-3 py-10 text-center">Loading leaderboard…</td></tr> : visibleRows.map((row) => <tr key={row.key} className={`border-b border-[#eef0ee] ${row.key === "__tracked_brand__" ? "bg-[var(--accent)]/50" : ""}`}>
           <td className="whitespace-nowrap px-3 py-3"><span className="inline-flex items-center gap-1 font-semibold">{row.key === "__tracked_brand__" && currentActiveCompetitors.length > 0 && <Trophy size={14} className="text-[var(--green)]" />}{row.key === "__tracked_brand__" && currentActiveCompetitors.length === 0 ? "—" : row.rank}</span>{row.key === "__tracked_brand__" && currentActiveCompetitors.length === 0 ? <span className="ml-2 text-xs font-medium text-[#87918b]">No verified competitors</span> : row.previousRank === null && previousRange ? <span className="ml-2 text-xs font-medium text-[#87918b]">New</span> : <MetricChange value={row.previousRank === null ? null : row.previousRank - row.rank} lowerIsBetter />}</td>
