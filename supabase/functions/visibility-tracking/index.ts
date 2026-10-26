@@ -1,4 +1,5 @@
-import { reduceEvidenceRows } from "./evidence-reducer.ts";\nimport { rankAgainstEligiblePopulation } from "./rank-population.ts";
+import { reduceEvidenceRows } from "./evidence-reducer.ts";
+import { rankAgainstEligiblePopulation } from "./rank-population.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -1335,7 +1336,9 @@ Deno.serve(async (req: Request) => {
       const eligibleCompetitorKeys = subset.length > 0 ? entities.slice(1).map((entity) => entity.key) : [];
       const visibilityRanking = rankAgainstEligiblePopulation(brandResponseCount, eligibleCompetitorKeys.map((key) => presenceCounts.get(key) ?? 0));
       const shareOfVoiceRanking = rankAgainstEligiblePopulation(brandMentions, eligibleCompetitorKeys.map((key) => mentionCounts.get(key) ?? 0));
-      const rankPopulationCount = visibilityRanking.populationCount;\n      const visibilityRank = visibilityRanking.rank;\n      const shareOfVoiceRank = shareOfVoiceRanking.rank;
+      const rankPopulationCount = visibilityRanking.populationCount;
+      const visibilityRank = visibilityRanking.rank;
+      const shareOfVoiceRank = shareOfVoiceRanking.rank;
       const competitorAveragePositions = [...positionTotals.entries()]
         .filter(([key]) => key !== brandKey)
         .map(([key, total]) => ({ key, average: (positionSamples.get(key) ?? 0) ? total / (positionSamples.get(key) ?? 1) : null }))
@@ -1352,7 +1355,9 @@ Deno.serve(async (req: Request) => {
       return {
         metrics: {
           visibility_score: visibilityScore,
-          visibility_rank: visibilityRank,\n          rank_population_count: rankPopulationCount,\n          rank_population_status: rankPopulationCount > 0 ? "verified" : "no_eligible_observations",
+          visibility_rank: visibilityRank,
+          rank_population_count: rankPopulationCount,
+          rank_population_status: rankPopulationCount > 0 ? "verified" : "no_eligible_observations",
           share_of_voice_score: shareOfVoice,
           share_of_voice_rank: shareOfVoiceRank,
           average_position: averagePosition,
