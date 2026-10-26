@@ -1415,13 +1415,21 @@ Deno.serve(async (req: Request) => {
           (topic !== "Overall" && isTopicScopedRun ? r.topic === topic : topic === "Overall" || r.topic === topic)
         );
       const { metrics, trackedResponseCount, competitorPresence, competitorAveragePosition } = analyzeSubset(subset, topic);
+      const { data: citationCountRows, error: citationCountError } = await admin.rpc("get_scoped_citation_occurrence_counts", {
+        p_project_id: projectId,
+        p_start_date: day,
+        p_end_date: day,
+        p_topic: topic === "Overall" ? null : topic,
+        p_engines: ["chatgpt"],
+        p_tracking_location: trackingLocation,
+      });
+      if (citationCountError) throw new Error("CITATION_OCCURRENCE_AGGREGATE_FAILED: " + citationCountError.message);
+      const citationCountsByEntity = new Map<string, number>((citationCountRows ?? []).map((row: Record<string, unknown>) =>
+        [String(row.entity_id), Number(row.citation_occurrences ?? 0)]
+      ));
       const observations = (entitiesByTopic.get(topic) ?? []).map((entity) => {
         const entityMentions = Number(competitorPresence[entity.key] ?? 0);
-        const citations = citationOccurrenceRows.filter((citation) =>
-          String(citation.entity_id ?? "") === entity.id &&
-          (topic === "Overall" || String(citation.topic ?? "") === topic) &&
-          String(citation.tracking_location ?? trackingLocationsForRun[0]) === trackingLocation
-        ).length;
+        const citations = citationCountsByEntity.get(entity.id) ?? 0;
         return {
           project_id: projectId, brand_id: entity.id, topic, metric_date: day, run_id: runId,
           tracking_location: trackingLocation, llm_provider: "chatgpt",
@@ -1440,11 +1448,7 @@ Deno.serve(async (req: Request) => {
       const row = {
         project_id: projectId, metric_date: day, tracking_location: trackingLocation, topic, llm_provider: "Overall", run_id: runId,
         ...metrics,
-        citation_count: citationOccurrenceRows.filter((citation) =>
-          String(citation.entity_id ?? "") === fixedTrackedId &&
-          (topic === "Overall" || String(citation.topic ?? "") === topic) &&
-          String(citation.tracking_location ?? trackingLocationsForRun[0]) === trackingLocation
-        ).length,
+        citation_count: citationCountsByEntity.get(fixedTrackedId) ?? 0,
       };
       const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,topic,llm_provider,tracking_location" });
       if (error) throw new Error("METRICS_WRITE_FAILED for " + topic + ": " + error.message);
