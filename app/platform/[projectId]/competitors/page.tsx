@@ -245,9 +245,9 @@ export default function LeaderboardsPage() {
         ]) : [[], []] as [DirectObservation[], OwnMetric[]];
         if (cancelled) return;
         const domains = (project?.brand_domains ?? []).map((value: string) => hostFromUrl(value)).filter(Boolean);
-        // Keep the full project registry here, but exclude the tracked brand itself.
-        // The period-specific leaderboard below is derived from competitors with
-        // at least one positive presence or citation observation in each date range.
+        // Preserve registry identity and exclude the tracked brand here. The
+        // rank population is filtered later by response-backed observations
+        // that match the tracked brand's date and engine within each period.
         const filteredRegistry = registry.filter((row) => {
           const domain = row.normalized_domain || hostFromUrl(row.website);
           return domain && !domains.includes(domain) && row.brand_name.trim().toLocaleLowerCase() !== (project?.brand_name ?? "").trim().toLocaleLowerCase();
