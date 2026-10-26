@@ -1,4 +1,4 @@
-import { reduceEvidenceRows } from "./evidence-reducer.ts";
+import { reduceEvidenceRows } from "./evidence-reducer.ts";\nimport { rankAgainstEligiblePopulation } from "./rank-population.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -1333,13 +1333,9 @@ Deno.serve(async (req: Request) => {
       // exact project/topic/provider/location scope. Missing observations are
       // excluded; observed zero-presence competitors remain eligible.
       const eligibleCompetitorKeys = subset.length > 0 ? entities.slice(1).map((entity) => entity.key) : [];
-      const rankPopulationCount = subset.length > 0 ? 1 + eligibleCompetitorKeys.length : 0;
-      const visibilityRank = rankPopulationCount > 0
-        ? 1 + eligibleCompetitorKeys.filter((key) => (presenceCounts.get(key) ?? 0) > brandResponseCount).length
-        : null;
-      const shareOfVoiceRank = rankPopulationCount > 0
-        ? 1 + eligibleCompetitorKeys.filter((key) => (mentionCounts.get(key) ?? 0) > brandMentions).length
-        : null;
+      const visibilityRanking = rankAgainstEligiblePopulation(brandResponseCount, eligibleCompetitorKeys.map((key) => presenceCounts.get(key) ?? 0));
+      const shareOfVoiceRanking = rankAgainstEligiblePopulation(brandMentions, eligibleCompetitorKeys.map((key) => mentionCounts.get(key) ?? 0));
+      const rankPopulationCount = visibilityRanking.populationCount;\n      const visibilityRank = visibilityRanking.rank;\n      const shareOfVoiceRank = shareOfVoiceRanking.rank;
       const competitorAveragePositions = [...positionTotals.entries()]
         .filter(([key]) => key !== brandKey)
         .map(([key, total]) => ({ key, average: (positionSamples.get(key) ?? 0) ? total / (positionSamples.get(key) ?? 1) : null }))
