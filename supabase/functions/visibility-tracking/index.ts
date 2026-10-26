@@ -1396,7 +1396,7 @@ Deno.serve(async (req: Request) => {
           })
           .reduce((sum, citation) => sum + Number(citation.frequency ?? 0), 0);
         return {
-          project_id: projectId, brand_id: entity.id, topic, metric_date: day,
+          project_id: projectId, brand_id: entity.id, topic, metric_date: day, run_id: runId,
           tracking_location: trackingLocation, llm_provider: "chatgpt",
           presence_count: entityMentions, response_count: trackedVisibility.response_count,
           mention_count: subset.reduce((sum, result) => sum + cachedTermMatches(result, String(result.response_text ?? ""), entity.aliases).count, 0),
@@ -1411,7 +1411,7 @@ Deno.serve(async (req: Request) => {
         if (observationError) throw new Error("TOPIC_BRAND_OBSERVATION_WRITE_FAILED: " + observationError.message);
       }
       const row = {
-        project_id: projectId, metric_date: day, tracking_location: trackingLocation, topic, llm_provider: "Overall",
+        project_id: projectId, metric_date: day, tracking_location: trackingLocation, topic, llm_provider: "Overall", run_id: runId,
         ...metrics,
         citation_count: citationRows
           .filter((citation) => (topic === "Overall" || String(citation.topic ?? "") === topic) && String(citation.tracking_location ?? trackingLocationsForRun[0]) === trackingLocation)
