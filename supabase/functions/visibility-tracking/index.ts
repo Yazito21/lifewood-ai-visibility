@@ -1407,7 +1407,7 @@ Deno.serve(async (req: Request) => {
     }
 
     await startStage("observations_and_metrics", { topics: isTopicScopedRun ? topicNames : ["Overall", ...topicNames] });
-    if (mode !== "sample" && !runId) throw new Error("OBSERVATION_RUN_LINEAGE_REQUIRED: aggregate writes require a persisted tracking run.");
+    if (!runId) throw new Error("OBSERVATION_RUN_LINEAGE_REQUIRED: aggregate writes require a persisted tracking run.");
     const metricTopics = isTopicScopedRun ? topicNames : ["Overall", ...topicNames];
     for (const trackingLocation of trackingLocationsForRun) {
       for (const topic of metricTopics) {
