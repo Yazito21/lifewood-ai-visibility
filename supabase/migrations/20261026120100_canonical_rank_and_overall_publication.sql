@@ -1,6 +1,6 @@
 -- Issues 01/02/03/06/09/10: one canonical rank, one Overall calculation, one publication gate.
 --
--- * run_tracked_presence      tracked-brand numerator/denominator from raw responses + evidence
+-- * run_tracked_presence      tracked-brand numerator/denominator: valid responses whose text mentions the brand
 -- * canonical_scoped_rank     the only rank implementation (competition ranking, unrounded)
 -- * finalize_run_metrics      stamps counts/rank/population/lineage on a run's daily rows
 -- * tracking_runs guard       supersedes the prior run, finalizes metrics, blocks inconsistent publication
@@ -21,7 +21,8 @@ language sql stable security definer set search_path = public as $$
     (select count(distinct e.response_id)::integer
        from public.response_brand_evidence e
        join public.brand_registry b on b.id = e.brand_id and b.is_tracked_brand
-       join resp r on r.id = e.response_id),
+       join resp r on r.id = e.response_id
+      where e.match_source = 'response_text'),
     (select count(*)::integer from resp);
 $$;
 
