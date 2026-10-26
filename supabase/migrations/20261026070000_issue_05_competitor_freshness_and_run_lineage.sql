@@ -25,13 +25,13 @@ create or replace function public.get_published_competitor_observations(
 ) language sql stable security definer set search_path=public as $$
  with canonical_run as (
   select tr.id,tr.published_at,tr.status from public.tracking_runs tr
-  where tr.project_id=p_project_id and tr.topic=p_topic and tr.provider=p_provider
-   and tr.tracking_location=p_tracking_location and (tr.topic=p_topic or tr.topic is null) and tr.status='completed' and tr.published_at is not null
+  where tr.project_id=p_project_id and (tr.topic=p_topic or tr.topic is null) and tr.provider=p_provider
+   and tr.tracking_location=p_tracking_location and tr.status='completed' and tr.published_at is not null
    and (tr.published_at at time zone 'Asia/Kuala_Lumpur')::date=p_metric_date
   order by tr.published_at desc,tr.id desc limit 1
  ), eligible as (
-  select br.id from public.brand_registry br where br.project_id=p_project_id
-   and br.is_tracked_brand=false and br.topic=p_topic
+  select tba.brand_id as id from public.topic_brand_assignments tba where tba.project_id=p_project_id
+   and tba.topic=p_topic and tba.role='competitor' and tba.include_in_metrics=true
  ), scoped as (
   select o.* from public.topic_brand_observations o join canonical_run cr on cr.id=o.run_id
    join eligible e on e.id=o.brand_id
