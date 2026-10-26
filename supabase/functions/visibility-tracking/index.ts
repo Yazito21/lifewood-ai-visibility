@@ -1,5 +1,6 @@
 import { reduceEvidenceRows } from "./evidence-reducer.ts";
 import { rankAgainstEligiblePopulation } from "./rank-population.ts";
+import { calculateEntityVisibility } from "./visibility-score.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -1281,13 +1282,21 @@ Deno.serve(async (req: Request) => {
 
     function analyzeSubset(subset: Array<Record<string, unknown>>, topic: string) {
       const entities = [{ key: brandKey, id: brandKey, domain: "", websites: [] as string[], aliases: brandTerms, brand_name: brandName, website: "" }, ...(entitiesByTopic.get(topic) ?? [])];
-      const brandResponseCount = subset.filter((result) =>
-        cachedTermMatches(result, String(result.response_text ?? ""), brandTerms).count > 0
-      ).length;
-      const visibilityScore = subset.length ? Math.round(brandResponseCount / subset.length * 1000) / 10 : 0;
+      // The same response-presence calculator produces numerator, denominator,
+      // and score for the tracked brand and every competitor. Each call receives
+      // the identical successful response subset and applies distinct-response
+      // de-duplication before calculating its metric.
+      const visibilityByEntity = new Map(entities.map((entity) => [entity.key,
+        calculateEntityVisibility(subset, (response) =>
+          cachedTermMatches(response, String(response.response_text ?? ""), entity.aliases).count
+        ),
+      ]));
+      const trackedVisibility = visibilityByEntity.get(brandKey)!;
+      const brandResponseCount = trackedVisibility.presence_count;
+      const visibilityScore = trackedVisibility.visibility_score;
 
-      const mentionCounts = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
-      const presenceCounts = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
+      const mentionCounts = new Map<string, number>(entities.map((entity) => [entity.key, visibilityByEntity.get(entity.key)?.mention_count ?? 0]));
+      const presenceCounts = new Map<string, number>(entities.map((entity) => [entity.key, visibilityByEntity.get(entity.key)?.presence_count ?? 0]));
       const positionTotals = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
       const positionSamples = new Map<string, number>(entities.map((entity) => [entity.key, 0]));
       let totalBrandMentions = 0;
@@ -1299,9 +1308,7 @@ Deno.serve(async (req: Request) => {
         const firstPositions = new Map<string, number>();
         for (const entity of entities) {
           const matches = cachedTermMatches(result, text, entity.aliases);
-          mentionCounts.set(entity.key, (mentionCounts.get(entity.key) ?? 0) + matches.count);
           if (matches.count > 0) {
-            presenceCounts.set(entity.key, (presenceCounts.get(entity.key) ?? 0) + 1);
             firstPositions.set(entity.key, matches.firstStart ?? 0);
           }
         }
