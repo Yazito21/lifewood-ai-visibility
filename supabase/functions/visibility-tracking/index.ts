@@ -1400,6 +1400,7 @@ Deno.serve(async (req: Request) => {
           average_position: averagePosition,
           average_position_rank: averagePositionRank,
         },
+        trackedResponseCount: trackedVisibility.response_count,
         competitorPresence: Object.fromEntries([...presenceCounts.entries()].filter(([key]) => key !== brandKey)),
         competitorAveragePosition,
       };
@@ -1413,7 +1414,7 @@ Deno.serve(async (req: Request) => {
           String(r.tracking_location ?? trackingLocationsForRun[0]) === trackingLocation &&
           (topic !== "Overall" && isTopicScopedRun ? r.topic === topic : topic === "Overall" || r.topic === topic)
         );
-      const { metrics, competitorPresence, competitorAveragePosition } = analyzeSubset(subset, topic);
+      const { metrics, trackedResponseCount, competitorPresence, competitorAveragePosition } = analyzeSubset(subset, topic);
       const observations = (entitiesByTopic.get(topic) ?? []).map((entity) => {
         const entityMentions = Number(competitorPresence[entity.key] ?? 0);
         const citations = citationOccurrenceRows.filter((citation) =>
@@ -1424,7 +1425,7 @@ Deno.serve(async (req: Request) => {
         return {
           project_id: projectId, brand_id: entity.id, topic, metric_date: day, run_id: runId,
           tracking_location: trackingLocation, llm_provider: "chatgpt",
-          presence_count: entityMentions, response_count: trackedVisibility.response_count,
+          presence_count: entityMentions, response_count: trackedResponseCount,
           mention_count: subset.reduce((sum, result) => sum + cachedTermMatches(result, String(result.response_text ?? ""), entity.aliases).count, 0),
           citation_count: citations,
           average_position: competitorAveragePosition[entity.key] ?? null,
