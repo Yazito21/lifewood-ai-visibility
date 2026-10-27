@@ -210,7 +210,7 @@ begin
 
   -- Tracked-brand daily citation count for the units that were just (re)built.
   update public.visibility_daily v set citation_count = x.n
-  from (select m.unit_run, count(distinct (c.response_id, c.canonical_url))::integer as n
+  from (select m.unit_run, count(distinct c.response_id::text || '|' || c.canonical_url)::integer as n  -- NULL-safe: a unit with no tracked citations counts 0, not 1
         from _cm_tracked_missing m
         left join _cm_cit c on c.unit_run = m.unit_run and c.is_tracked
         group by m.unit_run) x
