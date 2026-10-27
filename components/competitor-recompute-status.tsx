@@ -15,7 +15,7 @@ type Job = {
 };
 
 function when(value: string | null) {
-  return value ? new Date(value).toLocaleString() : "—";
+  return value ? new Date(value).toLocaleString() : "N/A";
 }
 
 /** Shows whether historical competitor statistics are current for the saved competitor list. */
@@ -63,9 +63,9 @@ export function CompetitorRecomputeStatus({ projectId, canRequest }: { projectId
       </div>
       <p className={"mt-2 font-medium " + (job?.status === "failed" ? "text-red-700" : active ? "text-amber-700" : "text-emerald-700")}>
         {!job && "No recalculation has run for this project yet."}
-        {job?.status === "queued" && "Queued " + when(job.requested_at) + " — waiting for the next run."}
+        {job?.status === "queued" && "Queued on " + when(job.requested_at) + ". It will start with the next scheduled run."}
         {job?.status === "running" && "Recalculating since " + when(job.requested_at) + "…"}
-        {job?.status === "completed" && "Up to date — last recalculated " + when(job.completed_at) +
+        {job?.status === "completed" && "Up to date. Last recalculated on " + when(job.completed_at) +
           (job.summary?.competitors != null ? " (" + job.summary.competitors + " competitors, " + (job.summary.units_finalized ?? 0) + " topic-days)" : "") + "."}
         {job?.status === "failed" && "Last recalculation failed: " + (job.error_message ?? "unknown error") + ". Use Recalculate now to retry."}
       </p>

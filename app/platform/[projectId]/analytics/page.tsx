@@ -27,7 +27,7 @@ export default function AnalyticsPage(){
     <header className="page-heading">
       <p className="page-eyebrow">Analytics</p>
       <h1 className="page-title mt-1">Detailed analytics</h1>
-      <p className="page-description mt-2">Compare visibility, share of voice and average position by answer engine for the selected reporting period, starting 15 October 2026. Gaps indicate dates without recorded values.</p>
+      <p className="page-description mt-2">Dig into the trends behind your numbers here. Pick a period, then choose which topics and answer engines to include, and every chart below updates to show the average across your choices. Charts are grouped into mean visibility, share of voice and average position, followed by a snapshot for each engine. Tracking data starts on 15 October 2026, and a missing dot means nothing was recorded that day.</p>
     </header>
 
     <section className="mt-8 ops-filter-panel">
@@ -54,23 +54,43 @@ export default function AnalyticsPage(){
 
     {loading
       ? <div className="mt-6 grid gap-5 md:grid-cols-2">{[1,2,3,4,5,6].map(x=><div key={x} className="h-72 animate-pulse rounded-2xl bg-white"/>)}</div>
-      : <div className="mt-6 grid gap-5 md:grid-cols-2">
-          <MetricChart data={aggregate("visibility_score")} title="Mean Visibility Score" description="Arithmetic mean across the selected topics and engines." format="percent" dateRange={chartDateRange}/>
-          <MetricChart data={aggregate("visibility_rank")} title="Mean Visibility Rank" description="Arithmetic mean of the selected topic/engine ranks; compare dates using the same filters." invert dateRange={chartDateRange}/>
-          <MetricChart data={aggregate("share_of_voice_score")} title="Mean Share of Voice" description="Arithmetic mean of the daily share-of-voice values across the selected topics and engines." format="percent" dateRange={chartDateRange}/>
-          <MetricChart data={aggregate("share_of_voice_rank")} title="Mean Share of Voice Rank" description="Arithmetic mean of the selected topic/engine ranks; compare dates using the same filters." invert dateRange={chartDateRange}/>
-          <MetricChart data={aggregate("average_position")} title="Mean Average Position" description="Arithmetic mean of the selected topic/engine average positions; lower is better." invert dateRange={chartDateRange}/>
-          <MetricChart data={aggregate("average_position_rank")} title="Mean Average Position Rank" description="Arithmetic mean of the selected topic/engine ranks; compare dates using the same filters." invert dateRange={chartDateRange}/>
-        </div>
+      : <>
+          <section className="mt-8">
+            <h3 className="text-xl font-semibold tracking-tight">Mean Visibility</h3>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">How often your brand shows up in AI answers, averaged over the topics and engines you picked above. The score says how visible you are, and the rank says how you compare with competitors.</p>
+            <div className="mt-4 grid gap-5 md:grid-cols-2">
+              <MetricChart data={aggregate("visibility_score")} title="Mean Visibility Score" description="The average share of AI answers that mention your brand each day. Higher is better, so a line moving up is good news. Hover over a dot for the exact value." format="percent" dateRange={chartDateRange}/>
+              <MetricChart data={aggregate("visibility_rank")} title="Mean Visibility Rank" description="The average place your brand takes against competitors each day. Rank 1 is the best and sits at the top, so a line moving up means you are climbing." invert valueDecimals={1} dateRange={chartDateRange}/>
+            </div>
+          </section>
+
+          <section className="mt-8">
+            <h3 className="text-xl font-semibold tracking-tight">Mean Share of Voice</h3>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">How much of the conversation your brand owns compared with every brand mentioned, averaged over the topics and engines you picked above.</p>
+            <div className="mt-4 grid gap-5 md:grid-cols-2">
+              <MetricChart data={aggregate("share_of_voice_score")} title="Mean Share of Voice" description="Your slice of all brand mentions in AI answers each day. Higher means you take up more of the conversation. Hover over a dot for the exact value." format="percent" dateRange={chartDateRange}/>
+              <MetricChart data={aggregate("share_of_voice_rank")} title="Mean Share of Voice Rank" description="Where your share of voice places against competitors each day. Rank 1 is the best and sits at the top, so a line moving up is an improvement." invert valueDecimals={1} dateRange={chartDateRange}/>
+            </div>
+          </section>
+
+          <section className="mt-8">
+            <h3 className="text-xl font-semibold tracking-tight">Mean Average</h3>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">How early your brand appears inside AI answers, averaged over the topics and engines you picked above. Being mentioned near the start of an answer is better than near the end.</p>
+            <div className="mt-4 grid gap-5 md:grid-cols-2">
+              <MetricChart data={aggregate("average_position")} title="Mean Average Position" description="The average spot your brand holds in the list of brands an answer mentions. Position 1 means first, so lower is better and a line moving up is good." invert valueDecimals={1} dateRange={chartDateRange}/>
+              <MetricChart data={aggregate("average_position_rank")} title="Mean Average Position Rank" description="How your average position compares with competitors each day. Rank 1 is the best and sits at the top, so a line moving up means you are doing better." invert valueDecimals={1} dateRange={chartDateRange}/>
+            </div>
+          </section>
+        </>
     }
 
     <section className="mt-8 platform-card overflow-hidden">
       <div className="platform-card-header">
-        <h3 className="text-lg font-semibold">Answer Engine Snapshot</h3>
-        <p className="mt-1 text-sm text-[var(--muted-foreground)]">Latest overall visibility score for each selected engine, using the dedicated Overall metric.</p>
+        <h3 className="text-lg font-semibold">Visibility Analytics</h3>
+        <p className="mt-1 text-sm text-[var(--muted-foreground)]">A side by side look at how visible your brand is on each answer engine you selected. Each card shows the newest overall score for that engine and the date it was recorded.</p>
       </div>
       <div className="p-5">
-        <h3 className="text-sm font-semibold">LLM latest values</h3>
+        <h3 className="text-sm font-semibold">Latest values by engine</h3>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {LLMS.filter(l=>selectedLlms.includes(l)).map(l=>{
             const rs=rows.filter(r=>r.llm_provider===l&&r.topic==="Overall"&&r.visibility_score!=null).sort((a,b)=>b.metric_date.localeCompare(a.metric_date));
@@ -79,7 +99,7 @@ export default function AnalyticsPage(){
             const score=latest?.visibility_score;
             return <div key={l} className="rounded-xl border border-[var(--line)] bg-[var(--muted)] p-4">
               <div className="text-xs font-bold text-[#66736c]">{labels[l]}</div>
-              <div className="mt-2 text-2xl font-semibold">{score!=null?score.toFixed(1)+"%":"—"}</div>
+              <div className="mt-2 text-2xl font-semibold">{score!=null?score.toFixed(1)+"%":"N/A"}</div>
               <div className="text-xs text-[#66736c]">overall visibility score</div>
               <div className="mt-1 text-[10px] text-[#66736c]">{latestDate??"No data"}</div>
             </div>

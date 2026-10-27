@@ -135,7 +135,7 @@ export default function ProjectsPage(){
         <div>
           <p className="page-eyebrow">Workspace</p>
           <h2 className="page-title mt-1">Home</h2>
-          <p className="page-description mt-2">Your cross-project overview of AI visibility workspaces, tracked brands and daily intelligence.</p>
+          <p className="page-description mt-2">Welcome back. This page lists every brand project you can open. Pick a project card to jump into its dashboard, analytics, citations, leaderboards and more. If you manage projects, you can also create a new one from here.</p>
         </div>
         <div className="flex flex-col gap-2 sm:items-end">
           {canCreate&&<button onClick={()=>setCreating(true)} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-3 text-sm font-semibold text-[var(--primary-foreground)] transition hover:opacity-90"><Plus size={17}/> New project</button>}
