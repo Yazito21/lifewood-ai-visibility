@@ -161,7 +161,7 @@ begin
   create temp table _cm_cit on commit drop as
   select distinct r.unit_run, r.src_run, r.response_id, r.topic, r.loc, r.d, r.provider, e.brand_id,
          cu.url as citation_url, public.canonicalize_citation_url(cu.url) as canonical_url,
-         split_part(split_part(regexp_replace(public.canonicalize_citation_url(cu.url), '^https://', ''), '/', 1), ':', 1) as host
+         lower(split_part(split_part(regexp_replace(public.canonicalize_citation_url(cu.url), '^https?://', '', 'i'), '/', 1), ':', 1)) as host
   from _cm_resp r
   cross join lateral (
     select a ->> 'url' as url
@@ -170,8 +170,8 @@ begin
   join _cm_entities e on e.topic = r.topic
   where cu.url ~* '^https?://'
     and exists (select 1 from unnest(e.websites) w
-                where split_part(split_part(regexp_replace(public.canonicalize_citation_url(cu.url), '^https://', ''), '/', 1), ':', 1) = w
-                   or split_part(split_part(regexp_replace(public.canonicalize_citation_url(cu.url), '^https://', ''), '/', 1), ':', 1) like '%.' || w);
+                where lower(split_part(split_part(regexp_replace(public.canonicalize_citation_url(cu.url), '^https?://', '', 'i'), '/', 1), ':', 1)) = w
+                   or lower(split_part(split_part(regexp_replace(public.canonicalize_citation_url(cu.url), '^https?://', '', 'i'), '/', 1), ':', 1)) like '%.' || w);
 
   delete from public.citation_occurrences co
   using _cm_resp r, _cm_entities e

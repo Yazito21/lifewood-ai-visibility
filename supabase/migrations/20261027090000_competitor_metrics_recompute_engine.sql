@@ -47,29 +47,7 @@ language sql immutable as $$
   ) z
 $$;
 
--- Same normalisation as canonicalCitationUrl() in citation-occurrences.ts (tracking params removed, query sorted).
-create or replace function public.canonicalize_citation_url(u text) returns text
-language plpgsql immutable as $$
-declare
-  s text; rest text; authority text; tail text; path text; q text; kept text[];
-begin
-  s := regexp_replace(coalesce(u, ''), '#.*$', '');
-  if s !~* '^https?://' then return btrim(coalesce(u, '')); end if;
-  rest := substr(regexp_replace(s, '^https?://', '', 'i'), 1);
-  authority := split_part(split_part(rest, '/', 1), '?', 1);
-  tail := substr(rest, length(authority) + 1);
-  path := split_part(tail, '?', 1);
-  q := case when position('?' in tail) > 0 then substr(tail, position('?' in tail) + 1) end;
-  authority := regexp_replace(lower(authority), '^www[.]', '');
-  if path = '' then path := '/'; end if;
-  kept := array(
-    select p.part from unnest(string_to_array(coalesce(q, ''), '&')) with ordinality as p(part, ord)
-    where p.part <> '' and split_part(p.part, '=', 1) !~* '^(utm_|gclid$|dclid$|fbclid$|msclkid$|yclid$|_ga$|_gl$|ref$|source$|campaign$)'
-    order by split_part(p.part, '=', 1) collate "C", p.ord);
-  return regexp_replace('https://' || authority || path
-    || case when cardinality(kept) > 0 then '?' || array_to_string(kept, '&') else '' end, '/$', '');
-end;
-$$;
+-- Citation URLs are normalised with the existing public.canonicalize_citation_url(input_url) (Issue 04).
 
 -- Active competitors with the exact alias/website sets the edge function builds.
 create or replace function public.competitor_entities(p_project_id uuid)
