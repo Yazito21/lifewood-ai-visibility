@@ -18,8 +18,8 @@ declare
   v_tracked_id uuid;
   v_tracked_pattern text;
   v_tracked_sites text[];
-  c record;
-  t text;
+  fr record;
+  tn text;
   ur record;
   v_pres integer;
   v_resp integer;
@@ -62,7 +62,7 @@ begin
   limit 1;
 
   -- 1. Republish verifiable per-topic slices of older all-topic runs.
-  for c in
+  for fr in
     select distinct on (tr.d, tr.tracking_location, tr.provider) tr.*
     from (
       select r.*, (r.completed_at at time zone 'Asia/Kuala_Lumpur')::date as d
@@ -79,30 +79,30 @@ begin
           and (x.published_at at time zone 'Asia/Kuala_Lumpur')::date = tr.d)
     order by tr.d, tr.tracking_location, tr.provider, tr.completed_at desc
   loop
-    foreach t in array v_topics loop
+    foreach tn in array v_topics loop
       if exists (select 1 from public.tracking_runs x
-                 where x.source_run_id = c.id and x.topic = t and x.published_at is not null and x.superseded_at is null) then
+                 where x.source_run_id = fr.id and x.topic = tn and x.published_at is not null and x.superseded_at is null) then
         continue;
       end if;
-      select p.presence_count, p.response_count into v_pres, v_resp from public.run_tracked_presence(c.id, t) p;
+      select p.presence_count, p.response_count into v_pres, v_resp from public.run_tracked_presence(fr.id, tn) p;
       select v.visibility_score into v_score from public.visibility_daily v
-      where v.project_id = p_project_id and v.metric_date = c.d and v.topic = t
-        and v.llm_provider = 'Overall' and v.tracking_location = c.tracking_location;
+      where v.project_id = p_project_id and v.metric_date = fr.d and v.topic = tn
+        and v.llm_provider = 'Overall' and v.tracking_location = fr.tracking_location;
       if coalesce(v_resp, 0) > 0 and v_score is not null
          and abs(round(v_pres::numeric / v_resp * 100, 1) - v_score) <= 0.05 then
         insert into public.tracking_runs (
           project_id, provider, status, total_prompts, completed_prompts, failed_prompts, started_at, completed_at,
           tracking_location, topic, published_at, run_kind, source_run_id, error_message)
-        values (p_project_id, c.provider, 'completed', v_resp, v_resp, 0, c.started_at, c.completed_at,
-          c.tracking_location, t, c.completed_at, 'topic', c.id, 'Backfilled topic slice of all-topic run ' || c.id)
+        values (p_project_id, fr.provider, 'completed', v_resp, v_resp, 0, fr.started_at, fr.completed_at,
+          fr.tracking_location, tn, fr.completed_at, 'topic', fr.id, 'Backfilled topic slice of all-topic run ' || fr.id)
         returning id into v_synth;
         update public.visibility_daily set run_id = v_synth
-        where project_id = p_project_id and metric_date = c.d and topic = t
-          and tracking_location = c.tracking_location and llm_provider in ('Overall', 'chatgpt');
+        where project_id = p_project_id and metric_date = fr.d and topic = tn
+          and tracking_location = fr.tracking_location and llm_provider in ('Overall', 'chatgpt');
         v_slices := v_slices + 1;
       else
         v_skipped := v_skipped || jsonb_build_object(
-          'date', c.d, 'topic', t, 'stored_score', v_score,
+          'date', fr.d, 'topic', tn, 'stored_score', v_score,
           'recomputed', case when coalesce(v_resp, 0) > 0 then round(v_pres::numeric / v_resp * 100, 1) end);
       end if;
     end loop;
@@ -283,3 +283,6 @@ $$;
 
 revoke all on function public.recompute_competitor_metrics(uuid, date, date) from public, anon, authenticated;
 grant execute on function public.recompute_competitor_metrics(uuid, date, date) to service_role;
+
+-- Remove the validation copy used while developing the engine.
+drop function if exists public.recompute_competitor_metrics_test(uuid, date, date);
