@@ -161,10 +161,17 @@ export async function saveProjectBrandRegistry(
   const tracked = merged.get(trackedKey);
   const trackedWebsites = [...(tracked?.websites ?? new Set<string>())].filter(Boolean);
   const trackedAliases = [...(tracked?.aliases ?? new Set<string>())].filter((alias) => normaliseBrandKey(alias) !== trackedKey);
+  // Merge rather than replace: an import file that lists fewer tracked-brand aliases or domains must not
+  // silently narrow how the tracked brand is matched (that would change its historical visibility).
+  const { data: existingProject, error: existingProjectError } = await client.from("projects")
+    .select("brand_terms,brand_domains").eq("id", projectId).single();
+  if (existingProjectError) throw existingProjectError;
+  const mergedTerms = [...new Set<string>([...((existingProject?.brand_terms ?? []) as string[]), ...trackedAliases])];
+  const mergedDomains = [...new Set<string>([...((existingProject?.brand_domains ?? []) as string[]).map(normaliseWebsite), ...trackedWebsites])].filter(Boolean);
   const { error: projectError } = await client.from("projects").update({
     topics,
-    brand_domains: trackedWebsites,
-    brand_terms: trackedAliases,
+    brand_domains: mergedDomains,
+    brand_terms: mergedTerms,
   }).eq("id", projectId);
   if (projectError) throw projectError;
 }

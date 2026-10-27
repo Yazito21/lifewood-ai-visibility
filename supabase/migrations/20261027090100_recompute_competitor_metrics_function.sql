@@ -17,6 +17,7 @@ declare
   v_topics text[];
   v_tracked_id uuid;
   v_tracked_pattern text;
+  v_tracked_sites text[];
   c record;
   t text;
   ur record;
@@ -48,6 +49,14 @@ begin
            || coalesce(b.aliases, '{}') || coalesce(v_project.brand_terms, '{}')
            || coalesce(v_project.brand_domains, '{}') || coalesce(b.additional_websites, '{}'), null))
   into v_tracked_id, v_tracked_pattern
+  from public.brand_registry b
+  where b.project_id = p_project_id and b.is_tracked_brand and b.is_active
+  limit 1;
+
+  select array(select distinct public.site_host(w) from unnest(
+           coalesce(v_project.brand_domains, '{}') || array[b.primary_website] || coalesce(b.additional_websites, '{}')) w
+         where public.site_host(w) is not null)
+  into v_tracked_sites
   from public.brand_registry b
   where b.project_id = p_project_id and b.is_tracked_brand and b.is_active
   limit 1;
@@ -155,9 +164,23 @@ begin
     occurrence_count = excluded.occurrence_count;
   get diagnostics v_evidence = row_count;
 
-  -- 3c. Citation occurrences: cited URLs (url_citation annotations) attributed by domain to each competitor.
+  -- 3c. Citation occurrences: cited URLs (url_citation annotations) attributed by domain to each entity.
+  -- Competitors are rebuilt for their current set. The tracked brand is rebuilt only where it has no normalized
+  -- occurrences yet (older days), so already-correct tracked counts are left untouched.
+  create temp table _cm_cit_entities on commit drop as
+  select e.topic, e.brand_id, e.websites, false as is_tracked from _cm_entities e
+  union all
+  select t, v_tracked_id, coalesce(v_tracked_sites, '{}'), true
+  from unnest(v_topics) t where v_tracked_id is not null;
+
+  create temp table _cm_tracked_missing on commit drop as
+  select u.unit_run from _cm_units u
+  where v_tracked_id is not null and not exists (
+    select 1 from public.citation_occurrences co join _cm_resp r on r.response_id = co.response_id
+    where r.unit_run = u.unit_run and co.entity_id = v_tracked_id);
+
   create temp table _cm_cit on commit drop as
-  select distinct r.unit_run, r.src_run, r.response_id, r.topic, r.loc, r.d, r.provider, e.brand_id,
+  select distinct r.unit_run, r.src_run, r.response_id, r.topic, r.loc, r.d, r.provider, e.brand_id, e.is_tracked,
          cu.url as citation_url, public.canonicalize_citation_url(cu.url) as canonical_url,
          lower(split_part(split_part(regexp_replace(public.canonicalize_citation_url(cu.url), '^https?://', '', 'i'), '/', 1), ':', 1)) as host
   from _cm_resp r
@@ -165,8 +188,9 @@ begin
     select a ->> 'url' as url
     from jsonb_path_query(r.raw_response, '$.output[*].content[*].annotations[*] ? (@.type == "url_citation")') a
   ) cu
-  join _cm_entities e on e.topic = r.topic
+  join _cm_cit_entities e on e.topic = r.topic
   where cu.url ~* '^https?://'
+    and (not e.is_tracked or r.unit_run in (select unit_run from _cm_tracked_missing))
     and exists (select 1 from unnest(e.websites) w
                 where lower(split_part(split_part(regexp_replace(public.canonicalize_citation_url(cu.url), '^https?://', '', 'i'), '/', 1), ':', 1)) = w
                    or lower(split_part(split_part(regexp_replace(public.canonicalize_citation_url(cu.url), '^https?://', '', 'i'), '/', 1), ':', 1)) like '%.' || w);
@@ -184,6 +208,14 @@ begin
   on conflict (response_id, entity_id, canonical_url) do nothing;
   get diagnostics v_citations = row_count;
 
+  -- Tracked-brand daily citation count for the units that were just (re)built.
+  update public.visibility_daily v set citation_count = x.n
+  from (select m.unit_run, count(distinct (c.response_id, c.canonical_url))::integer as n
+        from _cm_tracked_missing m
+        left join _cm_cit c on c.unit_run = m.unit_run and c.is_tracked
+        group by m.unit_run) x
+  where v.run_id = x.unit_run and v.llm_provider in ('Overall', 'chatgpt');
+
   -- 3d. Competitor observations for every unit (zero-presence competitors included).
   insert into public.topic_brand_observations (
     project_id, brand_id, topic, metric_date, tracking_location, llm_provider,
@@ -197,7 +229,7 @@ begin
              from _cm_hits where not is_tracked group by unit_run, brand_id) h
          on h.unit_run = u.unit_run and h.brand_id = e.brand_id
   left join (select unit_run, brand_id, count(distinct (response_id, canonical_url))::integer as n
-             from _cm_cit group by unit_run, brand_id) cc
+             from _cm_cit where not is_tracked group by unit_run, brand_id) cc
          on cc.unit_run = u.unit_run and cc.brand_id = e.brand_id
   left join (select unit_run, brand_id, round(avg(rk)::numeric, 2) as avg_pos
              from (select unit_run, brand_id,
