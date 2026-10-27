@@ -18,6 +18,20 @@ begin
     raise exception 'metric integrity contract: missing publication guard trigger';
   end if;
 
+  -- Competitor-change recompute pipeline (queue, triggers, worker) must be installed.
+  if not exists (select 1 from pg_trigger where tgname = 'competitor_assignment_changed_row')
+     or not exists (select 1 from pg_trigger where tgname = 'competitor_registry_changed_row') then
+    raise exception 'metric integrity contract: missing competitor-change triggers';
+  end if;
+  if to_regclass('public.competitor_recompute_jobs') is null
+     or to_regprocedure('public.recompute_competitor_metrics(uuid,date,date)') is null then
+    raise exception 'metric integrity contract: missing recompute engine or job queue';
+  end if;
+  if exists (select 1 from public.check_metric_integrity(null, null, null) c where c.check_name = 'competitor_stats_out_of_date')
+     and not exists (select 1 from public.competitor_recompute_jobs j where j.status in ('queued', 'running')) then
+    raise exception 'metric integrity contract: competitor statistics are out of date and no recompute is queued';
+  end if;
+
   -- Rows from 2026-10-22 onward carry canonical v2 lineage; earlier rows are legacy and reported as warnings.
   select count(*), string_agg(distinct c.check_name, ', ') into errors, detail
   from public.check_metric_integrity(null, date '2026-10-22', null) c

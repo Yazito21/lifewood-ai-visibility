@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ProjectShell,UserRole } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 import { countryOptions,trackingLocationLabel } from "@/lib/tracking-locations";
+import { CompetitorRecomputeStatus } from "@/components/competitor-recompute-status";
 import { downloadBrandRegistryWorkbook, downloadBrandTemplate, normaliseWebsite, parseBrandWorkbook, saveProjectBrandRegistry, validateBrandRows, type BrandImportRow } from "@/lib/brand-registry";
 const providers=[["chatgpt","ChatGPT"],["gemini","Gemini"],["perplexity","Perplexity"],["google_ai_overview","Google AI Overview"],["claude","Claude"]] as const;
 
@@ -133,6 +134,7 @@ export default function SettingsPage(){
                   {canEdit&&<label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-xs font-semibold"><Upload size={14}/>{registryBusy?"Importing…":"Import Excel registry"}<input type="file" accept=".xlsx,.xls" disabled={registryBusy} className="sr-only" onChange={e=>{void handleRegistryFile(e.target.files?.[0]);e.currentTarget.value=""}}/></label>}
                 </div>
                 {registryStatus&&<p className={`mt-3 text-xs ${registryStatus.startsWith("Saved")?"text-emerald-700":"text-amber-700"}`}>{registryFileName?registryFileName+": ":""}{registryStatus}</p>}
+                <CompetitorRecomputeStatus projectId={projectId} canRequest={canEdit}/>
                 <div className="mt-4 overflow-x-auto"><table className="platform-table min-w-[620px]"><thead><tr className="border-b border-[var(--line)] text-left text-xs uppercase tracking-[0.1em] text-[var(--muted-foreground)]"><th className="px-3 py-2">Topic</th><th className="px-3 py-2">Brand</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Website</th></tr></thead><tbody>{registryRows.slice(0,10).map((row,i)=><tr key={row.topic+"|"+row.brand+"|"+i} className="border-b border-[var(--line)]"><td className="px-3 py-2 text-xs">{row.topic}</td><td className="px-3 py-2 text-xs font-semibold">{row.brand}</td><td className="px-3 py-2 text-xs">{row.role==="tracked_brand"?"Tracked brand":"Competitor"}</td><td className="px-3 py-2 text-xs">{row.website||"—"}</td></tr>)}</tbody></table>{registryRows.length>10&&<p className="mt-2 text-xs text-[var(--muted-foreground)]">Showing the first 10 of {registryRows.length} topic-brand assignments. Export the workbook to view or edit the full list.</p>}</div>
               </div>
               {canEdit&&<button disabled={busy} onClick={()=>void saveBrand()} className="mt-5 inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-50"><Save size={16}/>Save Domains &amp; Mention Terms</button>}
