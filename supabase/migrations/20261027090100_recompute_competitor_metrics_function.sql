@@ -170,8 +170,8 @@ begin
   create temp table _cm_cit_entities on commit drop as
   select e.topic, e.brand_id, e.websites, false as is_tracked from _cm_entities e
   union all
-  select t, v_tracked_id, coalesce(v_tracked_sites, '{}'), true
-  from unnest(v_topics) t where v_tracked_id is not null;
+  select tp.topic_name, v_tracked_id, coalesce(v_tracked_sites, '{}'), true
+  from unnest(v_topics) as tp(topic_name) where v_tracked_id is not null;
 
   create temp table _cm_tracked_missing on commit drop as
   select u.unit_run from _cm_units u
