@@ -19,7 +19,7 @@ declare
   v_tracked_pattern text;
   c record;
   t text;
-  u record;
+  ur record;
   v_pres integer;
   v_resp integer;
   v_score numeric;
@@ -34,7 +34,6 @@ declare
   v_archived integer := 0;
   v_overall integer := 0;
   v_entities integer := 0;
-  v_ok boolean;
 begin
   select * into v_project from public.projects where id = p_project_id;
   if not found then raise exception 'project % not found', p_project_id; end if;
@@ -101,8 +100,7 @@ begin
   end loop;
 
   -- 2. Units = published topic runs (real or backfilled slices) in range.
-  drop table if exists _cm_units; drop table if exists _cm_resp; drop table if exists _cm_entities;
-  drop table if exists _cm_hits; drop table if exists _cm_cit;
+  -- Temp tables are transaction-scoped; process one project per transaction.
   create temp table _cm_units on commit drop as
   select tr.id as unit_run, coalesce(tr.source_run_id, tr.id) as src_run, tr.topic, tr.tracking_location as loc,
          tr.provider, (tr.published_at at time zone 'Asia/Kuala_Lumpur')::date as d
@@ -227,18 +225,18 @@ begin
     and not exists (select 1 from _cm_entities e where e.topic = o.topic and e.brand_id = o.brand_id);
 
   -- 4. Rank + population via the canonical implementation; a unit whose tracked score no longer reproduces is reported.
-  for u in select * from _cm_units order by d, topic loop
+  for ur in select * from _cm_units order by d, topic loop
     begin
-      perform public.finalize_run_metrics(u.unit_run);
+      perform public.finalize_run_metrics(ur.unit_run);
       v_units := v_units + 1;
     exception when others then
-      v_blocked := v_blocked || jsonb_build_object('date', u.d, 'topic', u.topic, 'reason', sqlerrm);
+      v_blocked := v_blocked || jsonb_build_object('date', ur.d, 'topic', ur.topic, 'reason', sqlerrm);
     end;
   end loop;
 
   -- 5. Overall pools the topic runs of each day.
-  for u in select distinct d, loc, provider from _cm_units order by d loop
-    if public.publish_overall_metrics(p_project_id, u.d, u.loc, u.provider) is not null then
+  for ur in select distinct d, loc, provider from _cm_units order by d loop
+    if public.publish_overall_metrics(p_project_id, ur.d, ur.loc, ur.provider) is not null then
       v_overall := v_overall + 1;
     end if;
   end loop;
