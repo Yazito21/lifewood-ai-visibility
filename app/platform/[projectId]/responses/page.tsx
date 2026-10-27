@@ -179,12 +179,12 @@ export default function ResponsesPage() {
         <header>
           <p className="page-eyebrow">Tracking data</p>
           <h1 className="page-title mt-1">Responses</h1>
-          <p className="page-description mt-2">Browse the full AI answers captured by tracking runs, inspect the raw provider payload, and export responses for a selected period.</p>
+          <p className="page-description mt-2">Read the actual answers the AI engines gave during tracking runs. Pick a date range, topics and engines in the filter box, then press Show responses. Use the search bar to find a prompt or a phrase, open any answer to read it in full, and press Export Excel to download what you see.</p>
         </header>
 
 
         <section className="ops-card p-5 sm:p-6">
-          <h2 className="mb-4 text-sm font-semibold">Filter responses</h2>
+          <h2 className="text-sm font-semibold">Filter responses</h2><p className="mb-4 mt-1 text-xs text-[var(--muted-foreground)]">Choose which dates, topics and engines to load, then press Show responses.</p>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="text-xs font-semibold text-[var(--muted-foreground)]">Start date
               <input type="date" value={fromDate} min="2026-10-15" max={toDate || today} onChange={(e) => setFromDate(e.target.value)} className="platform-input mt-2 text-sm"/>
@@ -204,12 +204,13 @@ export default function ResponsesPage() {
         </section>
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--muted-foreground)]">
           <span>{searched ? `${grouped.length} prompts · ${filtered.length} responses` : "Choose filters to view responses"}</span>
-          {searched && <div className="flex gap-2"><input value={search} onChange={(e) => {setSearch(e.target.value);setPage(1)}} placeholder="Search prompts or responses…" className="platform-input text-sm"/><button type="button" onClick={exportExcel} disabled={!filtered.length} className="platform-btn h-10 gap-2"><Download size={15}/> Export Excel</button></div>}
+          {searched && <div className="flex w-full gap-2 sm:w-auto sm:min-w-[34rem]"><input value={search} onChange={(e) => {setSearch(e.target.value);setPage(1)}} placeholder="Search prompts or responses…" className="platform-input min-w-0 flex-1 text-sm"/><button type="button" onClick={exportExcel} disabled={!filtered.length} className="platform-btn h-10 shrink-0 gap-2 whitespace-nowrap px-6"><Download size={15}/> Export Excel</button></div>}
         </div>
 
         {error && <div role="alert" className="platform-notice-error rounded-xl px-4 py-3 text-sm">{error}</div>}
 
         <section className="ops-card overflow-hidden">
+          {searched && <div className="border-b border-[var(--border)] px-5 py-4"><h2 className="text-sm font-semibold">Results</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Answers are grouped by prompt. Click a prompt to open it and read the answer from each engine.</p></div>}
           {loading ? <div className="space-y-3 p-5">{[0,1,2,3,4].map((n) => <div key={n} className="h-16 animate-pulse rounded-lg bg-[var(--soft)]"/>)}</div> :
             !searched ? <div className="px-6 py-16 text-center"><FileText size={28} className="mx-auto text-[var(--muted-foreground)]"/><h2 className="mt-3 font-semibold">Choose filters to get started</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Select a date range, topics, and AI engines to view responses.</p></div> : !visible.length ? <div className="px-6 py-16 text-center">
               <FileText size={28} className="mx-auto text-[var(--muted-foreground)]"/>

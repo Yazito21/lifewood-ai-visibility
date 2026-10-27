@@ -27,6 +27,7 @@ export function MetricChart({
   invert = false,
   tone = "default",
   dateRange,
+  valueDecimals,
 }: {
   data: ChartPoint[];
   title: string;
@@ -36,6 +37,8 @@ export function MetricChart({
   invert?: boolean;
   tone?: "default" | "overall";
   dateRange?: { start: string; end: string };
+  /** Decimal places for hover values on rank/position charts (axis ticks stay whole numbers). */
+  valueDecimals?: number;
 }) {
   const [activeDate, setActiveDate] = useState<string | null>(null);
   const chartDescription = description ?? (format === "percent"
@@ -57,14 +60,17 @@ export function MetricChart({
   const axisDates = start && end ? datesBetween(start, end) : observedDates;
   const allPoints = axisDates.map((date) => ({ label: date, value: valueByDate.get(date) ?? null }));
   const valid = allPoints.filter((point): point is { label: string; value: number } => point.value !== null && Number.isFinite(point.value));
-  const display = (value: number) => invert ? String(Math.round(value)) : format === "percent" ? value.toFixed(1) + "%" : Number.isInteger(value) ? String(value) : value.toFixed(1);
+  const display = (value: number) => invert ? (valueDecimals === undefined ? String(Math.round(value)) : value.toFixed(valueDecimals)) : format === "percent" ? value.toFixed(1) + "%" : Number.isInteger(value) ? String(value) : value.toFixed(1);
   const cardClass = "platform-card min-w-0 p-5 sm:p-6 " + (tone === "overall" ? "platform-card-overall" : "");
   if (!valid.length) return <div className={cardClass + " min-h-[19rem]"}><h4 className="text-base font-semibold">{title}</h4>{chartDescription && <p className="mt-1 text-base leading-relaxed text-[var(--muted-foreground)]">{chartDescription}</p>}<div className="flex min-h-[13rem] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">No recorded values for this period. A new tracking run may be needed to populate this metric.</div></div>;
 
   const rawMax = Math.max(0, ...valid.map((point) => point.value));
   // Rank axes use whole-number ranks starting at 1 (best) at the top.
   const rankMax = Math.max(2, Math.ceil(rawMax));
-  const max = rawMax > 0 ? rawMax * 1.08 : 1;
+  // Score charts use a fixed scale: labelled every 5.0% with a lighter gridline every 2.5%.
+  const fixedPercent = format === "percent" && !invert;
+  const percentTop = Math.max(5, Math.ceil(rawMax / 5) * 5);
+  const max = fixedPercent ? percentTop : rawMax > 0 ? rawMax * 1.08 : 1;
   // 16:9 chart canvas with room for larger x-axis labels and title.
   const w = 1440, h = 810, left = 160, right = 48, top = 58, bottom = 150;
   const plotW = w - left - right, plotH = h - top - bottom;
@@ -89,7 +95,10 @@ export function MetricChart({
   const yAxisTitle = format === "percent" ? (title.toLowerCase().includes("share of voice") ? "Share of voice (%)" : "Visibility (%)") : /position/i.test(title) ? "Average position" : /rank/i.test(title) ? "Rank" : "Value";
   const tickValues = invert
     ? Array.from({ length: rankMax }, (_, i) => i + 1)
-    : Array.from({ length: 5 }, (_, i) => max - (max * i) / 4);
+    : fixedPercent
+      ? Array.from({ length: percentTop / 2.5 + 1 }, (_, i) => percentTop - i * 2.5)
+      : Array.from({ length: 5 }, (_, i) => max - (max * i) / 4);
+  const showMinorLabels = percentTop <= 30;
   const tickStep = axisDates.length <= 14 ? 1 : axisDates.length <= 31 ? 2 : axisDates.length <= 90 ? 7 : Math.ceil(axisDates.length / 10);
   const tickIndexes = axisDates.map((_, index) => index).filter((index) =>
     index === 0 || index === axisDates.length - 1 || index % tickStep === 0
@@ -101,10 +110,12 @@ export function MetricChart({
     <div className="mb-4"><h4 className="text-lg font-semibold">{title}</h4>{chartDescription && <p className="mt-1 text-base leading-relaxed text-[var(--muted-foreground)]">{chartDescription}</p>}</div>
     <svg viewBox={"0 0 " + w + " " + h} className="block h-auto w-full overflow-visible" role="img" aria-label={title}>
       {tickValues.map((value, i) => {
-        const y = invert ? top + ((value - 1) / (rankMax - 1)) * plotH : top + (i / 4) * plotH;
+        const y = invert ? top + ((value - 1) / (rankMax - 1)) * plotH : fixedPercent ? top + (1 - value / max) * plotH : top + (i / 4) * plotH;
+        const minor = fixedPercent && value % 5 !== 0;
+        const label = invert ? String(Math.round(value)) : display(value);
         return <g key={i}>
-          <line x1={left} y1={y} x2={w - right} y2={y} stroke="var(--muted-foreground)" strokeOpacity="0.18" strokeDasharray="4 6" strokeWidth="1.5" />
-          <text x={left - 14} y={y + 5} textAnchor="end" fontSize="24" fontWeight="600" fill="var(--muted-foreground)">{display(value)}</text>
+          <line x1={left} y1={y} x2={w - right} y2={y} stroke="var(--muted-foreground)" strokeOpacity={minor ? 0.1 : 0.18} strokeDasharray="4 6" strokeWidth={minor ? 1 : 1.5} />
+          {(!minor || showMinorLabels) && <text x={left - 14} y={y + (minor ? 4 : 5)} textAnchor="end" fontSize={minor ? 18 : 24} fontWeight={minor ? 500 : 600} fill="var(--muted-foreground)" fillOpacity={minor ? 0.75 : 1}>{label}</text>}
         </g>;
       })}
       {tickIndexes.map((index) => {

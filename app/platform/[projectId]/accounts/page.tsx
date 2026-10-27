@@ -121,7 +121,7 @@ export default function AccountsPage() {
           <p className="page-eyebrow">Accounts Management</p>
           <h2 className="page-title mt-1">{isSuperadmin ? "All platform accounts" : "Project users"}</h2>
           <p className="page-description mt-2">
-            {isSuperadmin ? "Manage all registered accounts, roles and project assignments." : "Manage accounts assigned to the projects where you are an Admin."}
+            {isSuperadmin ? "See everyone who has an account on the platform, what role each person has and which projects they can open. Use Refresh to reload the list, and the buttons in each row to edit or manage an account." : "See the people who can open the projects you manage and what role each of them has. Use Refresh to reload the list, and the buttons in each row to edit or manage an account."}
           </p>
         </div>
         <div className="flex gap-2">
@@ -138,7 +138,7 @@ export default function AccountsPage() {
       {error && <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
       <section className="mt-8 platform-card p-5">
-        <div className="mb-4 flex items-center gap-2 text-sm text-[var(--muted-foreground)]"><UsersRound size={16}/>{users.length} account{users.length === 1 ? "" : "s"}</div>
+        <div className="mb-4"><h3 className="text-lg font-semibold">Accounts</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Each row is one person, with their email, role and assigned projects.</p><div className="mt-2 flex items-center gap-2 text-sm text-[var(--muted-foreground)]"><UsersRound size={16}/>{users.length} account{users.length === 1 ? "" : "s"}</div></div>
         <div className="overflow-x-auto">
           <table className="platform-table min-w-[1100px]">
             <thead><tr className="border-b border-[var(--line)] text-xs uppercase tracking-[0.12em] text-[#66736c]">
@@ -151,10 +151,10 @@ export default function AccountsPage() {
                 const canEditUser = isSuperadmin || (!protectedAccount && user.projects.some(p => manageableProjectIds.includes(p.id)));
                 return <tr key={user.id} className="border-b border-[var(--line)] align-top">
                   <td className="px-3 py-4 font-semibold">{user.full_name || "Unnamed user"}{user.is_permanent && <span className="ml-2 rounded-full bg-[var(--soft)] px-2 py-0.5 text-[10px] font-semibold">Permanent</span>}</td>
-                  <td className="px-3 py-4 text-[var(--muted-foreground)]">{user.email || "—"}</td>
+                  <td className="px-3 py-4 text-[var(--muted-foreground)]">{user.email || "N/A"}</td>
                   <td className="px-3 py-4"><span className="inline-flex items-center gap-1.5 text-xs text-[var(--muted-foreground)]"><KeyRound size={13}/>Password protected</span><p className="mt-1 text-[11px] text-[var(--muted-foreground)]">Reset by authorised editor</p></td>
                   <td className="px-3 py-4"><span className="inline-flex items-center gap-1 rounded-full bg-[var(--soft)] px-2.5 py-1 text-xs font-semibold capitalize text-[var(--green)]"><ShieldCheck size={13}/>{user.role}</span></td>
-                  <td className="max-w-[340px] px-3 py-4"><div className="flex flex-wrap gap-1.5">{user.projects.filter(p => isSuperadmin || manageableProjectIds.includes(p.id)).map(p => <span key={p.id} title={p.role} className="rounded-lg border border-[var(--line)] px-2 py-1 text-xs">{p.name}</span>)}{user.projects.filter(p => isSuperadmin || manageableProjectIds.includes(p.id)).length === 0 && <span className="text-[var(--muted-foreground)]">—</span>}</div></td>
+                  <td className="max-w-[340px] px-3 py-4"><div className="flex flex-wrap gap-1.5">{user.projects.filter(p => isSuperadmin || manageableProjectIds.includes(p.id)).map(p => <span key={p.id} title={p.role} className="rounded-lg border border-[var(--line)] px-2 py-1 text-xs">{p.name}</span>)}{user.projects.filter(p => isSuperadmin || manageableProjectIds.includes(p.id)).length === 0 && <span className="text-[var(--muted-foreground)]">N/A</span>}</div></td>
                   <td className="px-3 py-4"><div className="flex flex-wrap gap-2">
                     {canEditUser && <button onClick={() => startEdit(user)} className="inline-flex items-center justify-center rounded-md border border-[var(--line)] px-2.5 py-1.5 text-xs font-semibold leading-4" style={{ borderRadius: "6px", padding: "6px 10px", fontSize: "12px", lineHeight: "16px", fontWeight: 600, borderColor: "var(--line)", color: "var(--foreground)", backgroundColor: "transparent" }}>Edit</button>}
                     {!isSuperadmin && canEditUser && !protectedAccount && <button disabled={busy} onClick={() => void removeAccess(user)} className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs font-semibold disabled:opacity-50">Remove access</button>}

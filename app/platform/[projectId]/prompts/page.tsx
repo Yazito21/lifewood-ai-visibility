@@ -148,7 +148,7 @@ export default function PromptsPage() {
 
   return <ProjectShell><div className="ops-page">
     <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-      <div><p className="page-eyebrow">Prompts</p><h2 className="page-title mt-1">Prompt library</h2><p className="page-description mt-2">Manage the 100 prompts used for daily AI visibility collection.</p></div>
+      <div><p className="page-eyebrow">Prompts</p><h2 className="page-title mt-1">Prompt library</h2><p className="page-description mt-2">These are the questions we ask the AI answer engines every day to see whether your brand shows up. Search or filter to find a prompt, and tick the boxes to pick several at once. If you have edit access, you can add new prompts or delete the ones you picked, up to a total of 100.</p></div>
       {canEdit && <div className="flex flex-wrap gap-2">
         <button onClick={template} className="inline-flex items-center gap-2 platform-btn px-4 py-3 text-sm font-semibold"><Download size={16}/> Template</button>
         <label className={"inline-flex items-center gap-2 platform-btn px-4 py-3 text-sm font-semibold " + (busy ? "pointer-events-none opacity-50" : "cursor-pointer")}><Upload size={16}/> Bulk upload<input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={busy} onChange={upload}/></label>
@@ -164,7 +164,7 @@ export default function PromptsPage() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h3 className="text-lg font-semibold">All prompts <span className="ml-2 rounded-full bg-[var(--soft)] px-2.5 py-1 text-sm font-semibold text-[var(--green)]">{prompts.length} / 100</span></h3>
-          <p className="mt-1 text-sm text-[#66736c]">{filtered.length} matching {filtered.length === 1 ? "prompt" : "prompts"}{canEdit ? " · Select prompts to delete them in bulk." : ""}</p>
+          <p className="mt-1 text-sm text-[#66736c]">The full list of prompts used in tracking. {filtered.length} matching {filtered.length === 1 ? "prompt" : "prompts"}{canEdit ? " · Select prompts to delete them in bulk." : ""}</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <label className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 focus-within:border-[var(--green)]">
@@ -202,9 +202,9 @@ export default function PromptsPage() {
                 <td className="max-w-[420px] whitespace-normal px-3 py-3">{prompt.prompt}</td>
                 <td className="px-3 py-3"><span className="rounded-full bg-[var(--soft)] px-2.5 py-1 text-xs font-semibold text-[var(--green)]">{prompt.topic}</span></td>
                 <td className="px-3 py-3">{prompt.language}</td>
-                <td className="px-3 py-3 font-semibold">{metric?.visibility_rank ?? "—"}</td>
-                <td className="px-3 py-3 font-semibold">{metric?.share_of_voice_rank ?? "—"}</td>
-                <td className="px-3 py-3 font-semibold">{metric?.average_position_rank ?? "—"}</td>
+                <td className="px-3 py-3 font-semibold">{metric?.visibility_rank ?? "N/A"}</td>
+                <td className="px-3 py-3 font-semibold">{metric?.share_of_voice_rank ?? "N/A"}</td>
+                <td className="px-3 py-3 font-semibold">{metric?.average_position_rank ?? "N/A"}</td>
                 {canEdit && <td className="px-3 py-3"><button onClick={() => setDeleteIds([prompt.id])} aria-label={"Delete prompt " + prompt.prompt_number} className="rounded-lg p-2 text-[#a13f35] hover:bg-red-50"><Trash2 size={16}/></button></td>}
               </tr>;
             })}

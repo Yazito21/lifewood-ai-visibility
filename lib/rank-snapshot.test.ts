@@ -54,7 +54,7 @@ test("an unverified row still shows its rank (matching the chart) with a note, n
 test("no eligible competitors yields an explicit unavailable state, not rank 1/1", () => {
   const row: DailyMetric = { metric_date: "2026-10-26", topic: "Skin", visibility_score: 10, visibility_rank: null, rank_population_count: 0, rank_population_status: "no_eligible_observations" };
   const display = rankDisplay(row);
-  strictEqual(display.text, "—");
+  strictEqual(display.text, "N/A");
   strictEqual(display.note, "No eligible competitor observations");
 });
 

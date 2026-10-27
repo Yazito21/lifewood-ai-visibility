@@ -14,7 +14,7 @@ type ThirdPartyRow = { hostname:string; website_name:string|null; frequency:numb
 const LLMS = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "claude"];
 const labels: Record<string, string> = { chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity", google_ai_overview: "Google AI Overview", claude: "Claude" };
 
-function CitationTable({ title, data }: { title: string; data: AggregatedRow[] }) {
+function CitationTable({ title, description, data }: { title: string; description: string; data: AggregatedRow[] }) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState(false);
   const filteredData = useMemo(() => {
@@ -31,7 +31,7 @@ function CitationTable({ title, data }: { title: string; data: AggregatedRow[] }
   return (
     <section className="platform-card p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-lg font-semibold">{title}</h3>
+        <div><h3 className="text-lg font-semibold">{title}</h3><p className="mt-1 max-w-3xl text-sm text-[#66736c]">{description}</p></div>
         <span className="text-sm text-[#66736c]">{filteredData.length.toLocaleString()} {filteredData.length === 1 ? "page" : "pages"}</span>
       </div>
       <label className="mt-4 flex w-full max-w-xl items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 focus-within:border-[var(--green)]">
@@ -54,8 +54,8 @@ function CitationTable({ title, data }: { title: string; data: AggregatedRow[] }
             {visibleData.map((row, index) => <tr key={row.url} className="border-b border-[#eef0ee]">
               <td className="px-3 py-3">{index + 1}</td>
               <td className="max-w-[380px] px-3 py-3"><a href={row.url} target="_blank" rel="noreferrer" title={row.url} className="inline-flex max-w-[360px] items-center gap-1 truncate font-semibold text-[var(--green)] hover:underline">{row.url}<ExternalLink size={13} className="shrink-0" /></a></td>
-              <td className="px-3 py-3">{row.page_name || "—"}</td>
-              <td className="px-3 py-3">{brandDisplayName(row.brand_name, row.url) || "—"}</td>
+              <td className="px-3 py-3">{row.page_name || "N/A"}</td>
+              <td className="px-3 py-3">{brandDisplayName(row.brand_name, row.url) || "N/A"}</td>
               <td className="px-3 py-3 font-semibold">{row.frequency}</td>
             </tr>)}
             {!visibleData.length && <tr><td colSpan={5} className="px-3 py-10 text-center text-sm text-[#66736c]">{query.trim() ? "No pages match your search." : "No citations found."}</td></tr>}
@@ -78,7 +78,7 @@ function ThirdPartyMentionsTable({ data }: { data: ThirdPartyRow[] }) {
   const filtered=useMemo(()=>{const q=query.trim().toLocaleLowerCase();return q?data.filter(row=>[row.hostname,row.website_name??"",...(row.source_types??[])].some(v=>v.toLocaleLowerCase().includes(q))):data},[data,query]);
   const visible=expanded?filtered:filtered.slice(0,10);
   return <section className="platform-card p-6">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Third-party Mentions</h3><p className="mt-1 max-w-3xl text-sm text-[#66736c]">External websites that appear in citation annotations, research-source metadata or URLs in AI responses. Official tracked-brand and configured-brand domains are excluded. Mention evidence is not necessarily an endorsement.</p></div><span className="text-sm text-[#66736c]">{filtered.length.toLocaleString()} {filtered.length===1?"website":"websites"}</span></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold">Third-party Mentions</h3><p className="mt-1 max-w-3xl text-sm text-[#66736c]">Outside websites that show up in AI answers, either as sources or as links in the text. Your own brand and configured brand domains are left out. A mention does not always mean the engine endorses the site.</p></div><span className="text-sm text-[#66736c]">{filtered.length.toLocaleString()} {filtered.length===1?"website":"websites"}</span></div>
     <label className="mt-4 flex w-full max-w-xl items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 focus-within:border-[var(--green)]"><Search size={16} className="shrink-0 text-[#66736c]" aria-hidden="true"/><input type="search" value={query} onChange={e=>{setQuery(e.target.value);setExpanded(false)}} placeholder="Search website or source type…" aria-label="Search third-party mentions" className="w-full bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[#87918b]"/></label>
     <div className="mt-4 overflow-x-auto"><table className="platform-table min-w-[860px]"><thead><tr className="border-b border-[var(--line)] text-left text-xs uppercase tracking-[0.12em] text-[#66736c]"><th className="px-3 py-3">No.</th><th className="px-3 py-3">Website</th><th className="px-3 py-3">URL Frequency</th><th className="px-3 py-3">AI Responses</th><th className="px-3 py-3">Brands Featured</th><th className="px-3 py-3">Source Types</th></tr></thead><tbody>
       {visible.map((row,index)=><tr key={row.hostname} className="border-b border-[#eef0ee]"><td className="px-3 py-3">{index+1}</td><td className="px-3 py-3"><a href={row.example_url||"https://"+row.hostname} target="_blank" rel="noreferrer" title={row.hostname} className="inline-flex items-center gap-1 font-semibold text-[var(--green)] hover:underline">{row.website_name||row.hostname}<ExternalLink size={13}/></a><span className="mt-1 block text-xs text-[#66736c]">{row.hostname}</span></td><td className="px-3 py-3 font-semibold">{Number(row.frequency||0).toLocaleString()}</td><td className="px-3 py-3">{Number(row.response_frequency||0).toLocaleString()}</td><td className="px-3 py-3">{Number(row.brand_coverage||0).toLocaleString()}</td><td className="px-3 py-3"><div className="flex max-w-[250px] flex-wrap gap-1">{(row.source_types||[]).map(type=><span key={type} className="rounded-full border border-[var(--line)] px-2 py-1 text-[10px]">{type==="citation_annotation"?"Cited":type==="research_source"?"Research source":"URL in answer"}</span>)}</div></td></tr>)}
@@ -174,7 +174,7 @@ export default function CitationsPage() {
   return <ProjectShell><div className="ops-page">
     <p className="page-eyebrow">Citations</p>
     <h2 className="page-title mt-1">Citation intelligence</h2>
-    <p className="page-description mt-2">Cumulative cited-page frequency for the selected reporting dataset.</p>
+    <p className="page-description mt-2">See which web pages AI answer engines point to when they answer your tracked prompts. Choose a period with the buttons, then browse the tables below, which list pages from your brand, every cited page, and outside websites that were mentioned. Each table has a search box, and you can expand it to see every row.</p>
     <div className="mt-8 ops-filter-panel">
       <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{REPORTING_PERIODS.map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} min={MIN_TRACKING_DATE} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || MIN_TRACKING_DATE} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
       </div>
@@ -183,8 +183,8 @@ export default function CitationsPage() {
     </div>
     {error && <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
     <div className="mt-6 space-y-5">{loading ? <div className="h-80 animate-pulse platform-card" /> : <>
-      <CitationTable title="Brand-related Pages" data={brandPages} />
-      <CitationTable title="All Cited Pages" data={allPages} />
+      <CitationTable title="Brand-related Pages" description="Pages from your own website, and from the brands you track, that AI engines cited. Type in the search box to find a page, and use the button below the table to see more rows." data={brandPages} />
+      <CitationTable title="All Cited Pages" description="Every page the AI engines linked to as a source, whether it belongs to your brand or not. The most cited pages come first. Search to narrow the list or expand it to see the rest." data={allPages} />
       <ThirdPartyMentionsTable data={thirdPartyRows} />
     </>}</div>
   </div></ProjectShell>;

@@ -19,7 +19,7 @@ export type RankDisplay = {
   rank: number | null;
   /** Rank population from the same row; null when unverified or unavailable. */
   population: number | null;
-  /** "7/100", "7" (population unverified) or "—". */
+  /** "7/100", "7" (population unverified) or "N/A". */
   text: string;
   /** Short explanation shown beneath the rank when it is not fully verified. */
   note: string | null;
@@ -46,12 +46,12 @@ export function latestSnapshots(metrics: DailyMetric[], topics: string[]): Map<s
 
 /** The same row the chart plots for that date, formatted for a card. */
 export function rankDisplay(row: DailyMetric | undefined): RankDisplay {
-  if (!row) return { rank: null, population: null, text: "—", note: null };
+  if (!row) return { rank: null, population: null, text: "N/A", note: null };
   if (row.visibility_rank === null) {
     return {
       rank: null,
       population: null,
-      text: "—",
+      text: "N/A",
       note: row.rank_population_status === "no_eligible_observations" ? "No eligible competitor observations" : null,
     };
   }
