@@ -32,6 +32,20 @@ begin
     raise exception 'metric integrity contract: competitor statistics are out of date and no recompute is queued';
   end if;
 
+  -- The tracking edge function runs as service_role and must be able to write every table it persists to.
+  -- (A missing grant on citation_occurrences made every tracking run fail at the cleanup step.)
+  select string_agg(t, ', ') into detail
+  from unnest(array['ai_responses', 'citation_occurrences', 'citations', 'competitors', 'direct_competitor_observations',
+                    'response_brand_evidence', 'third_party_mentions', 'topic_brand_observations', 'visibility_daily',
+                    'tracking_runs', 'tracking_run_stages', 'tracking_batches', 'tracking_batch_topics']) t
+  where not (has_table_privilege('service_role', 'public.' || t, 'SELECT')
+         and has_table_privilege('service_role', 'public.' || t, 'INSERT')
+         and has_table_privilege('service_role', 'public.' || t, 'UPDATE')
+         and has_table_privilege('service_role', 'public.' || t, 'DELETE'));
+  if detail is not null then
+    raise exception 'metric integrity contract: service_role lacks DML privileges on: %', detail;
+  end if;
+
   -- Rows from 2026-10-22 onward carry canonical v2 lineage; earlier rows are legacy and reported as warnings.
   select count(*), string_agg(distinct c.check_name, ', ') into errors, detail
   from public.check_metric_integrity(null, date '2026-10-22', null) c
