@@ -18,6 +18,12 @@ test("rank axis uses whole ranks with 1 at the top", () => {
   strictEqual(b.min, 1); strictEqual(b.max, 8); strictEqual(b.major, 1);
 });
 
+test("rank axis is labelled every 5 ranks once it passes 25", () => {
+  const b = valueAxisBounds("rank", [3, 52]);
+  strictEqual(b.major, 5); strictEqual(b.max, 55); strictEqual(b.min, 0);
+  strictEqual(valueAxisBounds("rank", [3, 25]).major, 1);
+});
+
 test("meanByDate averages per date and skips nulls", () => {
   const out = meanByDate([{ metric_date: "2026-10-28", v: 2 as number | null }, { metric_date: "2026-10-28", v: 4 }, { metric_date: "2026-10-29", v: null }], "v");
   strictEqual(out.length, 1); strictEqual(out[0].value, 3);

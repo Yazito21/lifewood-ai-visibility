@@ -401,7 +401,10 @@ export function valueAxisBounds(kind: SeriesKind, values: Array<number | null>) 
   const valid = values.filter((v): v is number => v !== null && Number.isFinite(v));
   const rawMax = valid.length ? Math.max(...valid) : 0;
   if (kind === "score") return { min: 0, max: Math.max(5, Math.ceil(rawMax / 5) * 5), major: 5, minor: 2.5 };
-  return { min: 1, max: Math.max(2, Math.ceil(rawMax)), major: 1, minor: 0 };
+  const rankMax = Math.max(2, Math.ceil(rawMax));
+  // Above 25 the axis is labelled every 5 ranks (Excel counts from the axis minimum, so it starts at 0 there).
+  if (rankMax > 25) return { min: 0, max: Math.ceil(rankMax / 5) * 5, major: 5, minor: 0 };
+  return { min: 1, max: rankMax, major: 1, minor: 0 };
 }
 
 export function lineChartXml(spec: ChartSpec) {
