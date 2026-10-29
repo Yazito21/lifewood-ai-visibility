@@ -43,3 +43,14 @@ test("leaderboard workbook lists every entry with rank change", async () => {
   const strings = await zip.file("xl/sharedStrings.xml")!.async("string");
   ok(strings.includes("Brand 3") && strings.includes("(your brand)") && strings.includes("New"));
 });
+
+test("dashboard cards compare the latest day with the first day of the period", async () => {
+  const metrics = [metric("Skin", "2026-10-16", 5, 9), metric("Skin", "2026-10-27", 8, 6), metric("Skin", "2026-10-29", 11.8, 4)];
+  const { buffer } = await buildDashboardReport({ ...ctx, period: "Last 14 Days", start: "2026-10-16", end: "2026-10-29", topics: ["Skin"], metrics, citationsByTopic: {} });
+  const zip = await JSZip.loadAsync(buffer);
+  const strings = await zip.file("xl/sharedStrings.xml")!.async("string");
+  ok(strings.includes("2026-10-16") && strings.includes("Previous Score Date") && strings.includes("Score Change"));
+  const sheet = await zip.file("xl/worksheets/sheet1.xml")!.async("string");
+  ok(sheet.includes("<v>5</v>"), "rank change of 5 positions (9 to 4)");
+  ok(sheet.includes("<v>6.8</v>"), "score change of 6.8 points (5.0 to 11.8)");
+});

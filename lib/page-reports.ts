@@ -51,12 +51,12 @@ export function meanByDate<T extends { metric_date: string }>(rows: T[], key: ke
   return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, values]) => ({ label: date, value: values.reduce((a, b) => a + b, 0) / values.length }));
 }
 
-function colorRankChange(sheet: SheetWriter, rows: number[], col: number, values: Array<number | null>) {
+function colorChange(sheet: SheetWriter, rows: number[], col: number, values: Array<number | null>, numFmt = '"▲ "0;"▼ "0;"No change"') {
   rows.forEach((row, i) => {
     const v = values[i];
     const cell = sheet.ws.getCell(row, col);
     if (v === null || v === undefined) return;
-    cell.numFmt = '"▲ "0;"▼ "0;"No change"';
+    cell.numFmt = numFmt;
     cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FF" + (v > 0 ? THEME.good : v < 0 ? THEME.bad : THEME.muted) } };
   });
 }
@@ -77,7 +77,7 @@ export async function buildDashboardReport(input: DashboardReportInput) {
   const snapshots = latestSnapshots(input.metrics, topics);
 
   // Overview + rank cards
-  const overview = report.addSheet("Overview", [24, 18, 12, 16, 16, 18, 16, 16, 34]);
+  const overview = report.addSheet("Overview", [24, 18, 10, 14, 14, 14, 18, 16, 14, 14, 18, 14, 34]);
   overview.banner("Dashboard Report", subtitle(input));
   overview.keyValues([
     ...commonFilters(input),
@@ -85,30 +85,42 @@ export async function buildDashboardReport(input: DashboardReportInput) {
     ["Topics", topics.length ? topics.join(", ") : "None"],
     ["Generated", generatedText(input.generatedAt)],
   ]);
-  overview.section("Visibility rank cards", "The latest rank, score and movement for each topic in the selected period, exactly as the cards on the Dashboard show them. Rank 1 is the best position, and a positive rank change means the brand moved up.");
+  overview.section("Visibility rank cards", "The latest rank and score for each topic, with the change since the start of the selected period, exactly as the cards on the Dashboard show them. Rank 1 is the best position. A green up arrow is an improvement and a red down arrow is a decline.");
   const cardRows: CellValue[][] = [];
-  const changes: Array<number | null> = [];
+  const rankChanges: Array<number | null> = [];
+  const scoreChanges: Array<number | null> = [];
   for (const topic of topics) {
     const snap = snapshots.get(topic);
     const display = rankDisplay(snap);
-    const change = display.rank !== null && snap?.previousRank != null ? snap.previousRank - display.rank : null;
-    changes.push(change);
-    cardRows.push([topic, snap ? snap.metric_date : "No data", display.rank, display.population, snap?.visibility_score ?? null, snap?.previousRank ?? null, change, display.text, display.note ?? ""]);
+    const scoreChange = snap?.scoreChange == null ? null : Math.round(snap.scoreChange * 10) / 10;
+    rankChanges.push(snap?.rankChange ?? null);
+    scoreChanges.push(scoreChange);
+    const notes = [display.note, snap && snap.startRank !== null && !snap.startRankVerified ? "Start-of-period rank population unverified" : null].filter(Boolean).join(". ");
+    cardRows.push([
+      topic, snap ? snap.metric_date : "No data", display.rank, display.population, snap?.rankChange ?? null, snap?.startRank ?? null, snap?.startRankDate ?? null,
+      snap?.visibility_score ?? null, scoreChange, snap?.startScore ?? null, snap?.startScoreDate ?? null, display.text, notes,
+    ]);
   }
   const cardColumns: ReportColumn[] = [
     { header: "Topic", type: "text" },
     { header: "Latest Data Date", type: "text", align: "left" },
     { header: "Rank", type: "rank" },
     { header: "Rank Population", type: "int" },
-    { header: "Visibility Score", type: "pct" },
-    { header: "Previous Rank", type: "rank" },
     { header: "Rank Change", type: "int" },
+    { header: "Previous Rank", type: "rank" },
+    { header: "Previous Rank Date", type: "text", align: "left" },
+    { header: "Visibility Score", type: "pct" },
+    { header: "Score Change", type: "decimal" },
+    { header: "Previous Score", type: "pct" },
+    { header: "Previous Score Date", type: "text", align: "left" },
     { header: "Rank as Shown", type: "text", align: "right" },
     { header: "Note", type: "text" },
   ];
   const cards = overview.table(cardColumns, cardRows, { emphasizeRow: (row) => row[0] === "Overall" });
-  colorRankChange(overview, rangeRows(cards.firstRow, cards.lastRow), 7, changes);
-  overview.note("Rank change compares the latest rank with the previous tracked day. N/A means there is no earlier verified rank to compare with.");
+  const cardLines = rangeRows(cards.firstRow, cards.lastRow);
+  colorChange(overview, cardLines, 5, rankChanges);
+  colorChange(overview, cardLines, 9, scoreChanges, '"▲ "0.0"%";"▼ "0.0"%";"No change"');
+  overview.note("Previous Rank and Previous Score are the values from the first tracked day in the selected period. Rank change is the number of positions gained or lost, and score change is in percentage points. N/A means there is no earlier tracked day in the period to compare with.");
 
   // Daily trend tables and native line charts
   const trends = report.addSheet("Daily Trends", [16, 20, 20, 18, 4, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9], { tab: THEME.orange });
@@ -367,7 +379,7 @@ export async function buildLeaderboardReport(input: LeaderboardReportInput) {
       r.previousRank, changes[i] === null ? (hasPrev ? "New" : null) : changes[i], r.previousVisibility, r.previousCitations]),
     { autoFilter: true, emphasizeRow: (_row, i) => input.rows[i].isTracked },
   );
-  colorRankChange(sheet, rangeRows(t.firstRow, t.lastRow), 7, changes);
+  colorChange(sheet, rangeRows(t.firstRow, t.lastRow), 7, changes);
   report.freeze(sheet, t.headerRow);
   return { buffer: await report.toBuffer(), filename: "lifewood-leaderboard-" + safeFileName(input.projectName) + "-" + input.start + "-to-" + input.end + ".xlsx" };
 }
