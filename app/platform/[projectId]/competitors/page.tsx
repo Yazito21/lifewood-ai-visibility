@@ -8,6 +8,8 @@ import { supabase } from "@/lib/supabase";
 import { MIN_TRACKING_DATE, malaysiaDateString, shiftDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 import { brandDisplayName } from "@/lib/brand-display";
 import { MetricInfo } from "@/components/metric-info";
+import { DownloadReportButton } from "@/components/download-report-button";
+import { trackingLocationLabel } from "@/lib/tracking-locations";
 
 type DirectCompetitor = {
   id: string;
@@ -132,6 +134,7 @@ export default function LeaderboardsPage() {
   const [previousOwnMetrics, setPreviousOwnMetrics] = useState<OwnMetric[]>([]);
   const [projectName, setProjectName] = useState("Tracked brand");
   const [projectWebsite, setProjectWebsite] = useState<string | null>(null);
+  const [trackingMarket, setTrackingMarket] = useState("MY");
   const [topics, setTopics] = useState<string[]>([]);
   const [topic, setTopic] = useState("All");
   const [llms, setLlms] = useState<string[]>(["chatgpt"]);
@@ -275,6 +278,7 @@ export default function LeaderboardsPage() {
         });
         const eligibleIds = new Set(filteredRegistry.map((competitor) => competitor.id));
         setProjectName(project?.brand_name ?? "Tracked brand");
+        setTrackingMarket(location);
         setProjectWebsite(rootWebsite(project?.brand_domains?.[0] ?? null));
         setTopics((project?.topics ?? []).filter((value: string) => value && value !== "Overall"));
         setDirectCompetitors(filteredRegistry);
@@ -322,9 +326,22 @@ export default function LeaderboardsPage() {
   const visibleRows = expanded ? searchResults : searchResults.slice(0, 10);
 
   return <ProjectShell><div className="ops-page">
+    <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0 flex-1">
     <p className="page-eyebrow">Competitive Landscape</p>
     <h2 className="page-title mt-1">Leaderboards</h2>
     <p className="page-description mt-2">See how {projectName} stacks up against its direct competitors. Use the Period, Topic and Engines filters to choose what to compare, and the leaderboard updates to match. You can search for a brand by name and expand the table to see every competitor. Only brands with valid results for your selection are ranked, and ties are broken by visibility, then citations, then name. The arrow beside each rank shows how it moved since the previous period, with green for an improvement and red for a drop.</p>
+    </div>
+    <DownloadReportButton disabled={loading} build={async () => {
+      const { buildLeaderboardReport } = await import("@/lib/page-reports");
+      const coverageNote = currentActiveCompetitors.length < directCompetitors.length
+        ? "Competitor coverage: " + currentActiveCompetitors.length + " of " + directCompetitors.length + " registered direct competitors have verified observations for the selected scope. Missing or stale observations are excluded."
+        : undefined;
+      return buildLeaderboardReport({
+        projectName, locationLabel: trackingLocationLabel(trackingMarket), period, start, end,
+        topicLabel: topic === "All" ? "All topics" : topic, engineLabels: llms.map((id) => labels[id] ?? id), totalEngines: LLMS.length, previousRange, coverageNote,
+        rows: rows.map((row) => ({ rank: row.rank, brand_name: brandDisplayName(row.brand_name, row.website), website: row.website, isTracked: row.key === "__tracked_brand__", visibility_score: row.visibility_score, citations: row.citations, previousRank: row.previousRank, previousVisibility: row.previousVisibility, previousCitations: row.previousCitations })),
+      });
+    }} /></div>
     <div className="mt-8 ops-filter-panel">
       <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{REPORTING_PERIODS.map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} min={MIN_TRACKING_DATE} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || MIN_TRACKING_DATE} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}</div>
       <div className="ops-filter-row"><span className="ops-filter-label">Topic</span><button onClick={() => setTopic("All")} className={`ops-filter-pill ${topic === "All" ? "is-active" : ""}`}>All</button>{topics.map((value) => <button key={value} onClick={() => setTopic(value)} className={`ops-filter-pill ${topic === value ? "is-active" : ""}`}>{value}</button>)}</div>

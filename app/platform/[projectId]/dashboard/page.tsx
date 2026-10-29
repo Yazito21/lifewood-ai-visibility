@@ -9,6 +9,8 @@ import { supabase } from "@/lib/supabase";
 import { MIN_TRACKING_DATE, malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 import { chartSeries, latestSnapshots, rankDisplay, type DailyMetric } from "@/lib/rank-snapshot";
 import { MetricInfo } from "@/components/metric-info";
+import { DownloadReportButton } from "@/components/download-report-button";
+import { trackingLocationLabel } from "@/lib/tracking-locations";
 
 type Metric = DailyMetric;
 type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
@@ -22,6 +24,7 @@ export default function DashboardPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [trackingLocation, setTrackingLocation] = useState("MY");
+  const [projectName, setProjectName] = useState("Project");
   const [citationsByTopic, setCitationsByTopic] = useState<Record<string, AggregatedCitation[]>>({});
   const [topics, setTopics] = useState<string[]>([]);
   const [period, setPeriod] = useState("Last 7 Days");
@@ -42,12 +45,13 @@ export default function DashboardPage() {
     setLoading(true); setError("");
     const { data: project, error: projectError } = await supabase
       .from("projects")
-      .select("topics,tracking_market")
+      .select("brand_name,topics,tracking_market")
       .eq("id", projectId)
       .single();
     const location = project?.tracking_market ?? "MY";
     const dataLocation = location;
     setTrackingLocation(location);
+    setProjectName(project?.brand_name || "Project");
     const topicList: string[] = Array.isArray(project?.topics)
       ? project.topics.filter((topic: unknown): topic is string => typeof topic === "string")
       : [];
@@ -378,7 +382,10 @@ export default function DashboardPage() {
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Each card shows one topic's most recent rank against competitors, its visibility score, and how the rank moved since the previous tracked day. Rank 1 is the best position. The Overall card combines all topics.</p></div>
-            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={openTopicPicker} disabled={tracking || exporting || topics.filter((topic) => topic !== "Overall").length === 0} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
+            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={openTopicPicker} disabled={tracking || exporting || topics.filter((topic) => topic !== "Overall").length === 0} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><DownloadReportButton disabled={loading || tracking || exporting} build={async () => {
+              const { buildDashboardReport } = await import("@/lib/page-reports");
+              return buildDashboardReport({ projectName, locationLabel: trackingLocationLabel(trackingLocation), period, start: dateStart(period, customStart, customEnd), end: period === "Custom" ? customEnd : malaysiaDateString(), topics: cardTopics, metrics, citationsByTopic });
+            }} /><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
           {!loading && cardTopics.some((topic) => rankDisplay(latestByTopic.get(topic)).note) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">Some ranks are shown without a verified population (older runs without verified lineage) or have no eligible competitor observations. The rank shown is the same value plotted in the charts below; no denominator is invented.</div>}
