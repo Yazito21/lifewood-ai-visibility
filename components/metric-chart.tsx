@@ -93,8 +93,12 @@ export function MetricChart({
   }).filter(Boolean).join(" ");
   const active = activeDate === null ? null : points.find((point) => point.label === activeDate && point.value !== null) ?? null;
   const yAxisTitle = format === "percent" ? (title.toLowerCase().includes("share of voice") ? "Share of voice (%)" : "Visibility (%)") : /position/i.test(title) ? "Average position" : /rank/i.test(title) ? "Rank" : "Value";
-  const tickValues = invert
+  // Whole ranks up to 25, then 1 followed by every 5th rank so large rank populations stay readable.
+  const rankTicks = rankMax <= 25
     ? Array.from({ length: rankMax }, (_, i) => i + 1)
+    : [1, ...Array.from({ length: Math.floor(rankMax / 5) }, (_, i) => (i + 1) * 5)];
+  const tickValues = invert
+    ? rankTicks
     : fixedPercent
       ? Array.from({ length: percentTop / 2.5 + 1 }, (_, i) => percentTop - i * 2.5)
       : Array.from({ length: 5 }, (_, i) => max - (max * i) / 4);
