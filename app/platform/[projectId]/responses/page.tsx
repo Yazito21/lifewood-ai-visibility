@@ -6,7 +6,7 @@ import { CalendarDays, ChevronDown, ChevronRight, Download, ExternalLink, FileTe
 import * as XLSX from "xlsx";
 import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
-import { malaysiaDateString, shiftDateString, malaysiaDayStart, malaysiaDayEndExclusive } from "@/lib/reporting-date";
+import { MIN_TRACKING_DATE, malaysiaDateString, shiftDateString, malaysiaDayStart, malaysiaDayEndExclusive } from "@/lib/reporting-date";
 
 type ResponseRow = {
   id: string;
@@ -187,10 +187,10 @@ export default function ResponsesPage() {
           <h2 className="text-sm font-semibold">Filter responses</h2><p className="mb-4 mt-1 text-xs text-[var(--muted-foreground)]">Choose which dates, topics and engines to load, then press Show responses.</p>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="text-xs font-semibold text-[var(--muted-foreground)]">Start date
-              <input type="date" value={fromDate} min="2026-10-15" max={toDate || today} onChange={(e) => setFromDate(e.target.value)} className="platform-input mt-2 text-sm"/>
+              <input type="date" value={fromDate} min={MIN_TRACKING_DATE} max={toDate || today} onChange={(e) => setFromDate(e.target.value)} className="platform-input mt-2 text-sm"/>
             </label>
             <label className="text-xs font-semibold text-[var(--muted-foreground)]">End date
-              <input type="date" value={toDate} min={fromDate || "2026-10-15"} max={today} onChange={(e) => setToDate(e.target.value)} className="platform-input mt-2 text-sm"/>
+              <input type="date" value={toDate} min={fromDate || MIN_TRACKING_DATE} max={today} onChange={(e) => setToDate(e.target.value)} className="platform-input mt-2 text-sm"/>
             </label>
           </div>
           <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">Topics</p><div className="flex flex-wrap gap-2">

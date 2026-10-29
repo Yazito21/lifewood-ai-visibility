@@ -1,4 +1,4 @@
-export const MIN_TRACKING_DATE = "2026-10-15";
+export const MIN_TRACKING_DATE = "2026-10-01";
 
 export const REPORTING_PERIODS = [
   "Today",
