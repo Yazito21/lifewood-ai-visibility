@@ -506,7 +506,8 @@ begin
   on conflict (project_id, metric_date, topic, llm_provider, tracking_location) do update set
     run_id = excluded.run_id, visibility_score = excluded.visibility_score, presence_count = excluded.presence_count,
     response_count = excluded.response_count, share_of_voice_score = null, share_of_voice_rank = null,
-    average_position = null, average_position_rank = null, visibility_rank = null, metric_version = 'v2';
+    average_position = null, average_position_rank = null, visibility_rank = null, rank_population_count = null,
+    rank_population_status = 'unverified', metric_version = 'v2';
 
   -- Publishing supersedes a platform run of the same engine and day (only when p_replace_existing kept those units).
   update public.tracking_runs t set published_at = t.completed_at where t.id in (select id from _pi_runs);
