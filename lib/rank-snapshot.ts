@@ -12,7 +12,18 @@ export type DailyMetric = {
   rank_population_status: string;
 };
 
-export type RankSnapshot = DailyMetric & { previousRank: number | null };
+export type RankSnapshot = DailyMetric & {
+  /** Rank and score on the first recorded day of the period the metrics were loaded for. */
+  startRank: number | null;
+  startRankDate: string | null;
+  startRankVerified: boolean;
+  startScore: number | null;
+  startScoreDate: string | null;
+  /** Positions gained since the start of the period: positive means the rank number fell (moved up). */
+  rankChange: number | null;
+  /** Latest score minus start-of-period score, in percentage points. */
+  scoreChange: number | null;
+};
 
 export type RankDisplay = {
   /** Integer rank, 1 is best; null when no rank exists for the scope. */
@@ -29,17 +40,34 @@ function hasVerifiedPopulation(row: DailyMetric) {
   return row.rank_population_status === "verified" && (row.rank_population_count ?? 0) > 0;
 }
 
-/** Latest row per topic plus the previous comparable rank. Tie on date cannot occur: the grain is unique. */
+/**
+ * Latest row per topic, compared with that topic's first recorded day in `metrics`.
+ * Callers pass the rows for the selected reporting period, so the baseline is the start of the period
+ * (or the first tracked day after it when earlier days have no data). The grain is unique, so a date tie cannot occur.
+ */
 export function latestSnapshots(metrics: DailyMetric[], topics: string[]): Map<string, RankSnapshot> {
   const byTopic = new Map<string, DailyMetric[]>();
   for (const row of metrics) byTopic.set(row.topic, [...(byTopic.get(row.topic) ?? []), row]);
   const snapshots = new Map<string, RankSnapshot>();
   for (const topic of topics) {
-    const rows = (byTopic.get(topic) ?? []).slice().sort((a, b) => b.metric_date.localeCompare(a.metric_date));
-    const current = rows[0];
+    const rows = (byTopic.get(topic) ?? []).slice().sort((a, b) => a.metric_date.localeCompare(b.metric_date));
+    const current = rows[rows.length - 1];
     if (!current) continue;
-    const previous = rows.find((row) => row.metric_date !== current.metric_date && row.visibility_rank !== null && hasVerifiedPopulation(row));
-    snapshots.set(topic, { ...current, previousRank: previous?.visibility_rank ?? null });
+    const earlier = rows.filter((row) => row.metric_date !== current.metric_date);
+    const startRankRow = earlier.find((row) => row.visibility_rank !== null);
+    const startScoreRow = earlier.find((row) => row.visibility_score !== null);
+    const startRank = startRankRow?.visibility_rank ?? null;
+    const startScore = startScoreRow?.visibility_score ?? null;
+    snapshots.set(topic, {
+      ...current,
+      startRank,
+      startRankDate: startRankRow?.metric_date ?? null,
+      startRankVerified: startRankRow ? hasVerifiedPopulation(startRankRow) : false,
+      startScore,
+      startScoreDate: startScoreRow?.metric_date ?? null,
+      rankChange: current.visibility_rank !== null && startRank !== null ? startRank - current.visibility_rank : null,
+      scoreChange: current.visibility_score !== null && startScore !== null ? current.visibility_score - startScore : null,
+    });
   }
   return snapshots;
 }

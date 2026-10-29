@@ -16,6 +16,14 @@ type Metric = DailyMetric;
 type AggregatedCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
 
 const periods = REPORTING_PERIODS;
+
+/** Up arrow = improvement (green), down arrow = decline (red). Rank change is in positions, score change in percentage points. */
+function ChangeBadge({ value, decimals = 0, suffix = "" }: { value: number | null; decimals?: number; suffix?: string }) {
+  if (value === null) return null;
+  const size = Number(Math.abs(value).toFixed(decimals));
+  if (size === 0) return <span className="text-xs font-semibold text-[var(--muted-foreground)]">No change</span>;
+  return <span className={"inline-flex items-center gap-0.5 text-sm font-semibold " + (value > 0 ? "text-[var(--primary)]" : "text-[var(--danger)]")}>{value > 0 ? "↑" : "↓"} {size.toFixed(decimals)}{suffix}</span>;
+}
 function dateStart(period: string, customStart: string, customEnd = "") { return reportingDateRange(period, customStart, customEnd).start; }
 
 
@@ -381,7 +389,7 @@ export default function DashboardPage() {
 
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Each card shows one topic's most recent rank against competitors, its visibility score, and how the rank moved since the previous tracked day. Rank 1 is the best position. The Overall card combines all topics.</p></div>
+            <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Each card shows one topic's most recent rank against competitors, its visibility score, and how both have changed since the start of the selected period. The previous rank and score are the values from the first tracked day in that period. Rank 1 is the best position, and an up arrow always means an improvement. The Overall card combines all topics.</p></div>
             <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={openTopicPicker} disabled={tracking || exporting || topics.filter((topic) => topic !== "Overall").length === 0} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><DownloadReportButton disabled={loading || tracking || exporting} build={async () => {
               const { buildDashboardReport } = await import("@/lib/page-reports");
               return buildDashboardReport({ projectName, locationLabel: trackingLocationLabel(trackingLocation), period, start: dateStart(period, customStart, customEnd), end: period === "Custom" ? customEnd : malaysiaDateString(), topics: cardTopics, metrics, citationsByTopic });
@@ -392,12 +400,20 @@ export default function DashboardPage() {
           {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
               {cardTopics.map((topic) => {
-                const snapshot = latestByTopic.get(topic); const display = rankDisplay(snapshot); const currentRank = display.rank; const previousRank = snapshot?.previousRank ?? null;
-                const change = currentRank !== null && previousRank !== null ? previousRank - currentRank : null;
-                return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (topic === "Overall" ? "platform-card-overall" : "")}>
-                  <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (topic === "Overall" ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>{snapshot?.metric_date ?? "No data"}</span></div>
-                  <div className="mt-4 flex items-end justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Rank<MetricInfo metric="visibility_rank" /></p><p className={"mt-1 text-4xl font-semibold tracking-tight " + (topic === "Overall" ? "platform-overall-value" : "")}>{display.text}</p>{display.note && <p className="mt-1 text-[10px] font-medium text-amber-700">{display.note}</p>}</div><div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Score<MetricInfo metric="visibility_score" /></p><p className={"mt-1 text-lg font-semibold " + (topic === "Overall" ? "platform-overall-value" : "")}>{snapshot?.visibility_score != null ? snapshot.visibility_score.toFixed(1) + "%" : "N/A"}</p></div></div>
-                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[color-mix(in_srgb,var(--border)_35%,transparent)] pt-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Previous Rank</p><p className="mt-1 text-sm font-semibold">{previousRank ?? "N/A"}</p></div><div><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]">Rank Change</p><p className={"mt-1 text-sm font-semibold " + (change === null ? "text-[var(--muted-foreground)]" : change > 0 ? "text-[var(--primary)]" : change < 0 ? "text-[var(--danger)]" : "text-[var(--muted-foreground)]")}>{change === null ? "N/A" : change > 0 ? "↑ " + change : change < 0 ? "↓ " + Math.abs(change) : "No change"}</p></div></div>
+                const snapshot = latestByTopic.get(topic); const display = rankDisplay(snapshot);
+                const overall = topic === "Overall";
+                const label = "text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]";
+                const fromText = (date: string | null, note?: string) => date ? <p className="mt-0.5 text-[10px] text-[var(--muted-foreground)]">on {date}{note ?? ""}</p> : null;
+                return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (overall ? "platform-card-overall" : "")}>
+                  <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (overall ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>{snapshot?.metric_date ?? "No data"}</span></div>
+                  <div className="mt-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+                    <div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Rank<MetricInfo metric="visibility_rank" /></p><div className="mt-1 flex flex-wrap items-baseline gap-x-2"><p className={"text-4xl font-semibold tracking-tight " + (overall ? "platform-overall-value" : "")}>{display.text}</p><ChangeBadge value={snapshot?.rankChange ?? null} /></div>{display.note && <p className="mt-1 text-[10px] font-medium text-amber-700">{display.note}</p>}</div>
+                    <div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Score<MetricInfo metric="visibility_score" /></p><div className="mt-1 flex flex-wrap items-baseline justify-end gap-x-2"><p className={"text-lg font-semibold " + (overall ? "platform-overall-value" : "")}>{snapshot?.visibility_score != null ? snapshot.visibility_score.toFixed(1) + "%" : "N/A"}</p><ChangeBadge value={snapshot?.scoreChange ?? null} decimals={1} suffix="%" /></div></div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3 border-t border-[color-mix(in_srgb,var(--border)_35%,transparent)] pt-3">
+                    <div><p className={label}>Previous Rank</p><p className="mt-1 text-sm font-semibold">{snapshot?.startRank ?? "N/A"}</p>{fromText(snapshot?.startRankDate ?? null, snapshot && snapshot.startRank !== null && !snapshot.startRankVerified ? " (population unverified)" : "")}</div>
+                    <div><p className={label}>Previous Score</p><p className="mt-1 text-sm font-semibold">{snapshot?.startScore != null ? snapshot.startScore.toFixed(1) + "%" : "N/A"}</p>{fromText(snapshot?.startScoreDate ?? null)}</div>
+                  </div>
                 </article>;
               })}
             </div>}
