@@ -31,7 +31,7 @@ export default function AnalyticsPage(){
      <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0 flex-1">
       <p className="page-eyebrow">Analytics</p>
       <h1 className="page-title mt-1">Detailed analytics</h1>
-      <p className="page-description mt-2">Dig into the trends behind your numbers here. Pick a period, then choose which topics and answer engines to include, and every chart below updates to show the average across your choices. Charts are grouped into mean visibility, share of voice and average position, followed by a snapshot for each engine. Tracking data starts on 15 October 2026, and a missing dot means nothing was recorded that day.</p>
+      <p className="page-description mt-2">Dig into the trends behind your numbers here. Pick a period, then choose which topics and answer engines to include, and every chart below updates to show the average across your choices. Charts are grouped into mean visibility, share of voice and average position, followed by a snapshot for each engine. A missing dot means nothing was recorded that day.</p>
      </div>
      <DownloadReportButton disabled={loading} build={async()=>{
        const {buildAnalyticsReport}=await import("@/lib/page-reports");

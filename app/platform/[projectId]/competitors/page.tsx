@@ -193,17 +193,22 @@ export default function LeaderboardsPage() {
       }
       return [...unique.values()];
     }
-    async function fetchPublishedRunIds(range: DateRange, location: string, selectedTopic: string) {
-      const { data, error: queryError } = await supabase.rpc("get_published_run_ids_for_leaderboard", {
-        p_project_id: projectId,
-        p_start_date: range.start,
-        p_end_date: range.end,
-        p_topic: selectedTopic,
-        p_provider: "chatgpt",
-        p_tracking_location: location,
-      });
-      if (queryError) throw queryError;
-      return new Map(((data ?? []) as Array<{ metric_date: string; run_id: string }>).map((row) => [row.metric_date, row.run_id]));
+    // Published run per date and engine: every selected engine has its own runs, so look each one up.
+    async function fetchPublishedRunIds(range: DateRange, location: string, selectedTopic: string, engines: string[]) {
+      const published = new Map<string, string>();
+      for (const engine of engines) {
+        const { data, error: queryError } = await supabase.rpc("get_published_run_ids_for_leaderboard", {
+          p_project_id: projectId,
+          p_start_date: range.start,
+          p_end_date: range.end,
+          p_topic: selectedTopic,
+          p_provider: engine,
+          p_tracking_location: location,
+        });
+        if (queryError) throw queryError;
+        for (const row of (data ?? []) as Array<{ metric_date: string; run_id: string }>) published.set(row.metric_date + "::" + engine, row.run_id);
+      }
+      return published;
     }
     async function fetchObservations(ids: string[], range: DateRange, location: string, engines: string[], selectedTopic: string) {
       if (!ids.length || !engines.length) return [] as DirectObservation[];
@@ -256,17 +261,17 @@ export default function LeaderboardsPage() {
         const [currentObservationsRaw, currentOwnRaw, currentPublishedRuns] = await Promise.all([
           fetchObservations(ids, currentRange, location, llms, selectedTopic),
           fetchOwnMetrics(currentRange, location, selectedTopic, llms),
-          fetchPublishedRunIds(currentRange, location, selectedTopic),
+          fetchPublishedRunIds(currentRange, location, selectedTopic, llms),
         ]);
-        const currentObservations = currentObservationsRaw.filter((row) => row.run_id && currentPublishedRuns.get(row.metric_date) === row.run_id);
-        const currentOwn = currentOwnRaw.filter((row) => row.run_id && currentPublishedRuns.get(row.metric_date) === row.run_id);
+        const currentObservations = currentObservationsRaw.filter((row) => row.run_id && currentPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
+        const currentOwn = currentOwnRaw.filter((row) => row.run_id && currentPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
         const [previousObservationsRaw, previousOwnRaw, previousPublishedRuns] = previousRange ? await Promise.all([
           fetchObservations(ids, previousRange, location, llms, selectedTopic),
           fetchOwnMetrics(previousRange, location, selectedTopic, llms),
-          fetchPublishedRunIds(previousRange, location, selectedTopic),
+          fetchPublishedRunIds(previousRange, location, selectedTopic, llms),
         ]) : [[], [], new Map<string,string>()] as [DirectObservation[], OwnMetric[], Map<string,string>];
-        const previousObservations = previousObservationsRaw.filter((row) => row.run_id && previousPublishedRuns.get(row.metric_date) === row.run_id);
-        const previousOwn = previousOwnRaw.filter((row) => row.run_id && previousPublishedRuns.get(row.metric_date) === row.run_id);
+        const previousObservations = previousObservationsRaw.filter((row) => row.run_id && previousPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
+        const previousOwn = previousOwnRaw.filter((row) => row.run_id && previousPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
         if (cancelled) return;
         const domains = (project?.brand_domains ?? []).map((value: string) => hostFromUrl(value)).filter(Boolean);
         // Preserve registry identity and exclude the tracked brand here. The
