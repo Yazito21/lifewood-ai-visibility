@@ -8,6 +8,8 @@ import { supabase } from "@/lib/supabase";
 import { MIN_TRACKING_DATE, malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 import { brandDisplayName } from "@/lib/brand-display";
 import { MetricInfo } from "@/components/metric-info";
+import { DownloadReportButton } from "@/components/download-report-button";
+import { trackingLocationLabel } from "@/lib/tracking-locations";
 
 type AggregatedRow = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
 type ThirdPartyRow = { hostname:string; website_name:string|null; frequency:number; response_frequency:number; brand_coverage:number; source_types:string[]; example_url:string|null };
@@ -91,6 +93,8 @@ function ThirdPartyMentionsTable({ data }: { data: ThirdPartyRow[] }) {
 export default function CitationsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [brandPages, setBrandPages] = useState<AggregatedRow[]>([]);
+  const [projectName, setProjectName] = useState("Project");
+  const [trackingMarket, setTrackingMarket] = useState("MY");
   const [allPages, setAllPages] = useState<AggregatedRow[]>([]);
   const [thirdPartyRows,setThirdPartyRows]=useState<ThirdPartyRow[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
@@ -109,8 +113,9 @@ export default function CitationsPage() {
     async function load() {
       setLoading(true);
       setError("");
-      const { data: project, error: projectError } = await supabase.from("projects").select("topics,tracking_market").eq("id", projectId).single();
+      const { data: project, error: projectError } = await supabase.from("projects").select("brand_name,topics,tracking_market").eq("id", projectId).single();
       const location = project?.tracking_market ?? "MY";
+      if (!cancelled) { setProjectName(project?.brand_name || "Project"); setTrackingMarket(location); }
       const dataLocation = location;
       if (!llms.length) {
         if (cancelled) return;
@@ -172,9 +177,15 @@ export default function CitationsPage() {
 
 
   return <ProjectShell><div className="ops-page">
+    <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0 flex-1">
     <p className="page-eyebrow">Citations</p>
     <h2 className="page-title mt-1">Citation intelligence</h2>
     <p className="page-description mt-2">See which web pages AI answer engines point to when they answer your tracked prompts. Choose a period with the buttons, then browse the tables below, which list pages from your brand, every cited page, and outside websites that were mentioned. Each table has a search box, and you can expand it to see every row.</p>
+    </div>
+    <DownloadReportButton disabled={loading} build={async () => {
+      const { buildCitationsReport } = await import("@/lib/page-reports");
+      return buildCitationsReport({ projectName, locationLabel: trackingLocationLabel(trackingMarket), period, start, end, topicLabel: topic === "All" ? "All topics" : topic, engineLabels: llms.map((id) => labels[id] ?? id), totalEngines: LLMS.length, brandPages, allPages, thirdParty: thirdPartyRows });
+    }} /></div>
     <div className="mt-8 ops-filter-panel">
       <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{REPORTING_PERIODS.map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} min={MIN_TRACKING_DATE} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || MIN_TRACKING_DATE} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}
       </div>

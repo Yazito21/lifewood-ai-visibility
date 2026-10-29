@@ -4,6 +4,9 @@ import { useParams } from "next/navigation";
 import { ProjectShell } from "@/components/project-shell";
 import { MetricChart } from "@/components/metric-chart";
 import { supabase } from "@/lib/supabase";
+import { DownloadReportButton } from "@/components/download-report-button";
+import { meanByDate } from "@/lib/page-reports";
+import { trackingLocationLabel } from "@/lib/tracking-locations";
 import { MIN_TRACKING_DATE, malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
 type Row={metric_date:string;topic:string;llm_provider:string;visibility_score:number|null;visibility_rank:number|null;share_of_voice_score:number|null;share_of_voice_rank:number|null;average_position:number|null;average_position_rank:number|null};
 const LLMS=["chatgpt","gemini","perplexity","google_ai_overview","claude"],labels:Record<string,string>={chatgpt:"ChatGPT",gemini:"Gemini",perplexity:"Perplexity",google_ai_overview:"Google AI Overview",claude:"Claude"};
@@ -11,9 +14,9 @@ export default function AnalyticsPage(){
  const {projectId}=useParams<{projectId:string}>();
  const topicSelectionInitialized=useRef(false);
  const selectionProjectId=useRef(projectId);
- if(selectionProjectId.current!==projectId){selectionProjectId.current=projectId;topicSelectionInitialized.current=false;}const [rows,setRows]=useState<Row[]>([]),[topics,setTopics]=useState<string[]>([]),[selectedTopics,setSelectedTopics]=useState<string[]>([]),[selectedLlms,setSelectedLlms]=useState<string[]>(["chatgpt"]),[period,setPeriod]=useState("Last 7 Days"),[customStart,setCustomStart]=useState(""),[customEnd,setCustomEnd]=useState(malaysiaDateString()),[loading,setLoading]=useState(true),[error,setError]=useState("");
+ if(selectionProjectId.current!==projectId){selectionProjectId.current=projectId;topicSelectionInitialized.current=false;}const [rows,setRows]=useState<Row[]>([]),[topics,setTopics]=useState<string[]>([]),[selectedTopics,setSelectedTopics]=useState<string[]>([]),[selectedLlms,setSelectedLlms]=useState<string[]>(["chatgpt"]),[period,setPeriod]=useState("Last 7 Days"),[customStart,setCustomStart]=useState(""),[customEnd,setCustomEnd]=useState(malaysiaDateString()),[loading,setLoading]=useState(true),[error,setError]=useState(""),[projectName,setProjectName]=useState("Project"),[trackingMarket,setTrackingMarket]=useState("MY");
  const {start,end}=useMemo(()=>reportingDateRange(period,customStart,customEnd),[period,customStart,customEnd]);
- useEffect(()=>{(async()=>{setLoading(true);const {data:p}=await supabase.from("projects").select("topics,tracking_market").eq("id",projectId).single();const t=p?.topics??[];const location=p?.tracking_market??"MY";const dataLocation=location;setTopics(t);if(!topicSelectionInitialized.current){setSelectedTopics(t);topicSelectionInitialized.current=true;}else{setSelectedTopics(v=>v.filter(topic=>t.includes(topic)));}const {data,error}=await supabase.from("visibility_daily").select("metric_date,topic,llm_provider,visibility_score,visibility_rank,share_of_voice_score,share_of_voice_rank,average_position,average_position_rank").eq("project_id",projectId).eq("tracking_location",dataLocation).neq("llm_provider","Overall").gte("metric_date",start).lte("metric_date",end).order("metric_date");if(error)setError(error.message);setRows(data??[]);setLoading(false)})()},[projectId,start,end]);
+ useEffect(()=>{(async()=>{setLoading(true);const {data:p}=await supabase.from("projects").select("brand_name,topics,tracking_market").eq("id",projectId).single();setProjectName(p?.brand_name||"Project");setTrackingMarket(p?.tracking_market??"MY");const t=p?.topics??[];const location=p?.tracking_market??"MY";const dataLocation=location;setTopics(t);if(!topicSelectionInitialized.current){setSelectedTopics(t);topicSelectionInitialized.current=true;}else{setSelectedTopics(v=>v.filter(topic=>t.includes(topic)));}const {data,error}=await supabase.from("visibility_daily").select("metric_date,topic,llm_provider,visibility_score,visibility_rank,share_of_voice_score,share_of_voice_rank,average_position,average_position_rank").eq("project_id",projectId).eq("tracking_location",dataLocation).neq("llm_provider","Overall").gte("metric_date",start).lte("metric_date",end).order("metric_date");if(error)setError(error.message);setRows(data??[]);setLoading(false)})()},[projectId,start,end]);
  const chartDateRange=useMemo(()=>{
   const trackedDates=rows.map(r=>r.metric_date).sort();
   const firstTrackedDate=trackedDates[0];
@@ -21,13 +24,19 @@ export default function AnalyticsPage(){
   return {start:firstTrackedDate&&firstTrackedDate>requestedStart?firstTrackedDate:requestedStart,end};
  },[rows,period,start,end]);
  const filtered=rows.filter(r=>selectedTopics.includes(r.topic)&&selectedLlms.includes(r.llm_provider));
- function aggregate(key:keyof Row){const map=new Map<string,number[]>();for(const r of filtered){const v=r[key];if(typeof v==="number"&&Number.isFinite(v)){const a=map.get(r.metric_date)||[];a.push(v);map.set(r.metric_date,a)}}return [...map.entries()].sort().map(([date,vals])=>({label:date,value:vals.reduce((a,b)=>a+b,0)/vals.length}))}
+ const aggregate=(key:keyof Row)=>meanByDate(filtered,key);
  return <ProjectShell>
   <div className="ops-page">
     <header className="page-heading">
+     <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0 flex-1">
       <p className="page-eyebrow">Analytics</p>
       <h1 className="page-title mt-1">Detailed analytics</h1>
       <p className="page-description mt-2">Dig into the trends behind your numbers here. Pick a period, then choose which topics and answer engines to include, and every chart below updates to show the average across your choices. Charts are grouped into mean visibility, share of voice and average position, followed by a snapshot for each engine. Tracking data starts on 15 October 2026, and a missing dot means nothing was recorded that day.</p>
+     </div>
+     <DownloadReportButton disabled={loading} build={async()=>{
+       const {buildAnalyticsReport}=await import("@/lib/page-reports");
+       return buildAnalyticsReport({projectName,locationLabel:trackingLocationLabel(trackingMarket),period,start,end,allTopics:topics,selectedTopics,engines:LLMS.map(id=>({id,label:labels[id]})),selectedEngineIds:selectedLlms,filtered,rows});
+     }}/></div>
     </header>
 
     <section className="mt-8 ops-filter-panel">
