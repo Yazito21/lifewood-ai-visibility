@@ -51,7 +51,9 @@ export function parseBrandWorkbook(buffer: ArrayBuffer): { topics: string[]; row
   return { topics: [...new Set([...topicsFromSheet, ...rows.map((row) => row.topic)])], rows };
 }
 
-export function validateBrandRows(rows: BrandImportRow[], topics: string[], trackedBrand: string, enforceHundred = true): string[] {
+export const MAX_COMPETITORS_PER_TOPIC = 99;
+
+export function validateBrandRows(rows: BrandImportRow[], topics: string[], trackedBrand: string): string[] {
   const errors: string[] = [];
   if (!topics.length) return ["Add at least one tracking topic."];
   for (const topic of topics) {
@@ -60,9 +62,8 @@ export function validateBrandRows(rows: BrandImportRow[], topics: string[], trac
     const distinct = new Set(topicRows.map((row) => normaliseBrandKey(row.brand)));
     if (tracked.length !== 1) errors.push(`${topic}: expected exactly one tracked brand (${trackedBrand}); found ${tracked.length}.`);
     if (distinct.size !== topicRows.length) errors.push(`${topic}: duplicate brand names found. Each brand should appear once per topic.`);
-    if (enforceHundred && topicRows.length !== 100) errors.push(`${topic}: expected 100 brands (1 tracked brand + 99 competitors); found ${topicRows.length}.`);
     const competitorCount = topicRows.filter((row) => row.role !== "tracked_brand" && normaliseBrandKey(row.brand) !== normaliseBrandKey(trackedBrand)).length;
-    if (enforceHundred && competitorCount !== 99) errors.push(`${topic}: expected 99 competitors; found ${competitorCount}.`);
+    if (competitorCount > MAX_COMPETITORS_PER_TOPIC) errors.push(`${topic}: at most ${MAX_COMPETITORS_PER_TOPIC} competitors are allowed; found ${competitorCount}.`);
     for (const row of topicRows) if (!row.website.trim()) errors.push(`${topic}: "${row.brand}" is missing its primary website.`);
   }
   for (const row of rows) if (!topics.includes(row.topic)) errors.push(`"${row.topic}" is not present in the Topics sheet.`);
@@ -73,10 +74,10 @@ export function downloadBrandTemplate(topics: string[], trackedBrand: string, tr
   const workbook = XLSX.utils.book_new();
   const instructions = [
     ["AI Visibility Brand Registry Template"],
-    ["Use one row per brand per topic. Each topic must contain exactly 100 brands: 1 tracked brand and 99 competitors."],
+    ["Use one row per brand per topic. Each topic must contain 1 tracked brand and can have up to 99 competitors."],
     ["Required columns on Brands: Topic, Brand, Aliases, Website, Other Websites, Role, Notes."],
     ["Separate multiple aliases and additional websites with semicolons. Use verified official domains only."],
-    ["The tracked brand must appear exactly once in each topic. Leave the blank competitor rows blank until filled."],
+    ["The tracked brand must appear exactly once in each topic. Competitor slots are optional: leave unused rows blank."],
     ["Do not rename the Topics or Brands sheets."],
   ];
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(instructions), "Instructions");
@@ -180,7 +181,7 @@ export function downloadBrandRegistryWorkbook(topics: string[], rows: BrandImpor
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
     ["AI Visibility Brand Registry"],
-    ["Edit the Brands sheet and upload it in Settings. Each topic should contain one tracked brand and 99 competitors."],
+    ["Edit the Brands sheet and upload it in Settings. Each topic should contain one tracked brand and up to 99 competitors."],
   ]), "Instructions");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Topic"], ...topics.map((topic) => [topic])]), "Topics");
   const data: Array<Array<string>> = [["Topic", "Brand", "Aliases", "Website", "Other Websites", "Role", "Notes"]];
