@@ -1,9 +1,11 @@
 "use client";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { Download, Plus, Search, Trash2, Upload, X } from "lucide-react";
-import { useParams } from "next/navigation";
+import { Download, Plus, Search, Sparkles, Trash2, Upload, X } from "lucide-react";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import * as XLSX from "xlsx";
 import { ProjectShell, UserRole } from "@/components/project-shell";
+import { PromptAssistantPanel } from "@/components/prompt-assistant-panel";
+import { PROMPT_LIMIT } from "@/lib/prompt-assistant";
 import { supabase } from "@/lib/supabase";
 
 type Prompt = { id: string; prompt_number: number; prompt: string; topic: string; language: string; active: boolean };
@@ -12,6 +14,9 @@ const languages = ["English", "Malay", "Chinese", "Japanese", "Korean", "Thai", 
 
 export default function PromptsPage() {
   const { projectId } = useParams<{ projectId: string }>();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [topics, setTopics] = useState<string[]>([]);
   const [latestMetrics, setLatestMetrics] = useState<Record<string, LatestMetric>>({});
@@ -26,6 +31,7 @@ export default function PromptsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   async function load() {
     setError("");
@@ -59,6 +65,11 @@ export default function PromptsPage() {
   useEffect(() => { void load(); }, [projectId]);
 
   const canEdit = role === "admin" || role === "superadmin";
+  useEffect(() => { if (canEdit && searchParams.get("assistant") === "1") setAssistantOpen(true); }, [canEdit, searchParams]);
+  function closeAssistant() {
+    setAssistantOpen(false);
+    if (searchParams.get("assistant")) router.replace(pathname);
+  }
   const filtered = useMemo(() => {
     const term = search.trim().toLocaleLowerCase();
     return prompts.filter((prompt) =>
@@ -79,20 +90,27 @@ export default function PromptsPage() {
     );
   }
 
+  async function insertPrompts(rows: { prompt: string; topic: string; language: string }[]) {
+    if (prompts.length + rows.length > PROMPT_LIMIT) throw new Error(`The project can hold at most ${PROMPT_LIMIT} prompts.`);
+    const startNumber = Math.max(0, ...prompts.map((prompt) => prompt.prompt_number)) + 1;
+    const { error: insertError } = await supabase.from("prompts").insert(rows.map((row, index) => ({
+      project_id: projectId, prompt_number: startNumber + index, prompt: row.prompt, topic: row.topic, language: row.language,
+    })));
+    if (insertError) throw new Error(insertError.message);
+    await load();
+  }
+
   async function addPrompt(keepOpen = false) {
     if (!canEdit || !form.prompt.trim() || !form.topic) return;
-    if (prompts.length >= 100) { setError("The project already has 100 prompts."); return; }
+    if (prompts.length >= PROMPT_LIMIT) { setError("The project already has 100 prompts."); return; }
     setBusy(true); setError(""); setNotice("");
-    const promptNumber = Math.max(0, ...prompts.map((prompt) => prompt.prompt_number)) + 1;
-    const { error: insertError } = await supabase.from("prompts").insert({
-      project_id: projectId, prompt_number: promptNumber, prompt: form.prompt.trim(), topic: form.topic, language: form.language,
-    });
+    const insertError = await insertPrompts([{ prompt: form.prompt.trim(), topic: form.topic, language: form.language }])
+      .then(() => null, (err: Error) => err);
     if (insertError) setError(insertError.message);
     else {
       setForm({ prompt: "", topic: topics[0] || "", language: "English" });
       if (!keepOpen) setOpen(false);
       setNotice("Prompt added successfully.");
-      await load();
     }
     setBusy(false);
   }
@@ -152,6 +170,7 @@ export default function PromptsPage() {
       {canEdit && <div className="flex flex-wrap gap-2">
         <button onClick={template} className="inline-flex items-center gap-2 platform-btn px-4 py-3 text-sm font-semibold"><Download size={16}/> Template</button>
         <label className={"inline-flex items-center gap-2 platform-btn px-4 py-3 text-sm font-semibold " + (busy ? "pointer-events-none opacity-50" : "cursor-pointer")}><Upload size={16}/> Bulk upload<input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={busy} onChange={upload}/></label>
+        <button disabled={prompts.length >= PROMPT_LIMIT || busy || !topics.length} onClick={() => setAssistantOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-[#0d5b3a] px-4 py-3 text-sm font-semibold text-[var(--green)] disabled:opacity-40"><Sparkles size={16}/> AI prompt assistant</button>
         <button disabled={prompts.length >= 100 || busy} onClick={() => { setForm({ prompt: "", topic: topics[0] || "", language: "English" }); setOpen(true); }} className="inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-40"><Plus size={16}/> Add prompt</button>
       </div>}
     </div>
@@ -208,7 +227,11 @@ export default function PromptsPage() {
                 {canEdit && <td className="px-3 py-3"><button onClick={() => setDeleteIds([prompt.id])} aria-label={"Delete prompt " + prompt.prompt_number} className="rounded-lg p-2 text-[#a13f35] hover:bg-red-50"><Trash2 size={16}/></button></td>}
               </tr>;
             })}
-            {!visible.length && <tr><td colSpan={canEdit ? 9 : 7} className="px-3 py-10 text-center text-sm text-[#66736c]">No prompts found.</td></tr>}
+            {!visible.length && <tr><td colSpan={canEdit ? 9 : 7} className="px-3 py-10 text-center text-sm text-[#66736c]">
+              {!prompts.length && canEdit
+                ? <div className="mx-auto max-w-md"><Sparkles size={22} className="mx-auto text-[var(--green)]"/><p className="mt-2 font-semibold text-[#173b2a]">No prompts yet</p><p className="mt-1">Let the AI read the brand&apos;s website and suggest prompts you can review before tracking starts.</p><button onClick={() => setAssistantOpen(true)} disabled={!topics.length} className="mt-4 inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-40"><Sparkles size={16}/> Suggest prompts with AI</button></div>
+                : "No prompts found."}
+            </td></tr>}
           </tbody>
         </table>
       </div>
@@ -228,6 +251,8 @@ export default function PromptsPage() {
         <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={() => setOpen(false)} className="platform-btn">Cancel</button><button disabled={busy || !form.prompt.trim() || !form.topic} onClick={() => addPrompt(true)} className="rounded-xl border border-[#0d5b3a] px-4 py-3 text-sm font-semibold text-[var(--green)] disabled:opacity-40">Add &amp; next</button><button disabled={busy || !form.prompt.trim() || !form.topic} onClick={() => addPrompt(false)} className="platform-btn platform-btn-primary disabled:opacity-40">Add prompt</button></div>
       </div>
     </div>}
+
+    {assistantOpen && canEdit && <PromptAssistantPanel projectId={projectId} topics={topics} existingCount={prompts.length} onClose={closeAssistant} onSave={insertPrompts}/>}
 
     {deleteIds.length > 0 && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-5" role="presentation">
       <div role="alertdialog" aria-modal="true" aria-labelledby="delete-prompts-title" aria-describedby="delete-prompts-description" className="w-full max-w-md rounded-3xl bg-white p-7 text-[#173b2a] shadow-xl">

@@ -99,7 +99,7 @@ export default function ProjectsPage(){
       setBusy(false);return;
     }
     setBrandName("");setDescription("");setTrackedWebsite("");setTopicsText("");setBrandFile(null);setBrandRows([]);setFileTopics([]);setFileMessage("");setCreating(false);setBusy(false);
-    router.push("/platform/"+project.id);
+    router.push("/platform/"+project.id+"/prompts?assistant=1");
   }
 
   async function deleteProject(){
