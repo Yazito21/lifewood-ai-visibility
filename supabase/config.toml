@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.visibility-tracking]
 verify_jwt = true
+
+[functions.prompt-assistant]
+verify_jwt = false
