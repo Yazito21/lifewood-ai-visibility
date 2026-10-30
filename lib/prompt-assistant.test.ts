@@ -1,6 +1,6 @@
 import test from "node:test";
 import { strictEqual } from "node:assert/strict";
-import { assistantErrorMessage, remainingSlots, PROMPT_LIMIT } from "./prompt-assistant.ts";
+import { assistantErrorMessage, notShown, remainingSlots, PROMPT_LIMIT } from "./prompt-assistant.ts";
 
 test("remaining slots count down from the 100-prompt limit", () => {
   strictEqual(PROMPT_LIMIT, 100);
@@ -24,4 +24,21 @@ test("missing configuration has a plain-language message", () => {
 test("unknown errors fall back to a retry message", () => {
   strictEqual(assistantErrorMessage("SOMETHING_ELSE"), "The AI didn't respond. Try again.");
   strictEqual(assistantErrorMessage(undefined), "The AI didn't respond. Try again.");
+});
+
+test("expired sessions ask the user to sign in again", () => {
+  strictEqual(assistantErrorMessage("AUTH_VALIDATION_FAILED", undefined, 401), "Your session has expired. Sign in again.");
+});
+
+test("permission errors say so instead of asking for a retry", () => {
+  strictEqual(assistantErrorMessage("Not authorized.", undefined, 403), "You don't have permission to use the AI assistant on this project.");
+});
+
+test("the server's message is shown when there is one", () => {
+  strictEqual(assistantErrorMessage("INVALID_REQUEST", "Choose one of the project's topics.", 400), "Choose one of the project's topics.");
+});
+
+test("notShown drops prompts already in the panel, ignoring case and punctuation", () => {
+  const result = notShown(["Best data vendors?", "Top annotation firms", "top annotation firms!"], ["best data vendors"]);
+  strictEqual(JSON.stringify(result), JSON.stringify(["Top annotation firms"]));
 });
