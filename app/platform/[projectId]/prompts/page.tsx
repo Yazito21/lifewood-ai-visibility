@@ -124,10 +124,28 @@ export default function PromptsPage() {
     setBusy(false);
   }
 
+  const EXAMPLE_PROMPT = "Example prompt";
+
   function template() {
-    const worksheet = XLSX.utils.json_to_sheet([{ Prompt: "Example prompt", Topic: topics[0] || "Example topic", Language: "English" }]);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Prompts");
+    const sheet = XLSX.utils.json_to_sheet([{ Prompt: EXAMPLE_PROMPT, Topic: topics[0] || "Example topic", Language: "English" }]);
+    sheet["!cols"] = [{ wch: 70 }, { wch: 40 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(workbook, sheet, "Prompts");
+    const instructions = XLSX.utils.aoa_to_sheet([
+      ["How to fill in the Prompts sheet"],
+      [`A project can hold up to ${MAX_PROMPTS} prompts in total, with at least ${MIN_PROMPTS_PER_TOPIC} prompts for every topic.`],
+      [`This project currently has ${prompts.length} prompts, so you can upload up to ${Math.max(0, MAX_PROMPTS - prompts.length)} more.`],
+      ["Replace or delete the example row. A row whose prompt is \"" + EXAMPLE_PROMPT + "\" is rejected."],
+      ["Every row needs a Prompt, a Topic and a Language."],
+      [],
+      ["Valid topics (type them exactly as shown)"],
+      ...topics.map((topic) => [topic]),
+      [],
+      ["Valid languages"],
+      ...languages.map((language) => [language]),
+    ]);
+    instructions["!cols"] = [{ wch: 110 }];
+    XLSX.utils.book_append_sheet(workbook, instructions, "Instructions");
     XLSX.writeFile(workbook, "lifewood-prompts-template.xlsx");
   }
 
@@ -137,19 +155,37 @@ export default function PromptsPage() {
     setBusy(true); setError(""); setNotice("");
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[workbook.SheetNames[0]]);
-      if (prompts.length + rows.length > MAX_PROMPTS) throw new Error("Bulk upload would exceed the " + MAX_PROMPTS + "-prompt limit.");
+      const sheet = workbook.Sheets["Prompts"] ?? workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+      if (!rows.length) throw new Error("The file has no prompts to upload. Fill in the Prompts sheet from the template.");
+      const free = MAX_PROMPTS - prompts.length;
+      if (rows.length > free) throw new Error(`The project has ${prompts.length} of ${MAX_PROMPTS} prompts, so ${free} more fit, but this file has ${rows.length} rows.`);
       const numbers = freeNumbers(rows.length);
-      const payload = rows.map((row, index) => ({
-        project_id: projectId, prompt_number: numbers[index],
-        prompt: String(row.Prompt ?? row.prompt ?? "").trim(),
-        topic: String(row.Topic ?? row.topic ?? "").trim(),
-        language: String(row.Language ?? row.language ?? "").trim(),
-      })).filter((row) => row.prompt && row.topic && row.language);
-      if (payload.length !== rows.length) throw new Error("Each row needs Prompt, Topic and Language.");
-      const { error: uploadError } = await supabase.from("prompts").insert(payload);
+      const topicByKey = new Map(topics.map((topic) => [topic.trim().toLocaleLowerCase(), topic]));
+      const languageByKey = new Map(languages.map((language) => [language.toLocaleLowerCase(), language]));
+      const problems: string[] = [];
+      const payload = rows.map((row, index) => {
+        const line = index + 2;
+        const prompt = String(row.Prompt ?? row.prompt ?? "").trim();
+        const topicText = String(row.Topic ?? row.topic ?? "").trim();
+        const languageText = String(row.Language ?? row.language ?? "").trim();
+        if (!prompt || !topicText || !languageText) { problems.push(`Row ${line}: needs a Prompt, Topic and Language.`); return null; }
+        if (prompt === EXAMPLE_PROMPT) { problems.push(`Row ${line}: this is the template's example row; replace or delete it.`); return null; }
+        const topic = topicByKey.get(topicText.toLocaleLowerCase());
+        const language = languageByKey.get(languageText.toLocaleLowerCase());
+        if (!topic) problems.push(`Row ${line}: topic "${topicText}" is not one of this project's topics.`);
+        if (!language) problems.push(`Row ${line}: language "${languageText}" is not supported.`);
+        if (!topic || !language) return null;
+        return { project_id: projectId, prompt_number: numbers[index], prompt, topic, language };
+      });
+      if (problems.length) {
+        const shown = problems.slice(0, 8).join(" ");
+        throw new Error(shown + (problems.length > 8 ? ` And ${problems.length - 8} more. Nothing was uploaded.` : " Nothing was uploaded."));
+      }
+      const payload_ = payload as Array<NonNullable<(typeof payload)[number]>>;
+      const { error: uploadError } = await supabase.from("prompts").insert(payload_);
       if (uploadError) throw uploadError;
-      setNotice(`${payload.length} prompts uploaded successfully.`);
+      setNotice(`${payload_.length} prompts uploaded successfully.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
