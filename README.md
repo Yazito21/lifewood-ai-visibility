@@ -9,7 +9,7 @@ This repository is intentionally separate from the `lifewood-aeo-geo` operations
 The AI visibility platform is responsible for:
 
 - Brand/project configuration
-- Exactly 100 tracked prompts per project
+- Up to 50 tracked prompts per project, with at least 5 per topic
 - LLM/API configuration
 - Raw AI response retention
 - Daily visibility metrics
@@ -26,7 +26,7 @@ Stage 3 — login, password recovery, project selection, project creation, proje
 
 The intended tracking pipeline is:
 
-`100 prompts × 5 AI answer engines → raw responses → extraction → daily metrics → analytics`
+`Up to 50 prompts × 5 AI answer engines → raw responses → extraction → daily metrics → analytics`
 
 ## Supabase
 
