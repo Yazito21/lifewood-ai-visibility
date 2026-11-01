@@ -501,6 +501,9 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
   }
   return completed;
 }
+const MAX_TRACKING_PROMPTS = 50;
+const MIN_PROMPTS_PER_TOPIC = 5;
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   let activeRunId: string | null = null;
@@ -577,7 +580,7 @@ Deno.serve(async (req: Request) => {
     if (Array.isArray(body?.prompt_ids)) {
       const ids = body.prompt_ids.map(String).filter(Boolean);
       if (!ids.length) return json({ error: "SELECT_AT_LEAST_ONE_PROMPT" }, 400);
-      if (ids.length > (mode === "sample" ? 25 : 100)) return json({ error: mode === "sample" ? "SAMPLE_LIMIT_25_PROMPTS" : "TRACKING_LIMIT_100_PROMPTS" }, 400);
+      if (ids.length > (mode === "sample" ? 25 : MAX_TRACKING_PROMPTS)) return json({ error: mode === "sample" ? "SAMPLE_LIMIT_25_PROMPTS" : "TRACKING_LIMIT_50_PROMPTS" }, 400);
       promptQuery = promptQuery.in("id", ids);
     } else if (mode === "sample") {
       return json({ error: "SAMPLE_PROMPTS_REQUIRED" }, 400);
@@ -597,6 +600,15 @@ Deno.serve(async (req: Request) => {
       const promptTopics = new Set(prompts.map((p) => String(p.topic ?? "General")));
       const missingPromptTopics = validatedTopics.filter((topic) => !promptTopics.has(topic));
       const unconfiguredPromptTopics = [...promptTopics].filter((topic) => configuredTopics.length > 0 && !configuredTopics.includes(topic));
+      // A full topic run (no hand-picked prompt list) needs a minimum prompt set per topic; retries of chosen prompts are exempt.
+      const thinPromptTopics = Array.isArray(body?.prompt_ids) ? [] : validatedTopics
+        .map((topic) => ({ topic, count: prompts.filter((p) => String(p.topic ?? "General") === topic).length }))
+        .filter((item) => item.count < MIN_PROMPTS_PER_TOPIC);
+      if (thinPromptTopics.length) return json({
+        error: "PROMPT_TOPIC_MINIMUM_NOT_MET",
+        message: "Each topic needs at least " + MIN_PROMPTS_PER_TOPIC + " active prompts before tracking can run.",
+        topics: thinPromptTopics,
+      }, 409);
       if (missingPromptTopics.length || unconfiguredPromptTopics.some((topic) => topic === selectedTopic)) {
         return json({
           error: "PROMPT_TOPIC_COVERAGE_INVALID",
