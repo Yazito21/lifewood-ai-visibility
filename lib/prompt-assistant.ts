@@ -1,4 +1,4 @@
-export const PROMPT_LIMIT = 100;
+export const PROMPT_LIMIT = 50;
 
 export type SuggestionMode = "discovery" | "brand";
 

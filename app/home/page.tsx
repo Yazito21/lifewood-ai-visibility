@@ -161,7 +161,7 @@ export default function ProjectsPage(){
           <div className="platform-card p-5"><p className="platform-stat-label">Brand Projects</p><p className="platform-stat-value">{projects.length}</p><p className="platform-stat-meta">Accessible workspaces</p></div>
           <div className="platform-card p-5"><p className="platform-stat-label">Tracked Projects</p><p className="platform-stat-value">{Object.keys(latest).length}</p><p className="platform-stat-meta">With daily visibility data</p></div>
           <div className="platform-card p-5"><p className="platform-stat-label">Execution-ready engines</p><p className="platform-stat-value">1</p><p className="platform-stat-meta">ChatGPT runner available; additional engines are planned</p></div>
-          <div className="platform-card p-5"><p className="platform-stat-label">Prompt Limit</p><p className="platform-stat-value">100</p><p className="platform-stat-meta">Per project</p></div>
+          <div className="platform-card p-5"><p className="platform-stat-label">Prompt Limit</p><p className="platform-stat-value">50</p><p className="platform-stat-meta">Per project, at least 5 per topic</p></div>
         </section>
 
         <section className="mt-8">

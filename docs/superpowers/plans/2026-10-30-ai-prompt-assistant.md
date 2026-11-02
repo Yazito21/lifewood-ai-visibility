@@ -78,7 +78,7 @@
 ### Task 3: Database migration
 
 **Files:**
-- Create: `supabase/migrations/20261030090000_ai_prompt_assistant.sql`
+- Create: `supabase/migrations/20261102090000_ai_prompt_assistant.sql`
 
 **Interfaces:**
 - Produces: `projects.brand_profile jsonb`, `projects.brand_profile_updated_at timestamptz`, table `public.ai_usage_log`.
@@ -140,5 +140,5 @@
 **Files:** none (operational).
 
 - [ ] **Step 1:** User sets secrets: `supabase secrets set OPENROUTER_API_KEY=… OPENROUTER_MODEL=google/gemini-2.5-flash-lite --project-ref jhauufmrxpsbfrahgclv`.
-- [ ] **Step 2:** Apply migration `20261030090000_ai_prompt_assistant.sql` and deploy: `supabase db push` (or apply via dashboard) and `supabase functions deploy prompt-assistant visibility-tracking --project-ref jhauufmrxpsbfrahgclv` (visibility-tracking carries the earlier brand-list change).
+- [ ] **Step 2:** Apply migration `20261102090000_ai_prompt_assistant.sql` and deploy: `supabase db push` (or apply via dashboard) and `supabase functions deploy prompt-assistant visibility-tracking --project-ref jhauufmrxpsbfrahgclv` (visibility-tracking carries the earlier brand-list change).
 - [ ] **Step 3:** On a test project: Refresh profile → profile shows; Generate 5 (discovery) → 5 prompts without the brand name; toggle Brand → prompts name the brand; Add selected → rows appear in the table. Confirm `ai_usage_log` rows exist with non-null tokens.

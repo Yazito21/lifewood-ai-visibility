@@ -20,7 +20,7 @@ Success criteria:
 | Topic | Decision |
 |---|---|
 | Save behaviour | Draft suggestions; the user selects and saves. |
-| Batch size | 5 suggestions per **Generate** click; repeat until the desired count (project cap stays 100). |
+| Batch size | 5 suggestions per **Generate** click; repeat until the desired count (project cap is 50). |
 | Prompt type | **Discovery** (unbranded buyer questions) by default. **Brand perception** (names the brand) is an opt-in toggle and those prompts are labelled, because branded prompts mention the brand almost every time and inflate the score. |
 | Model | `google/gemini-2.5-flash-lite` via OpenRouter ($0.10 in / $0.40 out per 1M tokens). Configurable with `OPENROUTER_MODEL`; fallback suggestion `deepseek/deepseek-v4-flash`. |
 | Secrets | `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` are Supabase Edge Function secrets. Never in the repo, `.env.local` or client code. |
@@ -76,7 +76,7 @@ Pure helpers live in separate files with Deno tests, following `visibility-track
   - Topic picker, language picker (default English), Discovery / Brand perception toggle.
   - **Generate 5** → suggestion cards with checkbox, inline edit, ↻ replace, and a "Brand" badge for
     brand-perception prompts.
-  - **Add selected (n)** saves through the page's existing prompt insert path; counter shows `n / 100` and
+  - **Add selected (n)** saves through the page's existing prompt insert path; counter shows `n / 50` and
     selection is capped by the remaining slots.
 
 ## Error handling

@@ -10,6 +10,8 @@ import { supabase } from "@/lib/supabase";
 
 type Prompt = { id: string; prompt_number: number; prompt: string; topic: string; language: string; active: boolean };
 type LatestMetric = { metric_date: string; visibility_rank: number | null; share_of_voice_rank: number | null; average_position_rank: number | null };
+const MAX_PROMPTS = PROMPT_LIMIT;
+const MIN_PROMPTS_PER_TOPIC = 5;
 const languages = ["English", "Malay", "Chinese", "Japanese", "Korean", "Thai", "Indonesian", "Arabic", "Other"];
 
 export default function PromptsPage() {
@@ -80,6 +82,17 @@ export default function PromptsPage() {
   const visible = expanded ? filtered : filtered.slice(0, 10);
   const allFilteredSelected = filtered.length > 0 && filtered.every((prompt) => selectedIds.includes(prompt.id));
 
+  const topicCounts = useMemo(() => topics.map((topic) => ({ topic, count: prompts.filter((prompt) => prompt.topic === topic).length })), [topics, prompts]);
+  const underfilledTopics = topicCounts.filter((item) => item.count < MIN_PROMPTS_PER_TOPIC);
+
+  // Prompt numbers stay within 1..MAX_PROMPTS, so new prompts take the lowest numbers that are free.
+  function freeNumbers(count: number) {
+    const used = new Set(prompts.map((prompt) => prompt.prompt_number));
+    const free: number[] = [];
+    for (let n = 1; n <= MAX_PROMPTS && free.length < count; n++) if (!used.has(n)) free.push(n);
+    return free;
+  }
+
   function togglePrompt(id: string) {
     setSelectedIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
   }
@@ -91,10 +104,10 @@ export default function PromptsPage() {
   }
 
   async function insertPrompts(rows: { prompt: string; topic: string; language: string }[]) {
-    if (prompts.length + rows.length > PROMPT_LIMIT) throw new Error(`The project can hold at most ${PROMPT_LIMIT} prompts.`);
-    const startNumber = Math.max(0, ...prompts.map((prompt) => prompt.prompt_number)) + 1;
+    if (prompts.length + rows.length > MAX_PROMPTS) throw new Error(`The project can hold at most ${MAX_PROMPTS} prompts.`);
+    const numbers = freeNumbers(rows.length);
     const { error: insertError } = await supabase.from("prompts").insert(rows.map((row, index) => ({
-      project_id: projectId, prompt_number: startNumber + index, prompt: row.prompt, topic: row.topic, language: row.language,
+      project_id: projectId, prompt_number: numbers[index], prompt: row.prompt, topic: row.topic, language: row.language,
     })));
     if (insertError) throw new Error(insertError.message);
     await load();
@@ -102,7 +115,7 @@ export default function PromptsPage() {
 
   async function addPrompt(keepOpen = false) {
     if (!canEdit || !form.prompt.trim() || !form.topic) return;
-    if (prompts.length >= PROMPT_LIMIT) { setError("The project already has 100 prompts."); return; }
+    if (prompts.length >= MAX_PROMPTS) { setError("The project already has " + MAX_PROMPTS + " prompts."); return; }
     setBusy(true); setError(""); setNotice("");
     const insertError = await insertPrompts([{ prompt: form.prompt.trim(), topic: form.topic, language: form.language }])
       .then(() => null, (err: Error) => err);
@@ -129,10 +142,28 @@ export default function PromptsPage() {
     setBusy(false);
   }
 
+  const EXAMPLE_PROMPT = "Example prompt";
+
   function template() {
-    const worksheet = XLSX.utils.json_to_sheet([{ Prompt: "Example prompt", Topic: topics[0] || "Example topic", Language: "English" }]);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Prompts");
+    const sheet = XLSX.utils.json_to_sheet([{ Prompt: EXAMPLE_PROMPT, Topic: topics[0] || "Example topic", Language: "English" }]);
+    sheet["!cols"] = [{ wch: 70 }, { wch: 40 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(workbook, sheet, "Prompts");
+    const instructions = XLSX.utils.aoa_to_sheet([
+      ["How to fill in the Prompts sheet"],
+      [`A project can hold up to ${MAX_PROMPTS} prompts in total, with at least ${MIN_PROMPTS_PER_TOPIC} prompts for every topic.`],
+      [`This project currently has ${prompts.length} prompts, so you can upload up to ${Math.max(0, MAX_PROMPTS - prompts.length)} more.`],
+      ["Replace or delete the example row. A row whose prompt is \"" + EXAMPLE_PROMPT + "\" is rejected."],
+      ["Every row needs a Prompt, a Topic and a Language."],
+      [],
+      ["Valid topics (type them exactly as shown)"],
+      ...topics.map((topic) => [topic]),
+      [],
+      ["Valid languages"],
+      ...languages.map((language) => [language]),
+    ]);
+    instructions["!cols"] = [{ wch: 110 }];
+    XLSX.utils.book_append_sheet(workbook, instructions, "Instructions");
     XLSX.writeFile(workbook, "lifewood-prompts-template.xlsx");
   }
 
@@ -142,19 +173,37 @@ export default function PromptsPage() {
     setBusy(true); setError(""); setNotice("");
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[workbook.SheetNames[0]]);
-      if (prompts.length + rows.length > 100) throw new Error("Bulk upload would exceed the 100-prompt limit.");
-      const startNumber = Math.max(0, ...prompts.map((prompt) => prompt.prompt_number)) + 1;
-      const payload = rows.map((row, index) => ({
-        project_id: projectId, prompt_number: startNumber + index,
-        prompt: String(row.Prompt ?? row.prompt ?? "").trim(),
-        topic: String(row.Topic ?? row.topic ?? "").trim(),
-        language: String(row.Language ?? row.language ?? "").trim(),
-      })).filter((row) => row.prompt && row.topic && row.language);
-      if (payload.length !== rows.length) throw new Error("Each row needs Prompt, Topic and Language.");
-      const { error: uploadError } = await supabase.from("prompts").insert(payload);
+      const sheet = workbook.Sheets["Prompts"] ?? workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+      if (!rows.length) throw new Error("The file has no prompts to upload. Fill in the Prompts sheet from the template.");
+      const free = MAX_PROMPTS - prompts.length;
+      if (rows.length > free) throw new Error(`The project has ${prompts.length} of ${MAX_PROMPTS} prompts, so ${free} more fit, but this file has ${rows.length} rows.`);
+      const numbers = freeNumbers(rows.length);
+      const topicByKey = new Map(topics.map((topic) => [topic.trim().toLocaleLowerCase(), topic]));
+      const languageByKey = new Map(languages.map((language) => [language.toLocaleLowerCase(), language]));
+      const problems: string[] = [];
+      const payload = rows.map((row, index) => {
+        const line = index + 2;
+        const prompt = String(row.Prompt ?? row.prompt ?? "").trim();
+        const topicText = String(row.Topic ?? row.topic ?? "").trim();
+        const languageText = String(row.Language ?? row.language ?? "").trim();
+        if (!prompt || !topicText || !languageText) { problems.push(`Row ${line}: needs a Prompt, Topic and Language.`); return null; }
+        if (prompt === EXAMPLE_PROMPT) { problems.push(`Row ${line}: this is the template's example row; replace or delete it.`); return null; }
+        const topic = topicByKey.get(topicText.toLocaleLowerCase());
+        const language = languageByKey.get(languageText.toLocaleLowerCase());
+        if (!topic) problems.push(`Row ${line}: topic "${topicText}" is not one of this project's topics.`);
+        if (!language) problems.push(`Row ${line}: language "${languageText}" is not supported.`);
+        if (!topic || !language) return null;
+        return { project_id: projectId, prompt_number: numbers[index], prompt, topic, language };
+      });
+      if (problems.length) {
+        const shown = problems.slice(0, 8).join(" ");
+        throw new Error(shown + (problems.length > 8 ? ` And ${problems.length - 8} more. Nothing was uploaded.` : " Nothing was uploaded."));
+      }
+      const payload_ = payload as Array<NonNullable<(typeof payload)[number]>>;
+      const { error: uploadError } = await supabase.from("prompts").insert(payload_);
       if (uploadError) throw uploadError;
-      setNotice(`${payload.length} prompts uploaded successfully.`);
+      setNotice(`${payload_.length} prompts uploaded successfully.`);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -166,12 +215,12 @@ export default function PromptsPage() {
 
   return <ProjectShell><div className="ops-page">
     <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-      <div><p className="page-eyebrow">Prompts</p><h2 className="page-title mt-1">Prompt library</h2><p className="page-description mt-2">These are the questions we ask the AI answer engines every day to see whether your brand shows up. Search or filter to find a prompt, and tick the boxes to pick several at once. If you have edit access, you can add new prompts or delete the ones you picked, up to a total of 100.</p></div>
+      <div><p className="page-eyebrow">Prompts</p><h2 className="page-title mt-1">Prompt library</h2><p className="page-description mt-2">These are the questions we ask the AI answer engines every day to see whether your brand shows up. Search or filter to find a prompt, and tick the boxes to pick several at once. If you have edit access, you can add new prompts or delete the ones you picked, up to a total of 50, with at least 5 prompts for every topic.</p></div>
       {canEdit && <div className="flex flex-wrap gap-2">
         <button onClick={template} className="inline-flex items-center gap-2 platform-btn px-4 py-3 text-sm font-semibold"><Download size={16}/> Template</button>
         <label className={"inline-flex items-center gap-2 platform-btn px-4 py-3 text-sm font-semibold " + (busy ? "pointer-events-none opacity-50" : "cursor-pointer")}><Upload size={16}/> Bulk upload<input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={busy} onChange={upload}/></label>
-        <button disabled={prompts.length >= PROMPT_LIMIT || busy || !topics.length} onClick={() => setAssistantOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-[#0d5b3a] px-4 py-3 text-sm font-semibold text-[var(--green)] disabled:opacity-40"><Sparkles size={16}/> AI prompt assistant</button>
-        <button disabled={prompts.length >= 100 || busy} onClick={() => { setForm({ prompt: "", topic: topics[0] || "", language: "English" }); setOpen(true); }} className="inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-40"><Plus size={16}/> Add prompt</button>
+        <button disabled={prompts.length >= MAX_PROMPTS || busy || !topics.length} onClick={() => setAssistantOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-[#0d5b3a] px-4 py-3 text-sm font-semibold text-[var(--green)] disabled:opacity-40"><Sparkles size={16}/> AI prompt assistant</button>
+        <button disabled={prompts.length >= MAX_PROMPTS || busy} onClick={() => { setForm({ prompt: "", topic: topics[0] || "", language: "English" }); setOpen(true); }} className="inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-40"><Plus size={16}/> Add prompt</button>
       </div>}
     </div>
 
@@ -179,10 +228,12 @@ export default function PromptsPage() {
     {error && <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
     {notice && <div role="status" className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
 
+    {underfilledTopics.length > 0 && <div role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Tracking needs at least {MIN_PROMPTS_PER_TOPIC} prompts for every topic. Still needed: {underfilledTopics.map((item) => item.topic + " (" + item.count + "/" + MIN_PROMPTS_PER_TOPIC + ")").join(", ")}.</div>}
+
     <section className="mt-6 platform-card p-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h3 className="text-lg font-semibold">All prompts <span className="ml-2 rounded-full bg-[var(--soft)] px-2.5 py-1 text-sm font-semibold text-[var(--green)]">{prompts.length} / 100</span></h3>
+          <h3 className="text-lg font-semibold">All prompts <span className="ml-2 rounded-full bg-[var(--soft)] px-2.5 py-1 text-sm font-semibold text-[var(--green)]">{prompts.length} / {MAX_PROMPTS}</span></h3>
           <p className="mt-1 text-sm text-[#66736c]">The full list of prompts used in tracking. {filtered.length} matching {filtered.length === 1 ? "prompt" : "prompts"}{canEdit ? " · Select prompts to delete them in bulk." : ""}</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">

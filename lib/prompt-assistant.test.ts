@@ -2,14 +2,14 @@ import test from "node:test";
 import { strictEqual } from "node:assert/strict";
 import { assistantErrorMessage, notShown, remainingSlots, PROMPT_LIMIT } from "./prompt-assistant.ts";
 
-test("remaining slots count down from the 100-prompt limit", () => {
-  strictEqual(PROMPT_LIMIT, 100);
-  strictEqual(remainingSlots(0), 100);
-  strictEqual(remainingSlots(98), 2);
+test("remaining slots count down from the 50-prompt limit", () => {
+  strictEqual(PROMPT_LIMIT, 50);
+  strictEqual(remainingSlots(0), 50);
+  strictEqual(remainingSlots(48), 2);
 });
 
 test("remaining slots never go below zero", () => {
-  strictEqual(remainingSlots(100), 0);
+  strictEqual(remainingSlots(50), 0);
   strictEqual(remainingSlots(120), 0);
 });
 
