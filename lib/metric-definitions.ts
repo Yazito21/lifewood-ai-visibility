@@ -17,9 +17,9 @@ export const METRIC_DEFINITIONS: Record<MetricKey, { label: string; short: strin
     short: "Share of valid AI responses that mention the brand at least once.",
     detail: [
       "Numerator: distinct valid responses mentioning the entity (repeat mentions in one response count once).",
-      "Denominator: distinct valid completed responses for the same topic, engine, date and location.",
+      "Denominator: distinct valid completed responses for the same category, engine, date and location.",
       "Tracked brand and competitors use the identical calculation.",
-      "Overall pools the responses of all topics published that day; it is not an average of topic scores.",
+      "Overall pools the responses of all categories published that day; it is not an average of category scores.",
     ],
   },
   visibility_rank: {

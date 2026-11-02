@@ -36,8 +36,8 @@ begin
   -- (A missing grant on citation_occurrences made every tracking run fail at the cleanup step.)
   select string_agg(t, ', ') into detail
   from unnest(array['ai_responses', 'citation_occurrences', 'citations', 'competitors', 'direct_competitor_observations',
-                    'response_brand_evidence', 'third_party_mentions', 'topic_brand_observations', 'visibility_daily',
-                    'tracking_runs', 'tracking_run_stages', 'tracking_batches', 'tracking_batch_topics']) t
+                    'response_brand_evidence', 'third_party_mentions', 'category_brand_observations', 'visibility_daily',
+                    'tracking_runs', 'tracking_run_stages', 'tracking_batches', 'tracking_batch_categories']) t
   where not (has_table_privilege('service_role', 'public.' || t, 'SELECT')
          and has_table_privilege('service_role', 'public.' || t, 'INSERT')
          and has_table_privilege('service_role', 'public.' || t, 'UPDATE')

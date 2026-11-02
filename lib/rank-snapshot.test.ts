@@ -2,8 +2,8 @@ import test from "node:test";
 import { strictEqual, deepStrictEqual } from "node:assert/strict";
 import { chartSeries, latestSnapshots, rankDisplay, type DailyMetric } from "./rank-snapshot.ts";
 
-const verified = (topic: string, metric_date: string, visibility_score: number, visibility_rank: number, population: number): DailyMetric => ({
-  metric_date, topic, visibility_score, visibility_rank, rank_population_count: population, rank_population_status: "verified",
+const verified = (category: string, metric_date: string, visibility_score: number, visibility_rank: number, population: number): DailyMetric => ({
+  metric_date, category, visibility_score, visibility_rank, rank_population_count: population, rank_population_status: "verified",
 });
 
 // Dr D latest reporting date (2026-10-26), as stored after the canonical backfill.
@@ -13,24 +13,24 @@ const drD: DailyMetric[] = [
   verified("Longevity", "2026-10-25", 9.1, 2, 100), verified("Longevity", "2026-10-26", 9.1, 2, 100),
   verified("Overall", "2026-10-25", 24, 2, 248), verified("Overall", "2026-10-26", 24, 2, 248),
 ];
-const topics = ["Overall", "Skin", "Mind", "Longevity"];
+const categories = ["Overall", "Skin", "Mind", "Longevity"];
 
 test("Dr D cards show the canonical ranks and populations for the latest date", () => {
-  const snapshots = latestSnapshots(drD, topics);
+  const snapshots = latestSnapshots(drD, categories);
   strictEqual(rankDisplay(snapshots.get("Overall")).text, "2/248");
   strictEqual(rankDisplay(snapshots.get("Skin")).text, "1/100");
   strictEqual(rankDisplay(snapshots.get("Mind")).text, "1/100");
   strictEqual(rankDisplay(snapshots.get("Longevity")).text, "2/100");
 });
 
-test("card rank equals the last point of the rank chart for every topic and date", () => {
-  for (const topic of topics) {
-    const dates = [...new Set(drD.filter((row) => row.topic === topic).map((row) => row.metric_date))].sort();
+test("card rank equals the last point of the rank chart for every category and date", () => {
+  for (const category of categories) {
+    const dates = [...new Set(drD.filter((row) => row.category === category).map((row) => row.metric_date))].sort();
     for (const date of dates) {
       const upTo = drD.filter((row) => row.metric_date <= date);
-      const card = rankDisplay(latestSnapshots(upTo, topics).get(topic));
-      const series = chartSeries(upTo, topic, "visibility_rank");
-      strictEqual(card.rank, series[series.length - 1].value, topic + " " + date);
+      const card = rankDisplay(latestSnapshots(upTo, categories).get(category));
+      const series = chartSeries(upTo, category, "visibility_rank");
+      strictEqual(card.rank, series[series.length - 1].value, category + " " + date);
     }
   }
 });
@@ -43,7 +43,7 @@ test("Lifewood-style rows with a larger population format consistently", () => {
 });
 
 test("an unverified row still shows its rank (matching the chart) with a note, never a fabricated denominator", () => {
-  const row: DailyMetric = { metric_date: "2026-10-20", topic: "Skin", visibility_score: 3, visibility_rank: 14, rank_population_count: null, rank_population_status: "unverified" };
+  const row: DailyMetric = { metric_date: "2026-10-20", category: "Skin", visibility_score: 3, visibility_rank: 14, rank_population_count: null, rank_population_status: "unverified" };
   const display = rankDisplay(row);
   strictEqual(display.text, "14");
   strictEqual(display.population, null);
@@ -52,7 +52,7 @@ test("an unverified row still shows its rank (matching the chart) with a note, n
 });
 
 test("no eligible competitors yields an explicit unavailable state, not rank 1/1", () => {
-  const row: DailyMetric = { metric_date: "2026-10-26", topic: "Skin", visibility_score: 10, visibility_rank: null, rank_population_count: 0, rank_population_status: "no_eligible_observations" };
+  const row: DailyMetric = { metric_date: "2026-10-26", category: "Skin", visibility_score: 10, visibility_rank: null, rank_population_count: 0, rank_population_status: "no_eligible_observations" };
   const display = rankDisplay(row);
   strictEqual(display.text, "N/A");
   strictEqual(display.note, "No eligible competitor observations");
@@ -88,7 +88,7 @@ test("a single recorded day has no baseline to compare with", () => {
 
 test("an unverified-population baseline is still used and flagged", () => {
   const rows = [
-    { metric_date: "2026-10-16", topic: "AEO", visibility_score: 6, visibility_rank: 20, rank_population_count: null, rank_population_status: "unverified" } as DailyMetric,
+    { metric_date: "2026-10-16", category: "AEO", visibility_score: 6, visibility_rank: 20, rank_population_count: null, rank_population_status: "unverified" } as DailyMetric,
     verified("AEO", "2026-10-29", 7.5, 17, 100),
   ];
   const snap = latestSnapshots(rows, ["AEO"]).get("AEO")!;

@@ -7,12 +7,12 @@ import * as XLSX from "xlsx";
 import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 
-type Prompt = { id: string; prompt_number: number; prompt: string; topic: string; language: string; active: boolean };
+type Prompt = { id: string; prompt_number: number; prompt: string; category: string; language: string; active: boolean };
 type SampleResult = {
-  prompt_id: string; prompt_number: number; prompt: string; topic: string; language: string;
+  prompt_id: string; prompt_number: number; prompt: string; category: string; language: string;
   provider: string; status: string; response_text?: string; raw_response?: unknown; error_message?: string;
   brand_mentioned: boolean;
-  citations: { url: string; page_name: string; brand_name: string; is_brand_related: boolean; topic: string; prompt: string; provider: string; domain?: string; citation_source?: string }[];
+  citations: { url: string; page_name: string; brand_name: string; is_brand_related: boolean; category: string; prompt: string; provider: string; domain?: string; citation_source?: string }[];
   competitor_hosts: string[]; model?: string; usage?: unknown;
   response_analysis?: {
     status: "completed" | "failed" | "not_run";
@@ -50,7 +50,7 @@ export default function SamplesPage() {
   const [selected, setSelected] = useState<string[]>([]);
   const [selectedEngines, setSelectedEngines] = useState<string[]>(["chatgpt"]);
   const [search, setSearch] = useState("");
-  const [topic, setTopic] = useState("All topics");
+  const [category, setCategory] = useState("All categories");
   const [loadingPrompts, setLoadingPrompts] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
@@ -68,7 +68,7 @@ export default function SamplesPage() {
     async function load() {
       setLoadingPrompts(true);
       const { data, error } = await supabase.from("prompts")
-        .select("id,prompt_number,prompt,topic,language,active")
+        .select("id,prompt_number,prompt,category,language,active")
         .eq("project_id", projectId).eq("active", true).order("prompt_number");
       if (!alive) return;
       if (error) setError(error.message);
@@ -81,14 +81,14 @@ export default function SamplesPage() {
     return () => { alive = false; };
   }, [projectId]);
 
-  const topics = useMemo(() => ["All topics", ...new Set(prompts.map((p) => p.topic))], [prompts]);
+  const categories = useMemo(() => ["All categories", ...new Set(prompts.map((p) => p.category))], [prompts]);
   const filtered = prompts.filter((p) =>
-    (topic === "All topics" || p.topic === topic) &&
-    (p.prompt.toLowerCase().includes(search.toLowerCase()) || p.topic.toLowerCase().includes(search.toLowerCase()))
+    (category === "All categories" || p.category === category) &&
+    (p.prompt.toLowerCase().includes(search.toLowerCase()) || p.category.toLowerCase().includes(search.toLowerCase()))
   );
   const selectedPrompts = prompts.filter((p) => selected.includes(p.id));
   const filteredResults = (payload?.results ?? []).filter((r) =>
-    [r.prompt, r.topic, r.provider, r.status, String(r.prompt_number),
+    [r.prompt, r.category, r.provider, r.status, String(r.prompt_number),
       ...(r.response_analysis?.entities ?? []).map((entity) => entity.name)]
       .some((value) => value.toLowerCase().includes(resultSearch.trim().toLowerCase()))
   );
@@ -154,7 +154,7 @@ export default function SamplesPage() {
     }];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Summary");
     const rows = payload.results.map((r) => ({
-      Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Topic: r.topic, Language: r.language,
+      Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Category: r.category, Language: r.language,
       Engine: r.provider, Status: r.status, "Brand Mentioned": r.brand_mentioned ? "Yes" : "No",
       "Response Text (Full)": r.response_text ?? "", "Raw API Response JSON": r.raw_response ? JSON.stringify(r.raw_response) : "",
       "Error": r.error_message ?? "", Model: r.model ?? "",
@@ -171,7 +171,7 @@ export default function SamplesPage() {
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Prompt Results");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.citations.map((c) => ({
-      Engine: c.provider, Topic: c.topic, Prompt: c.prompt, URL: c.url, "Page Title": c.page_name,
+      Engine: c.provider, Category: c.category, Prompt: c.prompt, URL: c.url, "Page Title": c.page_name,
       Domain: c.domain ?? "", "Citation Source": c.citation_source ?? "",
       "Brand / Site": c.brand_name, "Tracked Brand Page": c.is_brand_related ? "Yes" : "No",
     }))), "Pages by Prompt");
@@ -190,7 +190,7 @@ export default function SamplesPage() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.competitors.map(cleanCompetitor)), "Configured competitors");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.results.flatMap((r) =>
       (r.response_analysis?.entities ?? []).map((entity) => ({
-        Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Topic: r.topic,
+        Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Category: r.category,
         Engine: r.provider, Extraction_Status: r.response_analysis?.status ?? "not_run",
         Entity: entity.name, Entity_Type: entity.entity_type, Aliases: entity.aliases.join(", "),
         Evidence: entity.evidence,
@@ -198,14 +198,14 @@ export default function SamplesPage() {
     )), "Extracted Entities");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.results.flatMap((r) =>
       (r.response_analysis?.research_sources ?? []).map((source) => ({
-        Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Topic: r.topic,
+        Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Category: r.category,
         Engine: r.provider, "Research Source Title": source.title ?? "", URL: source.url,
         Source_Type: source.source ?? "web_search_source",
       }))
     )), "Research Sources");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payload.results.flatMap((r) =>
       (r.response_analysis?.mentioned_urls ?? []).map((url) => ({
-        Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Topic: r.topic,
+        Prompt_No: r.prompt_number, Prompt_ID: r.prompt_id, Prompt: r.prompt, Category: r.category,
         Engine: r.provider, "Inline URL (not counted as citation)": url,
       }))
     )), "Inline URLs");
@@ -227,14 +227,14 @@ export default function SamplesPage() {
           <div className="border-b border-[var(--border)] p-5 sm:p-6">
             <div className="flex items-center gap-3">
               <span className="platform-icon"><FlaskConical size={18}/></span>
-              <div><h2 className="text-lg font-semibold">Configure sample run</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Pick the prompts you want to test and the answer engine to test them on, then start the run. You can search prompts or filter them by topic.</p></div>
+              <div><h2 className="text-lg font-semibold">Configure sample run</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Pick the prompts you want to test and the answer engine to test them on, then start the run. You can search prompts or filter them by category.</p></div>
             </div>
           </div>
           <div className="grid gap-6 p-5 sm:p-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(300px,.7fr)]">
             <div>
               <div className="flex flex-col gap-3 sm:flex-row">
                 <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search prompts…" className="platform-input text-sm"/>
-                <select value={topic} onChange={(e) => setTopic(e.target.value)} className="platform-input text-sm sm:max-w-[220px]">{topics.map((t) => <option key={t}>{t}</option>)}</select>
+                <select value={category} onChange={(e) => setCategory(e.target.value)} className="platform-input text-sm sm:max-w-[220px]">{categories.map((t) => <option key={t}>{t}</option>)}</select>
               </div>
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted-foreground)]">
                 <span>{selected.length} of 25 prompts selected</span>
@@ -250,7 +250,7 @@ export default function SamplesPage() {
                     const disabled = !checked && selected.length >= 25;
                     return <button key={p.id} disabled={disabled} onClick={() => togglePrompt(p.id)} className="flex w-full items-start gap-3 border-b border-[color-mix(in_srgb,var(--border)_25%,transparent)] p-3 text-left last:border-0 hover:bg-[var(--accent)] disabled:opacity-40">
                       <span className="mt-0.5 text-[var(--primary)]">{checked ? <CheckSquare size={17}/> : <Square size={17}/>}</span>
-                      <span className="min-w-0 flex-1"><span className="text-xs font-bold text-[var(--muted-foreground)]">#{p.prompt_number} · {p.topic} · {p.language}</span><span className="mt-1 block text-sm">{p.prompt}</span></span>
+                      <span className="min-w-0 flex-1"><span className="text-xs font-bold text-[var(--muted-foreground)]">#{p.prompt_number} · {p.category} · {p.language}</span><span className="mt-1 block text-sm">{p.prompt}</span></span>
                     </button>;
                   })}
                 {!loadingPrompts && !filtered.length && <div className="p-6 text-sm text-[var(--muted-foreground)]">No prompts match these filters.</div>}
@@ -303,8 +303,8 @@ export default function SamplesPage() {
                 <span className="text-xs text-[var(--muted-foreground)]">Showing {visibleResults.length} of {filteredResults.length} matching rows</span>
               </div>
             </div>
-            <div className="sample-table-wrap overflow-x-auto"><table className="platform-table sample-data-table min-w-[850px]"><thead><tr><th>Prompt</th><th>Topic</th><th>Engine</th><th>Status</th><th>Brand mentioned</th><th>Brand pages cited</th></tr></thead><tbody>
-              {visibleResults.map((r, i) => <tr key={r.prompt_id + r.provider + i}><td className="max-w-[420px]"><div className="text-xs font-bold text-[var(--muted-foreground)]">#{r.prompt_number}</div><div className="mt-1 whitespace-normal">{r.prompt}</div>{r.response_text && <details className="mt-2"><summary className="cursor-pointer text-xs font-semibold text-[var(--primary)]">View full response</summary><p className="mt-2 max-w-2xl whitespace-pre-wrap text-xs leading-5">{r.response_text}</p></details>}{r.response_analysis && <details className="mt-2"><summary className="cursor-pointer text-xs font-semibold text-[var(--primary)]">Inspect extraction ({r.response_analysis.entities.length} entities · {r.response_analysis.status})</summary><div className="mt-2 space-y-2 text-xs"><p><strong>Extraction status:</strong> {r.response_analysis.status}{r.response_analysis.extraction_model ? " · " + r.response_analysis.extraction_model : ""}</p>{r.response_analysis.error && <p className="text-red-700"><strong>Extraction error:</strong> {r.response_analysis.error}</p>}{r.response_analysis.entities.length > 0 ? <ul className="list-disc space-y-1 pl-4">{r.response_analysis.entities.map((entity, entityIndex) => <li key={entity.name + entityIndex}><strong>{entity.name}</strong> ({entity.entity_type}){entity.aliases.length ? " · aliases: " + entity.aliases.join(", ") : ""}<div className="mt-0.5 whitespace-normal text-[var(--muted-foreground)]">Evidence: “{entity.evidence}”</div></li>)}</ul> : <p>No named entities were extracted from this response.</p>}<p><strong>Research sources:</strong> {r.response_analysis.research_sources?.length ?? 0} · <strong>Inline URLs (not counted as citations):</strong> {r.response_analysis.mentioned_urls?.length ?? 0}</p>{(r.response_analysis.research_sources?.length ?? 0) > 0 && <ul className="list-disc space-y-1 pl-4">{r.response_analysis.research_sources?.map((source, sourceIndex) => <li key={source.url + sourceIndex}><a href={source.url} target="_blank" rel="noreferrer" className="break-all text-[var(--primary)] hover:underline">{source.title || source.url}</a></li>)}</ul>}</div></details>}{r.error_message && <p className="mt-1 text-xs text-red-700">{r.error_message}</p>}</td><td>{r.topic}</td><td>{r.provider}</td><td><span className={"ops-status " + (r.status === "completed" ? "text-[var(--primary)]" : "text-red-700")}>{r.status}</span></td><td>{r.status === "completed" ? (r.brand_mentioned ? "Yes" : "No") : "N/A"}</td><td>{r.citations.filter((c) => c.is_brand_related).length}</td></tr>)}
+            <div className="sample-table-wrap overflow-x-auto"><table className="platform-table sample-data-table min-w-[850px]"><thead><tr><th>Prompt</th><th>Category</th><th>Engine</th><th>Status</th><th>Brand mentioned</th><th>Brand pages cited</th></tr></thead><tbody>
+              {visibleResults.map((r, i) => <tr key={r.prompt_id + r.provider + i}><td className="max-w-[420px]"><div className="text-xs font-bold text-[var(--muted-foreground)]">#{r.prompt_number}</div><div className="mt-1 whitespace-normal">{r.prompt}</div>{r.response_text && <details className="mt-2"><summary className="cursor-pointer text-xs font-semibold text-[var(--primary)]">View full response</summary><p className="mt-2 max-w-2xl whitespace-pre-wrap text-xs leading-5">{r.response_text}</p></details>}{r.response_analysis && <details className="mt-2"><summary className="cursor-pointer text-xs font-semibold text-[var(--primary)]">Inspect extraction ({r.response_analysis.entities.length} entities · {r.response_analysis.status})</summary><div className="mt-2 space-y-2 text-xs"><p><strong>Extraction status:</strong> {r.response_analysis.status}{r.response_analysis.extraction_model ? " · " + r.response_analysis.extraction_model : ""}</p>{r.response_analysis.error && <p className="text-red-700"><strong>Extraction error:</strong> {r.response_analysis.error}</p>}{r.response_analysis.entities.length > 0 ? <ul className="list-disc space-y-1 pl-4">{r.response_analysis.entities.map((entity, entityIndex) => <li key={entity.name + entityIndex}><strong>{entity.name}</strong> ({entity.entity_type}){entity.aliases.length ? " · aliases: " + entity.aliases.join(", ") : ""}<div className="mt-0.5 whitespace-normal text-[var(--muted-foreground)]">Evidence: “{entity.evidence}”</div></li>)}</ul> : <p>No named entities were extracted from this response.</p>}<p><strong>Research sources:</strong> {r.response_analysis.research_sources?.length ?? 0} · <strong>Inline URLs (not counted as citations):</strong> {r.response_analysis.mentioned_urls?.length ?? 0}</p>{(r.response_analysis.research_sources?.length ?? 0) > 0 && <ul className="list-disc space-y-1 pl-4">{r.response_analysis.research_sources?.map((source, sourceIndex) => <li key={source.url + sourceIndex}><a href={source.url} target="_blank" rel="noreferrer" className="break-all text-[var(--primary)] hover:underline">{source.title || source.url}</a></li>)}</ul>}</div></details>}{r.error_message && <p className="mt-1 text-xs text-red-700">{r.error_message}</p>}</td><td>{r.category}</td><td>{r.provider}</td><td><span className={"ops-status " + (r.status === "completed" ? "text-[var(--primary)]" : "text-red-700")}>{r.status}</span></td><td>{r.status === "completed" ? (r.brand_mentioned ? "Yes" : "No") : "N/A"}</td><td>{r.citations.filter((c) => c.is_brand_related).length}</td></tr>)}
             </tbody></table></div>
             {filteredResults.length > 10 && <div className="sample-table-footer"><button type="button" onClick={() => setResultsExpanded((value) => !value)} className="ops-filter-btn">{resultsExpanded ? "Show first 10" : "Show all " + filteredResults.length + " rows"}</button></div>}
           </div>

@@ -66,7 +66,7 @@ export function CompetitorRecomputeStatus({ projectId, canRequest }: { projectId
         {job?.status === "queued" && "Queued on " + when(job.requested_at) + ". It will start with the next scheduled run."}
         {job?.status === "running" && "Recalculating since " + when(job.requested_at) + "…"}
         {job?.status === "completed" && "Up to date. Last recalculated on " + when(job.completed_at) +
-          (job.summary?.competitors != null ? " (" + job.summary.competitors + " competitors, " + (job.summary.units_finalized ?? 0) + " topic-days)" : "") + "."}
+          (job.summary?.competitors != null ? " (" + job.summary.competitors + " competitors, " + (job.summary.units_finalized ?? 0) + " category-days)" : "") + "."}
         {job?.status === "failed" && "Last recalculation failed: " + (job.error_message ?? "unknown error") + ". Use Recalculate now to retry."}
       </p>
       {message && <p className="mt-1 text-[var(--muted-foreground)]">{message}</p>}

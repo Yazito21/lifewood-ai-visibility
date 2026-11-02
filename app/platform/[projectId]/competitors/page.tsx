@@ -13,7 +13,7 @@ import { trackingLocationLabel } from "@/lib/tracking-locations";
 
 type DirectCompetitor = {
   id: string;
-  topic: string;
+  category: string;
   normalized_domain: string;
   brand_name: string;
   website: string | null;
@@ -30,7 +30,7 @@ type DirectObservation = {
 };
 type OwnMetric = {
   metric_date: string;
-  topic: string;
+  category: string;
   llm_provider: string;
   visibility_score: number | string | null;
   citation_count: number | null;
@@ -135,8 +135,8 @@ export default function LeaderboardsPage() {
   const [projectName, setProjectName] = useState("Tracked brand");
   const [projectWebsite, setProjectWebsite] = useState<string | null>(null);
   const [trackingMarket, setTrackingMarket] = useState("MY");
-  const [topics, setTopics] = useState<string[]>([]);
-  const [topic, setTopic] = useState("All");
+  const [categories, setCategories] = useState<string[]>([]);
+  const [category, setCategory] = useState("All");
   const [llms, setLlms] = useState<string[]>(["chatgpt"]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
@@ -157,16 +157,16 @@ export default function LeaderboardsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    async function fetchCompetitorRegistry(selectedTopic: string) {
-      const assignmentRows: Array<{ topic:string; brand_id:string; role:string }> = [];
+    async function fetchCompetitorRegistry(selectedCategory: string) {
+      const assignmentRows: Array<{ category:string; brand_id:string; role:string }> = [];
       for(let offset=0;;offset+=1000){
-        let query=supabase.from("topic_brand_assignments").select("topic,brand_id,role")
+        let query=supabase.from("category_brand_assignments").select("category,brand_id,role")
           .eq("project_id",projectId).eq("include_in_metrics",true).eq("role","competitor")
-          .order("topic").range(offset,offset+999);
-        if(selectedTopic!=="Overall")query=query.eq("topic",selectedTopic);
+          .order("category").range(offset,offset+999);
+        if(selectedCategory!=="Overall")query=query.eq("category",selectedCategory);
         const {data,error:queryError}=await query;
         if(queryError)throw queryError;
-        const batch=(data??[]) as Array<{topic:string;brand_id:string;role:string}>;
+        const batch=(data??[]) as Array<{category:string;brand_id:string;role:string}>;
         assignmentRows.push(...batch);
         if(batch.length<1000)break;
       }
@@ -185,7 +185,7 @@ export default function LeaderboardsPage() {
         const brand=byId.get(assignment.brand_id);
         if(!brand)continue;
         unique.set(brand.id,{
-          id:brand.id,topic:selectedTopic,
+          id:brand.id,category:selectedCategory,
           normalized_domain:brand.id,
           brand_name:brand.canonical_name,
           website:rootWebsite(brand.primary_website),
@@ -194,14 +194,14 @@ export default function LeaderboardsPage() {
       return [...unique.values()];
     }
     // Published run per date and engine: every selected engine has its own runs, so look each one up.
-    async function fetchPublishedRunIds(range: DateRange, location: string, selectedTopic: string, engines: string[]) {
+    async function fetchPublishedRunIds(range: DateRange, location: string, selectedCategory: string, engines: string[]) {
       const published = new Map<string, string>();
       for (const engine of engines) {
         const { data, error: queryError } = await supabase.rpc("get_published_run_ids_for_leaderboard", {
           p_project_id: projectId,
           p_start_date: range.start,
           p_end_date: range.end,
-          p_topic: selectedTopic,
+          p_category: selectedCategory,
           p_provider: engine,
           p_tracking_location: location,
         });
@@ -210,15 +210,15 @@ export default function LeaderboardsPage() {
       }
       return published;
     }
-    async function fetchObservations(ids: string[], range: DateRange, location: string, engines: string[], selectedTopic: string) {
+    async function fetchObservations(ids: string[], range: DateRange, location: string, engines: string[], selectedCategory: string) {
       if (!ids.length || !engines.length) return [] as DirectObservation[];
       const all: DirectObservation[] = [];
       for (let i = 0; i < ids.length; i += 80) {
         const chunk = ids.slice(i, i + 80);
         for (let offset = 0; ; offset += 1000) {
-          const { data, error: queryError } = await supabase.from("topic_brand_observations")
+          const { data, error: queryError } = await supabase.from("category_brand_observations")
             .select("brand_id,metric_date,llm_provider,presence_count,response_count,citation_count,tracking_location,run_id")
-            .eq("project_id", projectId).eq("topic", selectedTopic).eq("tracking_location", location)
+            .eq("project_id", projectId).eq("category", selectedCategory).eq("tracking_location", location)
             .gte("metric_date", range.start).lte("metric_date", range.end)
             .in("brand_id", chunk).in("llm_provider", engines)
             .order("metric_date", { ascending: true }).range(offset, offset + 999);
@@ -230,14 +230,14 @@ export default function LeaderboardsPage() {
       }
       return all;
     }
-    async function fetchOwnMetrics(range: DateRange, location: string, selectedTopic: string, engines: string[]) {
+    async function fetchOwnMetrics(range: DateRange, location: string, selectedCategory: string, engines: string[]) {
       if (!engines.length) return [] as OwnMetric[];
       const all: OwnMetric[] = [];
       for (let offset = 0; ; offset += 1000) {
         const { data, error: queryError } = await supabase.from("visibility_daily")
-          .select("metric_date,topic,llm_provider,visibility_score,citation_count,run_id")
+          .select("metric_date,category,llm_provider,visibility_score,citation_count,run_id")
           .eq("project_id", projectId).eq("tracking_location", location)
-          .eq("topic", selectedTopic).gte("metric_date", range.start).lte("metric_date", range.end)
+          .eq("category", selectedCategory).gte("metric_date", range.start).lte("metric_date", range.end)
           .in("llm_provider", engines).order("metric_date", { ascending: true }).range(offset, offset + 999);
         if (queryError) throw queryError;
         const batch = (data ?? []) as OwnMetric[];
@@ -251,24 +251,24 @@ export default function LeaderboardsPage() {
       setError("");
       try {
         const { data: project, error: projectError } = await supabase.from("projects")
-          .select("brand_name,brand_domains,brand_terms,topics,tracking_market").eq("id", projectId).single();
+          .select("brand_name,brand_domains,brand_terms,categories,tracking_market").eq("id", projectId).single();
         if (projectError) throw projectError;
         const location = project?.tracking_market ?? "MY";
-        const selectedTopic = topic === "All" ? "Overall" : topic;
-        const registry = await fetchCompetitorRegistry(selectedTopic);
+        const selectedCategory = category === "All" ? "Overall" : category;
+        const registry = await fetchCompetitorRegistry(selectedCategory);
         const ids = registry.map((row) => row.id);
         const currentRange = { start, end };
         const [currentObservationsRaw, currentOwnRaw, currentPublishedRuns] = await Promise.all([
-          fetchObservations(ids, currentRange, location, llms, selectedTopic),
-          fetchOwnMetrics(currentRange, location, selectedTopic, llms),
-          fetchPublishedRunIds(currentRange, location, selectedTopic, llms),
+          fetchObservations(ids, currentRange, location, llms, selectedCategory),
+          fetchOwnMetrics(currentRange, location, selectedCategory, llms),
+          fetchPublishedRunIds(currentRange, location, selectedCategory, llms),
         ]);
         const currentObservations = currentObservationsRaw.filter((row) => row.run_id && currentPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
         const currentOwn = currentOwnRaw.filter((row) => row.run_id && currentPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
         const [previousObservationsRaw, previousOwnRaw, previousPublishedRuns] = previousRange ? await Promise.all([
-          fetchObservations(ids, previousRange, location, llms, selectedTopic),
-          fetchOwnMetrics(previousRange, location, selectedTopic, llms),
-          fetchPublishedRunIds(previousRange, location, selectedTopic, llms),
+          fetchObservations(ids, previousRange, location, llms, selectedCategory),
+          fetchOwnMetrics(previousRange, location, selectedCategory, llms),
+          fetchPublishedRunIds(previousRange, location, selectedCategory, llms),
         ]) : [[], [], new Map<string,string>()] as [DirectObservation[], OwnMetric[], Map<string,string>];
         const previousObservations = previousObservationsRaw.filter((row) => row.run_id && previousPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
         const previousOwn = previousOwnRaw.filter((row) => row.run_id && previousPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
@@ -285,7 +285,7 @@ export default function LeaderboardsPage() {
         setProjectName(project?.brand_name ?? "Tracked brand");
         setTrackingMarket(location);
         setProjectWebsite(rootWebsite(project?.brand_domains?.[0] ?? null));
-        setTopics((project?.topics ?? []).filter((value: string) => value && value !== "Overall"));
+        setCategories((project?.categories ?? []).filter((value: string) => value && value !== "Overall"));
         setDirectCompetitors(filteredRegistry);
         setCurrentCompetitorObservations(currentObservations.filter((row) => eligibleIds.has(row.brand_id)));
         setPreviousCompetitorObservations(previousObservations.filter((row) => eligibleIds.has(row.brand_id)));
@@ -299,10 +299,10 @@ export default function LeaderboardsPage() {
     }
     void load();
     return () => { cancelled = true; };
-  }, [projectId, start, end, topic, llms, previousRange]);
+  }, [projectId, start, end, category, llms, previousRange]);
 
   // Match the Dashboard denominator: only count distinct direct competitors
-  // observed during the selected period, location, topic, and engine filters.
+  // observed during the selected period, location, category, and engine filters.
   // Build the previous-period ranking from its own active set so rank deltas
   // compare like-for-like periods rather than today's registry against old data.
   const currentActiveCompetitors = useMemo(
@@ -334,7 +334,7 @@ export default function LeaderboardsPage() {
     <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0 flex-1">
     <p className="page-eyebrow">Competitive Landscape</p>
     <h2 className="page-title mt-1">Leaderboards</h2>
-    <p className="page-description mt-2">See how {projectName} stacks up against its direct competitors. Use the Period, Topic and Engines filters to choose what to compare, and the leaderboard updates to match. You can search for a brand by name and expand the table to see every competitor. Only brands with valid results for your selection are ranked, and ties are broken by visibility, then citations, then name. The arrow beside each rank shows how it moved since the previous period, with green for an improvement and red for a drop.</p>
+    <p className="page-description mt-2">See how {projectName} stacks up against its direct competitors. Use the Period, Category and Engines filters to choose what to compare, and the leaderboard updates to match. You can search for a brand by name and expand the table to see every competitor. Only brands with valid results for your selection are ranked, and ties are broken by visibility, then citations, then name. The arrow beside each rank shows how it moved since the previous period, with green for an improvement and red for a drop.</p>
     </div>
     <DownloadReportButton disabled={loading} build={async () => {
       const { buildLeaderboardReport } = await import("@/lib/page-reports");
@@ -343,17 +343,17 @@ export default function LeaderboardsPage() {
         : undefined;
       return buildLeaderboardReport({
         projectName, locationLabel: trackingLocationLabel(trackingMarket), period, start, end,
-        topicLabel: topic === "All" ? "All topics" : topic, engineLabels: llms.map((id) => labels[id] ?? id), totalEngines: LLMS.length, previousRange, coverageNote,
+        categoryLabel: category === "All" ? "All categories" : category, engineLabels: llms.map((id) => labels[id] ?? id), totalEngines: LLMS.length, previousRange, coverageNote,
         rows: rows.map((row) => ({ rank: row.rank, brand_name: brandDisplayName(row.brand_name, row.website), website: row.website, isTracked: row.key === "__tracked_brand__", visibility_score: row.visibility_score, citations: row.citations, previousRank: row.previousRank, previousVisibility: row.previousVisibility, previousCitations: row.previousCitations })),
       });
     }} /></div>
     <div className="mt-8 ops-filter-panel">
       <div className="ops-filter-row"><span className="ops-filter-label">Period</span>{REPORTING_PERIODS.map((value) => <button key={value} onClick={() => setPeriod(value)} className={`ops-filter-btn ${period === value ? "is-active" : ""}`}>{value}</button>)}{period === "Custom" && <><label className="sr-only" htmlFor="period-start">Start date</label><input id="period-start" type="date" value={customStart} min={MIN_TRACKING_DATE} max={customEnd} onChange={(event) => setCustomStart(event.target.value)} className="platform-input max-w-[180px] text-xs" /><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="period-end">End date</label><input id="period-end" type="date" value={customEnd} min={customStart || MIN_TRACKING_DATE} onChange={(event) => setCustomEnd(event.target.value)} className="platform-input max-w-[180px] text-xs" /></>}</div>
-      <div className="ops-filter-row"><span className="ops-filter-label">Topic</span><button onClick={() => setTopic("All")} className={`ops-filter-pill ${topic === "All" ? "is-active" : ""}`}>All</button>{topics.map((value) => <button key={value} onClick={() => setTopic(value)} className={`ops-filter-pill ${topic === value ? "is-active" : ""}`}>{value}</button>)}</div>
+      <div className="ops-filter-row"><span className="ops-filter-label">Category</span><button onClick={() => setCategory("All")} className={`ops-filter-pill ${category === "All" ? "is-active" : ""}`}>All</button>{categories.map((value) => <button key={value} onClick={() => setCategory(value)} className={`ops-filter-pill ${category === value ? "is-active" : ""}`}>{value}</button>)}</div>
       <div className="ops-filter-row"><span className="ops-filter-label">Engines</span>{LLMS.map((engine) => <button key={engine} onClick={() => setLlms((current) => current.includes(engine) ? current.filter((item) => item !== engine) : [...current, engine])} className={`ops-filter-pill ${llms.includes(engine) ? "is-active" : ""}`}>{labels[engine]}</button>)}</div>
     </div>
     {error && <div className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-    {!loading && currentActiveCompetitors.length < directCompetitors.length && <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Competitor coverage: {currentActiveCompetitors.length} of {directCompetitors.length} registered direct competitors have verified observations for the selected published date/topic/engine/location scope. Missing or stale observations are excluded; no older-date fallback is used.</div>}
+    {!loading && currentActiveCompetitors.length < directCompetitors.length && <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Competitor coverage: {currentActiveCompetitors.length} of {directCompetitors.length} registered direct competitors have verified observations for the selected published date/category/engine/location scope. Missing or stale observations are excluded; no older-date fallback is used.</div>}
     <section className="mt-6 platform-card p-6">
       <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-semibold">Direct competitor rankings</h3><p className="mt-1 text-sm text-[#66736c]">Your brand and its competitors, ordered from the strongest visibility score to the weakest for the filters you chose.</p></div><span className="text-sm text-[#66736c]">{searchResults.length.toLocaleString()} entries including tracked brand</span></div>
       <label className="mt-4 flex w-full max-w-xl items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 focus-within:border-[var(--green)]"><Search size={16} className="shrink-0 text-[#66736c]" aria-hidden="true" /><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setExpanded(false); }} placeholder="Search brand or website…" aria-label="Search brands" className="w-full bg-transparent text-sm text-[var(--ink)] outline-none placeholder:text-[#87918b]" /></label>

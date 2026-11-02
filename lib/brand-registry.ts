@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 
 export type BrandImportRow = {
-  topic: string;
+  category: string;
   brand: string;
   aliases: string[];
   website: string;
@@ -29,16 +29,17 @@ function splitList(value: unknown): string[] {
   return String(value ?? "").split(/[;|\n]/).map((part) => part.trim()).filter(Boolean);
 }
 
-export function parseBrandWorkbook(buffer: ArrayBuffer): { topics: string[]; rows: BrandImportRow[] } {
+export function parseBrandWorkbook(buffer: ArrayBuffer): { categories: string[]; rows: BrandImportRow[] } {
   const workbook = XLSX.read(buffer, { type: "array" });
-  const topicSheet = workbook.Sheets.Topics;
+  // Workbooks downloaded before the topic -> category rename still use "Topics" / "Topic"; accept both.
+  const categorySheet = workbook.Sheets.Categories ?? workbook.Sheets.Topics;
   const brandSheet = workbook.Sheets.Brands;
   if (!brandSheet) throw new Error('The workbook must contain a "Brands" sheet.');
-  const topicRows = topicSheet ? XLSX.utils.sheet_to_json<Record<string, unknown>>(topicSheet, { defval: "" }) : [];
-  const topicsFromSheet = topicRows.map((row) => String(row.Topic ?? row.topic ?? "").trim()).filter(Boolean);
+  const categoryRows = categorySheet ? XLSX.utils.sheet_to_json<Record<string, unknown>>(categorySheet, { defval: "" }) : [];
+  const categoriesFromSheet = categoryRows.map((row) => String(row.Category ?? row.category ?? row.Topic ?? row.topic ?? "").trim()).filter(Boolean);
   const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(brandSheet, { defval: "" });
   const rows = rawRows.map((row) => {
-    const topic = String(row.Topic ?? row.topic ?? "").trim();
+    const category = String(row.Category ?? row.category ?? row.Topic ?? row.topic ?? "").trim();
     const brand = String(row.Brand ?? row["Brand Name"] ?? row.brand ?? "").trim();
     const aliases = splitList(row.Aliases ?? row.Alias);
     const website = String(row.Website ?? row["Primary Website"] ?? "").trim();
@@ -46,45 +47,45 @@ export function parseBrandWorkbook(buffer: ArrayBuffer): { topics: string[]; row
     const roleText = String(row.Role ?? "").trim().toLocaleLowerCase().replace(/[ -]/g, "_");
     const role = roleText === "tracked_brand" || roleText === "tracked" ? "tracked_brand" : "competitor";
     const notes = String(row.Notes ?? "").trim();
-    return { topic, brand, aliases, website, otherWebsites, role: role as BrandImportRow["role"], notes };
-  }).filter((row) => row.topic && row.brand);
-  return { topics: [...new Set([...topicsFromSheet, ...rows.map((row) => row.topic)])], rows };
+    return { category, brand, aliases, website, otherWebsites, role: role as BrandImportRow["role"], notes };
+  }).filter((row) => row.category && row.brand);
+  return { categories: [...new Set([...categoriesFromSheet, ...rows.map((row) => row.category)])], rows };
 }
 
-export function validateBrandRows(rows: BrandImportRow[], topics: string[], trackedBrand: string, enforceHundred = true): string[] {
+export function validateBrandRows(rows: BrandImportRow[], categories: string[], trackedBrand: string, enforceHundred = true): string[] {
   const errors: string[] = [];
-  if (!topics.length) return ["Add at least one tracking topic."];
-  for (const topic of topics) {
-    const topicRows = rows.filter((row) => row.topic === topic);
-    const tracked = topicRows.filter((row) => row.role === "tracked_brand" || normaliseBrandKey(row.brand) === normaliseBrandKey(trackedBrand));
-    const distinct = new Set(topicRows.map((row) => normaliseBrandKey(row.brand)));
-    if (tracked.length !== 1) errors.push(`${topic}: expected exactly one tracked brand (${trackedBrand}); found ${tracked.length}.`);
-    if (distinct.size !== topicRows.length) errors.push(`${topic}: duplicate brand names found. Each brand should appear once per topic.`);
-    if (enforceHundred && topicRows.length !== 100) errors.push(`${topic}: expected 100 brands (1 tracked brand + 99 competitors); found ${topicRows.length}.`);
-    const competitorCount = topicRows.filter((row) => row.role !== "tracked_brand" && normaliseBrandKey(row.brand) !== normaliseBrandKey(trackedBrand)).length;
-    if (enforceHundred && competitorCount !== 99) errors.push(`${topic}: expected 99 competitors; found ${competitorCount}.`);
-    for (const row of topicRows) if (!row.website.trim()) errors.push(`${topic}: "${row.brand}" is missing its primary website.`);
+  if (!categories.length) return ["Add at least one tracking category."];
+  for (const category of categories) {
+    const categoryRows = rows.filter((row) => row.category === category);
+    const tracked = categoryRows.filter((row) => row.role === "tracked_brand" || normaliseBrandKey(row.brand) === normaliseBrandKey(trackedBrand));
+    const distinct = new Set(categoryRows.map((row) => normaliseBrandKey(row.brand)));
+    if (tracked.length !== 1) errors.push(`${category}: expected exactly one tracked brand (${trackedBrand}); found ${tracked.length}.`);
+    if (distinct.size !== categoryRows.length) errors.push(`${category}: duplicate brand names found. Each brand should appear once per category.`);
+    if (enforceHundred && categoryRows.length !== 100) errors.push(`${category}: expected 100 brands (1 tracked brand + 99 competitors); found ${categoryRows.length}.`);
+    const competitorCount = categoryRows.filter((row) => row.role !== "tracked_brand" && normaliseBrandKey(row.brand) !== normaliseBrandKey(trackedBrand)).length;
+    if (enforceHundred && competitorCount !== 99) errors.push(`${category}: expected 99 competitors; found ${competitorCount}.`);
+    for (const row of categoryRows) if (!row.website.trim()) errors.push(`${category}: "${row.brand}" is missing its primary website.`);
   }
-  for (const row of rows) if (!topics.includes(row.topic)) errors.push(`"${row.topic}" is not present in the Topics sheet.`);
+  for (const row of rows) if (!categories.includes(row.category)) errors.push(`"${row.category}" is not present in the Categories sheet.`);
   return errors;
 }
 
-export function downloadBrandTemplate(topics: string[], trackedBrand: string, trackedWebsite = "") {
+export function downloadBrandTemplate(categories: string[], trackedBrand: string, trackedWebsite = "") {
   const workbook = XLSX.utils.book_new();
   const instructions = [
     ["AI Visibility Brand Registry Template"],
-    ["Use one row per brand per topic. Each topic must contain exactly 100 brands: 1 tracked brand and 99 competitors."],
-    ["Required columns on Brands: Topic, Brand, Aliases, Website, Other Websites, Role, Notes."],
+    ["Use one row per brand per category. Each category must contain exactly 100 brands: 1 tracked brand and 99 competitors."],
+    ["Required columns on Brands: Category, Brand, Aliases, Website, Other Websites, Role, Notes."],
     ["Separate multiple aliases and additional websites with semicolons. Use verified official domains only."],
-    ["The tracked brand must appear exactly once in each topic. Leave the blank competitor rows blank until filled."],
-    ["Do not rename the Topics or Brands sheets."],
+    ["The tracked brand must appear exactly once in each category. Leave the blank competitor rows blank until filled."],
+    ["Do not rename the Categories or Brands sheets."],
   ];
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(instructions), "Instructions");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Topic"], ...topics.map((topic) => [topic])]), "Topics");
-  const brandRows: Array<Array<string>> = [["Topic", "Brand", "Aliases", "Website", "Other Websites", "Role", "Notes"]];
-  for (const topic of topics) {
-    brandRows.push([topic, trackedBrand, "", trackedWebsite, "", "tracked_brand", "Tracked brand"]);
-    for (let i = 1; i <= 99; i++) brandRows.push([topic, "", "", "", "", "competitor", `Competitor slot ${i}`]);
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Category"], ...categories.map((category) => [category])]), "Categories");
+  const brandRows: Array<Array<string>> = [["Category", "Brand", "Aliases", "Website", "Other Websites", "Role", "Notes"]];
+  for (const category of categories) {
+    brandRows.push([category, trackedBrand, "", trackedWebsite, "", "tracked_brand", "Tracked brand"]);
+    for (let i = 1; i <= 99; i++) brandRows.push([category, "", "", "", "", "competitor", `Competitor slot ${i}`]);
   }
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(brandRows), "Brands");
   XLSX.writeFile(workbook, "ai-visibility-brand-registry-template.xlsx");
@@ -94,7 +95,7 @@ export async function saveProjectBrandRegistry(
   client: any,
   projectId: string,
   trackedBrand: string,
-  topics: string[],
+  categories: string[],
   rows: BrandImportRow[],
   trackedWebsite = "",
 ) {
@@ -128,14 +129,14 @@ export async function saveProjectBrandRegistry(
   }
   const savedBrands=savedBrandRows;
   const brandIdByKey = new Map<string, string>(savedBrands.map((item) => [item.normalized_key, item.id]));
-  const { error: deleteError } = await client.from("topic_brand_assignments").delete().eq("project_id", projectId);
+  const { error: deleteError } = await client.from("category_brand_assignments").delete().eq("project_id", projectId);
   if (deleteError) throw deleteError;
-  const assignments = rows.filter((row) => topics.includes(row.topic)).map((row) => {
+  const assignments = rows.filter((row) => categories.includes(row.category)).map((row) => {
     const key = normaliseBrandKey(row.brand);
     const brand_id = brandIdByKey.get(key);
     if (!brand_id) throw new Error(`Unable to resolve brand ID for ${row.brand}.`);
     return {
-      project_id: projectId, topic: row.topic, brand_id,
+      project_id: projectId, category: row.category, brand_id,
       role: (row.role === "tracked_brand" || key === trackedKey ? "tracked_brand" : "competitor") as BrandImportRow["role"],
       aliases: row.aliases,
       websites: [...new Set([row.website, ...row.otherWebsites].filter(Boolean).map(normaliseWebsite))],
@@ -143,11 +144,11 @@ export async function saveProjectBrandRegistry(
     };
   });
   if (assignments.length) {
-    const { error: assignmentError } = await client.from("topic_brand_assignments").insert(assignments);
+    const { error: assignmentError } = await client.from("category_brand_assignments").insert(assignments);
     if (assignmentError) throw assignmentError;
   }
   // A brand can remain in the central directory after being removed from every
-  // topic. Mark it inactive so its domains no longer suppress third-party records.
+  // category. Mark it inactive so its domains no longer suppress third-party records.
   const { data: existingDirectory, error: existingDirectoryError } = await client.from("brand_registry")
     .select("id").eq("project_id", projectId).eq("is_active", true);
   if (existingDirectoryError) throw existingDirectoryError;
@@ -169,22 +170,22 @@ export async function saveProjectBrandRegistry(
   const mergedTerms = [...new Set<string>([...((existingProject?.brand_terms ?? []) as string[]), ...trackedAliases])];
   const mergedDomains = [...new Set<string>([...((existingProject?.brand_domains ?? []) as string[]).map(normaliseWebsite), ...trackedWebsites])].filter(Boolean);
   const { error: projectError } = await client.from("projects").update({
-    topics,
+    categories,
     brand_domains: mergedDomains,
     brand_terms: mergedTerms,
   }).eq("id", projectId);
   if (projectError) throw projectError;
 }
 
-export function downloadBrandRegistryWorkbook(topics: string[], rows: BrandImportRow[]) {
+export function downloadBrandRegistryWorkbook(categories: string[], rows: BrandImportRow[]) {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
     ["AI Visibility Brand Registry"],
-    ["Edit the Brands sheet and upload it in Settings. Each topic should contain one tracked brand and 99 competitors."],
+    ["Edit the Brands sheet and upload it in Settings. Each category should contain one tracked brand and 99 competitors."],
   ]), "Instructions");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Topic"], ...topics.map((topic) => [topic])]), "Topics");
-  const data: Array<Array<string>> = [["Topic", "Brand", "Aliases", "Website", "Other Websites", "Role", "Notes"]];
-  for (const row of rows) data.push([row.topic,row.brand,row.aliases.join("; "),row.website,row.otherWebsites.join("; "),row.role,row.notes ?? ""]);
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Category"], ...categories.map((category) => [category])]), "Categories");
+  const data: Array<Array<string>> = [["Category", "Brand", "Aliases", "Website", "Other Websites", "Role", "Notes"]];
+  for (const row of rows) data.push([row.category,row.brand,row.aliases.join("; "),row.website,row.otherWebsites.join("; "),row.role,row.notes ?? ""]);
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(data), "Brands");
   XLSX.writeFile(workbook, "ai-visibility-brand-registry.xlsx");
 }
