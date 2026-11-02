@@ -3,10 +3,10 @@
 do $$
 declare
   required_indexes text[] := array[
-    'response_brand_evidence_response_id_brand_id_topic_match_so_key',
+    'response_brand_evidence_response_id_brand_id_category_match_so_key',
     'third_party_mentions_project_id_response_id_canonical_url_s_key',
-    'topic_brand_observations_pkey',
-    'visibility_daily_project_date_topic_engine_location_key',
+    'category_brand_observations_pkey',
+    'visibility_daily_project_date_category_engine_location_key',
     'citations_daily_url_location_unique_idx',
     'competitors_daily_brand_location_unique_idx'
   ];

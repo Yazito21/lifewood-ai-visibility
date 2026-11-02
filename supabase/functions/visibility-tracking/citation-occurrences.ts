@@ -2,7 +2,7 @@ export type CitationEntity = { id: string; websites: string[] };
 export type CitationResponse = {
   response_id: string;
   project_id: string;
-  topic: string;
+  category: string;
   metric_date: string;
   provider: string;
   tracking_location: string;
@@ -43,7 +43,7 @@ function hostMatches(host: string, registered: string): boolean {
 /** One normalized row per response/entity/canonical URL. */
 export function buildCitationOccurrenceRows(
   responses: CitationResponse[],
-  entitiesByTopic: Map<string, CitationEntity[]>,
+  entitiesByCategory: Map<string, CitationEntity[]>,
   trackedEntityId: string,
   trackedWebsites: string[],
 ) {
@@ -51,7 +51,7 @@ export function buildCitationOccurrenceRows(
   for (const response of responses) {
     const entities = [
       { id: trackedEntityId, websites: trackedWebsites },
-      ...(entitiesByTopic.get(response.topic) ?? []),
+      ...(entitiesByCategory.get(response.category) ?? []),
     ];
     for (const citation of response.citations ?? []) {
       if (!/^https?:\/\//i.test(citation.url)) continue;
@@ -66,7 +66,7 @@ export function buildCitationOccurrenceRows(
           project_id: response.project_id,
           response_id: response.response_id,
           entity_id: entity.id,
-          topic: response.topic,
+          category: response.category,
           metric_date: response.metric_date,
           provider: response.provider,
           tracking_location: response.tracking_location,

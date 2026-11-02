@@ -5,7 +5,7 @@ import { buildDashboardReport, buildLeaderboardReport, meanByDate } from "./page
 import { valueAxisBounds } from "./excel-report.ts";
 
 const ctx = { projectName: "Test Brand", locationLabel: "Malaysia", period: "Last 2 Days", start: "2026-10-28", end: "2026-10-29" };
-const metric = (topic: string, metric_date: string, visibility_score: number, visibility_rank: number) => ({ metric_date, topic, visibility_score, visibility_rank, rank_population_count: 10, rank_population_status: "verified" });
+const metric = (category: string, metric_date: string, visibility_score: number, visibility_rank: number) => ({ metric_date, category, visibility_score, visibility_rank, rank_population_count: 10, rank_population_status: "verified" });
 
 test("score axis is fixed at 5.0 majors with 2.5 minors", () => {
   const b = valueAxisBounds("score", [3.2, 11.9]);
@@ -31,7 +31,7 @@ test("meanByDate averages per date and skips nulls", () => {
 
 test("dashboard workbook holds only the supplied period data and one chart per series", async () => {
   const metrics = [metric("Overall", "2026-10-28", 5, 4), metric("Overall", "2026-10-29", 7, 3), metric("Skin", "2026-10-28", 2, 6), metric("Skin", "2026-10-29", 3, 5)];
-  const { buffer, filename } = await buildDashboardReport({ ...ctx, topics: ["Overall", "Skin"], metrics, citationsByTopic: { Skin: [{ url: "https://a.test/x", page_name: "A", brand_name: "B", frequency: 3 }] } });
+  const { buffer, filename } = await buildDashboardReport({ ...ctx, categories: ["Overall", "Skin"], metrics, citationsByCategory: { Skin: [{ url: "https://a.test/x", page_name: "A", brand_name: "B", frequency: 3 }] } });
   ok(filename.endsWith("2026-10-28-to-2026-10-29.xlsx"));
   const zip = await JSZip.loadAsync(buffer);
   const charts = Object.keys(zip.files).filter((n) => /^xl\/charts\/chart\d+\.xml$/.test(n));
@@ -44,7 +44,7 @@ test("dashboard workbook holds only the supplied period data and one chart per s
 
 test("leaderboard workbook lists every entry with rank change", async () => {
   const rows = [1, 2, 3].map((rank) => ({ rank, brand_name: "Brand " + rank, website: null, isTracked: rank === 2, visibility_score: 50 - rank, citations: 10 * rank, previousRank: rank === 3 ? null : rank + 1, previousVisibility: 40, previousCitations: 5 }));
-  const { buffer } = await buildLeaderboardReport({ ...ctx, topicLabel: "All topics", engineLabels: ["ChatGPT"], totalEngines: 5, previousRange: { start: "2026-10-26", end: "2026-10-27" }, rows });
+  const { buffer } = await buildLeaderboardReport({ ...ctx, categoryLabel: "All categories", engineLabels: ["ChatGPT"], totalEngines: 5, previousRange: { start: "2026-10-26", end: "2026-10-27" }, rows });
   const zip = await JSZip.loadAsync(buffer);
   const strings = await zip.file("xl/sharedStrings.xml")!.async("string");
   ok(strings.includes("Brand 3") && strings.includes("(your brand)") && strings.includes("New"));
@@ -52,7 +52,7 @@ test("leaderboard workbook lists every entry with rank change", async () => {
 
 test("dashboard cards compare the latest day with the first day of the period", async () => {
   const metrics = [metric("Skin", "2026-10-16", 5, 9), metric("Skin", "2026-10-27", 8, 6), metric("Skin", "2026-10-29", 11.8, 4)];
-  const { buffer } = await buildDashboardReport({ ...ctx, period: "Last 14 Days", start: "2026-10-16", end: "2026-10-29", topics: ["Skin"], metrics, citationsByTopic: {} });
+  const { buffer } = await buildDashboardReport({ ...ctx, period: "Last 14 Days", start: "2026-10-16", end: "2026-10-29", categories: ["Skin"], metrics, citationsByCategory: {} });
   const zip = await JSZip.loadAsync(buffer);
   const strings = await zip.file("xl/sharedStrings.xml")!.async("string");
   ok(strings.includes("2026-10-16") && strings.includes("Previous Score Date") && strings.includes("Score Change"));

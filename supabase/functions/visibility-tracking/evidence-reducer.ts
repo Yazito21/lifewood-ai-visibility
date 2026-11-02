@@ -48,7 +48,7 @@ function confidenceOf(rows: EvidenceRow[]): string | null {
 export function reduceEvidenceRows(rows: EvidenceRow[]): EvidenceRow[] {
   const groups = new Map<string, EvidenceRow[]>();
   for (const row of rows) {
-    const key = [row.response_id, row.brand_id, row.topic, row.match_source, row.matched_value]
+    const key = [row.response_id, row.brand_id, row.category, row.match_source, row.matched_value]
       .map(canonicalValue).join("\u0000");
     const group = groups.get(key) ?? [];
     group.push(row);

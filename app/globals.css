@@ -338,7 +338,7 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
 }
 
 
-/* Visually distinguish project-wide Overall metrics from topic-specific data. */
+/* Visually distinguish project-wide Overall metrics from category-specific data. */
 .platform-card-overall {
   border-color: color-mix(in srgb, var(--orange) 78%, var(--line));
   background: color-mix(in srgb, var(--orange) 9%, var(--card));
