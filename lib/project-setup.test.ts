@@ -1,28 +1,28 @@
 import test from "node:test";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
-import { DEFAULT_TOPIC, parseTopicList, resolveProjectTopics, trackedBrandRows } from "./project-setup.ts";
+import { DEFAULT_CATEGORY, parseCategoryList, resolveProjectCategories, trackedBrandRows } from "./project-setup.ts";
 
-test("parseTopicList splits commas, semicolons and new lines and removes duplicates", () => {
-  deepStrictEqual(parseTopicList("Data Collection, AIGC;\nAIGC\n  "), ["Data Collection", "AIGC"]);
-  deepStrictEqual(parseTopicList("   "), []);
+test("parseCategoryList splits commas, semicolons and new lines and removes duplicates", () => {
+  deepStrictEqual(parseCategoryList("Data Collection, AIGC;\nAIGC\n  "), ["Data Collection", "AIGC"]);
+  deepStrictEqual(parseCategoryList("   "), []);
 });
 
-test("typed topics win", () => {
-  deepStrictEqual(resolveProjectTopics(["EHR"], ["Billing"]), ["EHR"]);
+test("typed categories win", () => {
+  deepStrictEqual(resolveProjectCategories(["EHR"], ["Billing"]), ["EHR"]);
 });
 
-test("blank topics fall back to the workbook's topics", () => {
-  deepStrictEqual(resolveProjectTopics([], ["Billing", "EHR"]), ["Billing", "EHR"]);
+test("blank categories fall back to the workbook's categories", () => {
+  deepStrictEqual(resolveProjectCategories([], ["Billing", "EHR"]), ["Billing", "EHR"]);
 });
 
-test("blank topics without a workbook use one default topic", () => {
-  strictEqual(DEFAULT_TOPIC, "General");
-  deepStrictEqual(resolveProjectTopics([], []), ["General"]);
+test("blank categories without a workbook use one default category", () => {
+  strictEqual(DEFAULT_CATEGORY, "General");
+  deepStrictEqual(resolveProjectCategories([], []), ["General"]);
 });
 
-test("trackedBrandRows adds the tracked brand once per topic", () => {
+test("trackedBrandRows adds the tracked brand once per category", () => {
   deepStrictEqual(trackedBrandRows(["General", "EHR"], "MDLand", "https://mdland.com/"), [
-    { topic: "General", brand: "MDLand", aliases: [], website: "https://mdland.com/", otherWebsites: [], role: "tracked_brand", notes: "Tracked brand" },
-    { topic: "EHR", brand: "MDLand", aliases: [], website: "https://mdland.com/", otherWebsites: [], role: "tracked_brand", notes: "Tracked brand" },
+    { category: "General", brand: "MDLand", aliases: [], website: "https://mdland.com/", otherWebsites: [], role: "tracked_brand", notes: "Tracked brand" },
+    { category: "EHR", brand: "MDLand", aliases: [], website: "https://mdland.com/", otherWebsites: [], role: "tracked_brand", notes: "Tracked brand" },
   ]);
 });

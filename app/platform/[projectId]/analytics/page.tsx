@@ -8,22 +8,22 @@ import { DownloadReportButton } from "@/components/download-report-button";
 import { meanByDate } from "@/lib/page-reports";
 import { trackingLocationLabel } from "@/lib/tracking-locations";
 import { MIN_TRACKING_DATE, malaysiaDateString, reportingDateRange, REPORTING_PERIODS } from "@/lib/reporting-date";
-type Row={metric_date:string;topic:string;llm_provider:string;visibility_score:number|null;visibility_rank:number|null;share_of_voice_score:number|null;share_of_voice_rank:number|null;average_position:number|null;average_position_rank:number|null};
+type Row={metric_date:string;category:string;llm_provider:string;visibility_score:number|null;visibility_rank:number|null;share_of_voice_score:number|null;share_of_voice_rank:number|null;average_position:number|null;average_position_rank:number|null};
 const LLMS=["chatgpt","gemini","perplexity","google_ai_overview","claude"],labels:Record<string,string>={chatgpt:"ChatGPT",gemini:"Gemini",perplexity:"Perplexity",google_ai_overview:"Google AI Overview",claude:"Claude"};
 export default function AnalyticsPage(){
  const {projectId}=useParams<{projectId:string}>();
- const topicSelectionInitialized=useRef(false);
+ const categorySelectionInitialized=useRef(false);
  const selectionProjectId=useRef(projectId);
- if(selectionProjectId.current!==projectId){selectionProjectId.current=projectId;topicSelectionInitialized.current=false;}const [rows,setRows]=useState<Row[]>([]),[topics,setTopics]=useState<string[]>([]),[selectedTopics,setSelectedTopics]=useState<string[]>([]),[selectedLlms,setSelectedLlms]=useState<string[]>(["chatgpt"]),[period,setPeriod]=useState("Last 7 Days"),[customStart,setCustomStart]=useState(""),[customEnd,setCustomEnd]=useState(malaysiaDateString()),[loading,setLoading]=useState(true),[error,setError]=useState(""),[projectName,setProjectName]=useState("Project"),[trackingMarket,setTrackingMarket]=useState("MY");
+ if(selectionProjectId.current!==projectId){selectionProjectId.current=projectId;categorySelectionInitialized.current=false;}const [rows,setRows]=useState<Row[]>([]),[categories,setCategories]=useState<string[]>([]),[selectedCategories,setSelectedCategories]=useState<string[]>([]),[selectedLlms,setSelectedLlms]=useState<string[]>(["chatgpt"]),[period,setPeriod]=useState("Last 7 Days"),[customStart,setCustomStart]=useState(""),[customEnd,setCustomEnd]=useState(malaysiaDateString()),[loading,setLoading]=useState(true),[error,setError]=useState(""),[projectName,setProjectName]=useState("Project"),[trackingMarket,setTrackingMarket]=useState("MY");
  const {start,end}=useMemo(()=>reportingDateRange(period,customStart,customEnd),[period,customStart,customEnd]);
- useEffect(()=>{(async()=>{setLoading(true);const {data:p}=await supabase.from("projects").select("brand_name,topics,tracking_market").eq("id",projectId).single();setProjectName(p?.brand_name||"Project");setTrackingMarket(p?.tracking_market??"MY");const t=p?.topics??[];const location=p?.tracking_market??"MY";const dataLocation=location;setTopics(t);if(!topicSelectionInitialized.current){setSelectedTopics(t);topicSelectionInitialized.current=true;}else{setSelectedTopics(v=>v.filter(topic=>t.includes(topic)));}const {data,error}=await supabase.from("visibility_daily").select("metric_date,topic,llm_provider,visibility_score,visibility_rank,share_of_voice_score,share_of_voice_rank,average_position,average_position_rank").eq("project_id",projectId).eq("tracking_location",dataLocation).neq("llm_provider","Overall").gte("metric_date",start).lte("metric_date",end).order("metric_date");if(error)setError(error.message);setRows(data??[]);setLoading(false)})()},[projectId,start,end]);
+ useEffect(()=>{(async()=>{setLoading(true);const {data:p}=await supabase.from("projects").select("brand_name,categories,tracking_market").eq("id",projectId).single();setProjectName(p?.brand_name||"Project");setTrackingMarket(p?.tracking_market??"MY");const t=p?.categories??[];const location=p?.tracking_market??"MY";const dataLocation=location;setCategories(t);if(!categorySelectionInitialized.current){setSelectedCategories(t);categorySelectionInitialized.current=true;}else{setSelectedCategories(v=>v.filter(category=>t.includes(category)));}const {data,error}=await supabase.from("visibility_daily").select("metric_date,category,llm_provider,visibility_score,visibility_rank,share_of_voice_score,share_of_voice_rank,average_position,average_position_rank").eq("project_id",projectId).eq("tracking_location",dataLocation).neq("llm_provider","Overall").gte("metric_date",start).lte("metric_date",end).order("metric_date");if(error)setError(error.message);setRows(data??[]);setLoading(false)})()},[projectId,start,end]);
  const chartDateRange=useMemo(()=>{
   const trackedDates=rows.map(r=>r.metric_date).sort();
   const firstTrackedDate=trackedDates[0];
   const requestedStart=period==="All Time"?(firstTrackedDate??start):start;
   return {start:firstTrackedDate&&firstTrackedDate>requestedStart?firstTrackedDate:requestedStart,end};
  },[rows,period,start,end]);
- const filtered=rows.filter(r=>selectedTopics.includes(r.topic)&&selectedLlms.includes(r.llm_provider));
+ const filtered=rows.filter(r=>selectedCategories.includes(r.category)&&selectedLlms.includes(r.llm_provider));
  const aggregate=(key:keyof Row)=>meanByDate(filtered,key);
  return <ProjectShell>
   <div className="ops-page">
@@ -31,11 +31,11 @@ export default function AnalyticsPage(){
      <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0 flex-1">
       <p className="page-eyebrow">Analytics</p>
       <h1 className="page-title mt-1">Detailed analytics</h1>
-      <p className="page-description mt-2">Dig into the trends behind your numbers here. Pick a period, then choose which topics and answer engines to include, and every chart below updates to show the average across your choices. Charts are grouped into mean visibility, share of voice and average position, followed by a snapshot for each engine. A missing dot means nothing was recorded that day.</p>
+      <p className="page-description mt-2">Dig into the trends behind your numbers here. Pick a period, then choose which categories and answer engines to include, and every chart below updates to show the average across your choices. Charts are grouped into mean visibility, share of voice and average position, followed by a snapshot for each engine. A missing dot means nothing was recorded that day.</p>
      </div>
      <DownloadReportButton disabled={loading} build={async()=>{
        const {buildAnalyticsReport}=await import("@/lib/page-reports");
-       return buildAnalyticsReport({projectName,locationLabel:trackingLocationLabel(trackingMarket),period,start,end,allTopics:topics,selectedTopics,engines:LLMS.map(id=>({id,label:labels[id]})),selectedEngineIds:selectedLlms,filtered,rows});
+       return buildAnalyticsReport({projectName,locationLabel:trackingLocationLabel(trackingMarket),period,start,end,allCategories:categories,selectedCategories,engines:LLMS.map(id=>({id,label:labels[id]})),selectedEngineIds:selectedLlms,filtered,rows});
      }}/></div>
     </header>
 
@@ -46,10 +46,10 @@ export default function AnalyticsPage(){
         {period==="Custom"&&<><label className="sr-only" htmlFor="analytics-start">Start date</label><input id="analytics-start" type="date" value={customStart} min={MIN_TRACKING_DATE} max={customEnd} onChange={e=>setCustomStart(e.target.value)} className="platform-input max-w-[180px] text-xs"/><span className="text-xs font-semibold text-[var(--muted-foreground)]">to</span><label className="sr-only" htmlFor="analytics-end">End date</label><input id="analytics-end" type="date" value={customEnd} min={customStart||MIN_TRACKING_DATE} onChange={e=>setCustomEnd(e.target.value)} className="platform-input max-w-[180px] text-xs"/></>}
       </div>
       <div className="ops-filter-row">
-        <span className="ops-filter-label">Topics</span>
-        {topics.length ? topics.map(t=>
-          <button key={t} onClick={()=>setSelectedTopics(v=>v.includes(t)?v.filter(x=>x!==t):[...v,t])} className={`ops-filter-pill ${selectedTopics.includes(t)?"is-active":""}`}>{t}</button>
-        ) : <span className="text-xs text-[var(--muted-foreground)]">No topics configured.</span>}
+        <span className="ops-filter-label">Categories</span>
+        {categories.length ? categories.map(t=>
+          <button key={t} onClick={()=>setSelectedCategories(v=>v.includes(t)?v.filter(x=>x!==t):[...v,t])} className={`ops-filter-pill ${selectedCategories.includes(t)?"is-active":""}`}>{t}</button>
+        ) : <span className="text-xs text-[var(--muted-foreground)]">No categories configured.</span>}
       </div>
       <div className="ops-filter-row">
         <span className="ops-filter-label">Engines</span>
@@ -66,7 +66,7 @@ export default function AnalyticsPage(){
       : <>
           <section className="mt-8">
             <h3 className="text-xl font-semibold tracking-tight">Mean Visibility</h3>
-            <p className="mt-1 text-sm text-[var(--muted-foreground)]">How often your brand shows up in AI answers, averaged over the topics and engines you picked above. The score says how visible you are, and the rank says how you compare with competitors.</p>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">How often your brand shows up in AI answers, averaged over the categories and engines you picked above. The score says how visible you are, and the rank says how you compare with competitors.</p>
             <div className="mt-4 grid gap-5 md:grid-cols-2">
               <MetricChart data={aggregate("visibility_score")} title="Mean Visibility Score" description="The average share of AI answers that mention your brand each day. Higher is better, so a line moving up is good news. Hover over a dot for the exact value." format="percent" dateRange={chartDateRange}/>
               <MetricChart data={aggregate("visibility_rank")} title="Mean Visibility Rank" description="The average place your brand takes against competitors each day. Rank 1 is the best and sits at the top, so a line moving up means you are climbing." invert valueDecimals={1} dateRange={chartDateRange}/>
@@ -75,7 +75,7 @@ export default function AnalyticsPage(){
 
           <section className="mt-8">
             <h3 className="text-xl font-semibold tracking-tight">Mean Share of Voice</h3>
-            <p className="mt-1 text-sm text-[var(--muted-foreground)]">How much of the conversation your brand owns compared with every brand mentioned, averaged over the topics and engines you picked above.</p>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">How much of the conversation your brand owns compared with every brand mentioned, averaged over the categories and engines you picked above.</p>
             <div className="mt-4 grid gap-5 md:grid-cols-2">
               <MetricChart data={aggregate("share_of_voice_score")} title="Mean Share of Voice" description="Your slice of all brand mentions in AI answers each day. Higher means you take up more of the conversation. Hover over a dot for the exact value." format="percent" dateRange={chartDateRange}/>
               <MetricChart data={aggregate("share_of_voice_rank")} title="Mean Share of Voice Rank" description="Where your share of voice places against competitors each day. Rank 1 is the best and sits at the top, so a line moving up is an improvement." invert valueDecimals={1} dateRange={chartDateRange}/>
@@ -84,7 +84,7 @@ export default function AnalyticsPage(){
 
           <section className="mt-8">
             <h3 className="text-xl font-semibold tracking-tight">Mean Average</h3>
-            <p className="mt-1 text-sm text-[var(--muted-foreground)]">How early your brand appears inside AI answers, averaged over the topics and engines you picked above. Being mentioned near the start of an answer is better than near the end.</p>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">How early your brand appears inside AI answers, averaged over the categories and engines you picked above. Being mentioned near the start of an answer is better than near the end.</p>
             <div className="mt-4 grid gap-5 md:grid-cols-2">
               <MetricChart data={aggregate("average_position")} title="Mean Average Position" description="The average spot your brand holds in the list of brands an answer mentions. Position 1 means first, so lower is better and a line moving up is good." invert valueDecimals={1} dateRange={chartDateRange}/>
               <MetricChart data={aggregate("average_position_rank")} title="Mean Average Position Rank" description="How your average position compares with competitors each day. Rank 1 is the best and sits at the top, so a line moving up means you are doing better." invert valueDecimals={1} dateRange={chartDateRange}/>
@@ -102,7 +102,7 @@ export default function AnalyticsPage(){
         <h3 className="text-sm font-semibold">Latest values by engine</h3>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {LLMS.filter(l=>selectedLlms.includes(l)).map(l=>{
-            const rs=rows.filter(r=>r.llm_provider===l&&r.topic==="Overall"&&r.visibility_score!=null).sort((a,b)=>b.metric_date.localeCompare(a.metric_date));
+            const rs=rows.filter(r=>r.llm_provider===l&&r.category==="Overall"&&r.visibility_score!=null).sort((a,b)=>b.metric_date.localeCompare(a.metric_date));
             const latest=rs[0];
             const latestDate=latest?.metric_date;
             const score=latest?.visibility_score;

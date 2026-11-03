@@ -41,7 +41,7 @@ function subtitle(ctx: ReportContext, extra = "") {
 const listText = (values: string[], all: string, total?: number) =>
   !values.length ? "None selected" : total !== undefined && values.length === total ? all : values.join(", ");
 
-/** Mean of the stored per-topic/per-engine values for each date; shared by the Analytics charts and the Excel export. */
+/** Mean of the stored per-category/per-engine values for each date; shared by the Analytics charts and the Excel export. */
 export function meanByDate<T extends { metric_date: string }>(rows: T[], key: keyof T) {
   const map = new Map<string, number[]>();
   for (const row of rows) {
@@ -66,15 +66,15 @@ const rangeRows = (first: number, last: number) => Array.from({ length: last - f
 
 export type DashboardCitation = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
 export type DashboardReportInput = ReportContext & {
-  topics: string[]; // card order, "Overall" first
+  categories: string[]; // card order, "Overall" first
   metrics: DailyMetric[];
-  citationsByTopic: Record<string, DashboardCitation[]>;
+  citationsByCategory: Record<string, DashboardCitation[]>;
 };
 
 export async function buildDashboardReport(input: DashboardReportInput) {
   const report = await ReportBuilder.create({ title: input.projectName + " Dashboard Report", subject: "AI visibility dashboard" });
-  const topics = input.topics;
-  const snapshots = latestSnapshots(input.metrics, topics);
+  const categories = input.categories;
+  const snapshots = latestSnapshots(input.metrics, categories);
 
   // Overview + rank cards
   const overview = report.addSheet("Overview", [24, 18, 10, 14, 14, 14, 18, 16, 14, 14, 18, 14, 34]);
@@ -82,27 +82,27 @@ export async function buildDashboardReport(input: DashboardReportInput) {
   overview.keyValues([
     ...commonFilters(input),
     ["Engine scope", "All answer engines combined (Overall metric)"],
-    ["Topics", topics.length ? topics.join(", ") : "None"],
+    ["Categories", categories.length ? categories.join(", ") : "None"],
     ["Generated", generatedText(input.generatedAt)],
   ]);
-  overview.section("Visibility rank cards", "The latest rank and score for each topic, with the change since the start of the selected period, exactly as the cards on the Dashboard show them. Rank 1 is the best position. A green up arrow is an improvement and a red down arrow is a decline.");
+  overview.section("Visibility rank cards", "The latest rank and score for each category, with the change since the start of the selected period, exactly as the cards on the Dashboard show them. Rank 1 is the best position. A green up arrow is an improvement and a red down arrow is a decline.");
   const cardRows: CellValue[][] = [];
   const rankChanges: Array<number | null> = [];
   const scoreChanges: Array<number | null> = [];
-  for (const topic of topics) {
-    const snap = snapshots.get(topic);
+  for (const category of categories) {
+    const snap = snapshots.get(category);
     const display = rankDisplay(snap);
     const scoreChange = snap?.scoreChange == null ? null : Math.round(snap.scoreChange * 10) / 10;
     rankChanges.push(snap?.rankChange ?? null);
     scoreChanges.push(scoreChange);
     const notes = [display.note, snap && snap.startRank !== null && !snap.startRankVerified ? "Start-of-period rank population unverified" : null].filter(Boolean).join(". ");
     cardRows.push([
-      topic, snap ? snap.metric_date : "No data", display.rank, display.population, snap?.rankChange ?? null, snap?.startRank ?? null, snap?.startRankDate ?? null,
+      category, snap ? snap.metric_date : "No data", display.rank, display.population, snap?.rankChange ?? null, snap?.startRank ?? null, snap?.startRankDate ?? null,
       snap?.visibility_score ?? null, scoreChange, snap?.startScore ?? null, snap?.startScoreDate ?? null, display.text, notes,
     ]);
   }
   const cardColumns: ReportColumn[] = [
-    { header: "Topic", type: "text" },
+    { header: "Category", type: "text" },
     { header: "Latest Data Date", type: "text", align: "left" },
     { header: "Rank", type: "rank" },
     { header: "Rank Population", type: "int" },
@@ -125,30 +125,30 @@ export async function buildDashboardReport(input: DashboardReportInput) {
   // Daily trend tables and native line charts
   const trends = report.addSheet("Daily Trends", [16, 20, 20, 18, 4, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9], { tab: THEME.orange });
   trends.banner("Daily Trends", subtitle(input));
-  for (const topic of topics) {
-    const rows = input.metrics.filter((m) => m.topic === topic).sort((a, b) => a.metric_date.localeCompare(b.metric_date));
-    const overall = topic === "Overall";
+  for (const category of categories) {
+    const rows = input.metrics.filter((m) => m.category === category).sort((a, b) => a.metric_date.localeCompare(b.metric_date));
+    const overall = category === "Overall";
     trends.trendBlock({
-      heading: topic,
-      description: "Daily visibility score and rank for " + (overall ? "all topics combined" : topic) + ". Dates without a tracking result are left out and the chart connects the recorded days.",
+      heading: category,
+      description: "Daily visibility score and rank for " + (overall ? "all categories combined" : category) + ". Dates without a tracking result are left out and the chart connects the recorded days.",
       dates: rows.map((r) => r.metric_date),
       series: [
-        { header: "Visibility Score", kind: "score", values: rows.map((r) => r.visibility_score), chartTitle: topic + " Daily Visibility Score", yTitle: "Visibility (%)", color: overall ? THEME.orangeDark : THEME.green },
-        { header: "Visibility Rank", kind: "rank", values: rows.map((r) => r.visibility_rank), chartTitle: topic + " Daily Visibility Rank", yTitle: "Rank (1 is best)", color: overall ? THEME.orangeDark : THEME.green },
+        { header: "Visibility Score", kind: "score", values: rows.map((r) => r.visibility_score), chartTitle: category + " Daily Visibility Score", yTitle: "Visibility (%)", color: overall ? THEME.orangeDark : THEME.green },
+        { header: "Visibility Rank", kind: "rank", values: rows.map((r) => r.visibility_rank), chartTitle: category + " Daily Visibility Rank", yTitle: "Rank (1 is best)", color: overall ? THEME.orangeDark : THEME.green },
       ],
       extraColumns: [{ column: { header: "Rank Population", type: "int", empty: "" }, values: rows.map((r) => (r.rank_population_status === "verified" ? r.rank_population_count : null)) }],
-      emptyMessage: "No recorded values for this topic in the selected period.",
+      emptyMessage: "No recorded values for this category in the selected period.",
     });
   }
 
   // Top cited pages
   const cites = report.addSheet("Top Cited Pages", [8, 56, 40, 28, 20], { tab: "7A9C8B" });
   cites.banner("Top Cited Brand Pages", subtitle(input));
-  cites.note("The five most frequently cited tracked-brand pages for each topic in the selected period, as listed at the bottom of the Dashboard.");
-  for (const topic of topics.filter((t) => t !== "Overall")) {
-    const list = (input.citationsByTopic[topic] ?? []).slice(0, 5);
-    cites.section(topic);
-    if (!list.length) { cites.note("No citations recorded for this topic and period."); continue; }
+  cites.note("The five most frequently cited tracked-brand pages for each category in the selected period, as listed at the bottom of the Dashboard.");
+  for (const category of categories.filter((t) => t !== "Overall")) {
+    const list = (input.citationsByCategory[category] ?? []).slice(0, 5);
+    cites.section(category);
+    if (!list.length) { cites.note("No citations recorded for this category and period."); continue; }
     cites.table(
       [{ header: "No.", type: "int", align: "center" }, { header: "Page", type: "link" }, { header: "Page Name", type: "text" }, { header: "Brand Name", type: "text" }, { header: "Citation Occurrences", type: "int" }],
       list.map((c, i) => [i + 1, { text: c.url, hyperlink: c.url }, c.page_name, c.brand_name, c.frequency]),
@@ -160,15 +160,15 @@ export async function buildDashboardReport(input: DashboardReportInput) {
 /* ------------------------------------------------------------------ Analytics */
 
 export type AnalyticsRow = {
-  metric_date: string; topic: string; llm_provider: string;
+  metric_date: string; category: string; llm_provider: string;
   visibility_score: number | null; visibility_rank: number | null;
   share_of_voice_score: number | null; share_of_voice_rank: number | null;
   average_position: number | null; average_position_rank: number | null;
 };
 export type AnalyticsReportInput = ReportContext & {
-  allTopics: string[]; selectedTopics: string[];
+  allCategories: string[]; selectedCategories: string[];
   engines: Array<{ id: string; label: string }>; selectedEngineIds: string[];
-  /** Rows after the topic/engine filters (what the charts average). */
+  /** Rows after the category/engine filters (what the charts average). */
   filtered: AnalyticsRow[];
   /** Unfiltered rows for the period, used for the per-engine Overall snapshot. */
   rows: AnalyticsRow[];
@@ -177,7 +177,7 @@ export type AnalyticsReportInput = ReportContext & {
 export async function buildAnalyticsReport(input: AnalyticsReportInput) {
   const report = await ReportBuilder.create({ title: input.projectName + " Analytics Report", subject: "AI visibility analytics" });
   const engineLabels = input.engines.filter((e) => input.selectedEngineIds.includes(e.id)).map((e) => e.label);
-  const topicsText = listText(input.selectedTopics, "All topics", input.allTopics.length);
+  const categoriesText = listText(input.selectedCategories, "All categories", input.allCategories.length);
   const enginesText = listText(engineLabels, "All engines", input.engines.length);
   const sub = subtitle(input, enginesText);
   const widths = [16, 22, 22, 4, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9];
@@ -186,7 +186,7 @@ export async function buildAnalyticsReport(input: AnalyticsReportInput) {
   overview.banner("Analytics Report", sub);
   overview.keyValues([
     ...commonFilters(input),
-    ["Topics", topicsText],
+    ["Categories", categoriesText],
     ["Answer engines", enginesText],
     ["Generated", generatedText(input.generatedAt)],
   ], 1);
@@ -198,16 +198,16 @@ export async function buildAnalyticsReport(input: AnalyticsReportInput) {
       ["Mean Share of Voice", "Daily mean share of voice and rank, with line charts."],
       ["Mean Average", "Daily mean average position and its rank, with line charts."],
       ["Visibility Analytics", "Latest overall visibility score for each selected engine."],
-      ["Detail Data", "Every topic and engine row behind the daily means."],
+      ["Detail Data", "Every category and engine row behind the daily means."],
     ],
   );
 
   const sections: Array<{ sheet: string; heading: string; description: string; a: [keyof AnalyticsRow, string, string, string, number | undefined]; b: [keyof AnalyticsRow, string, string, string, number | undefined]; kindA: "score" | "rank" }> = [
-    { sheet: "Mean Visibility", heading: "Mean Visibility", description: "How often the brand appears in AI answers, averaged over the selected topics and engines. The score shows how visible the brand is, and the rank shows how it compares with competitors.", kindA: "score",
+    { sheet: "Mean Visibility", heading: "Mean Visibility", description: "How often the brand appears in AI answers, averaged over the selected categories and engines. The score shows how visible the brand is, and the rank shows how it compares with competitors.", kindA: "score",
       a: ["visibility_score", "Mean Visibility Score", "Mean Visibility Score", "Visibility (%)", undefined], b: ["visibility_rank", "Mean Visibility Rank", "Mean Visibility Rank", "Rank (1 is best)", 1] },
-    { sheet: "Mean Share of Voice", heading: "Mean Share of Voice", description: "How much of the conversation the brand owns compared with every brand mentioned, averaged over the selected topics and engines.", kindA: "score",
+    { sheet: "Mean Share of Voice", heading: "Mean Share of Voice", description: "How much of the conversation the brand owns compared with every brand mentioned, averaged over the selected categories and engines.", kindA: "score",
       a: ["share_of_voice_score", "Mean Share of Voice", "Mean Share of Voice", "Share of voice (%)", undefined], b: ["share_of_voice_rank", "Mean Share of Voice Rank", "Mean Share of Voice Rank", "Rank (1 is best)", 1] },
-    { sheet: "Mean Average", heading: "Mean Average", description: "How early the brand appears inside AI answers, averaged over the selected topics and engines. Position 1 is the first brand mentioned, so lower is better.", kindA: "rank",
+    { sheet: "Mean Average", heading: "Mean Average", description: "How early the brand appears inside AI answers, averaged over the selected categories and engines. Position 1 is the first brand mentioned, so lower is better.", kindA: "rank",
       a: ["average_position", "Mean Average Position", "Mean Average Position", "Average position (1 is best)", 1], b: ["average_position_rank", "Mean Average Position Rank", "Mean Average Position Rank", "Rank (1 is best)", 1] },
   ];
   for (const s of sections) {
@@ -234,7 +234,7 @@ export async function buildAnalyticsReport(input: AnalyticsReportInput) {
   snap.banner("Visibility Analytics", sub);
   snap.section("Latest values by engine", "The newest overall visibility score for each selected engine and the date it was recorded.");
   const snapRows: CellValue[][] = input.engines.filter((e) => input.selectedEngineIds.includes(e.id)).map((e) => {
-    const latest = input.rows.filter((r) => r.llm_provider === e.id && r.topic === "Overall" && r.visibility_score != null).sort((a, b) => b.metric_date.localeCompare(a.metric_date))[0];
+    const latest = input.rows.filter((r) => r.llm_provider === e.id && r.category === "Overall" && r.visibility_score != null).sort((a, b) => b.metric_date.localeCompare(a.metric_date))[0];
     return [e.label, latest ? latest.visibility_score : null, latest ? latest.metric_date : "No data"];
   });
   snap.table([{ header: "Answer Engine", type: "text" }, { header: "Overall Visibility Score", type: "pct" }, { header: "Date Recorded", type: "text", align: "left" }], snapRows);
@@ -242,15 +242,15 @@ export async function buildAnalyticsReport(input: AnalyticsReportInput) {
   // Detail rows behind the means
   const detail = report.addSheet("Detail Data", [14, 24, 22, 16, 16, 18, 18, 16, 20], { gridlines: true, tab: "9AA7A0" });
   detail.banner("Detail Data", sub);
-  const detailRows = [...input.filtered].sort((a, b) => a.metric_date.localeCompare(b.metric_date) || a.topic.localeCompare(b.topic) || a.llm_provider.localeCompare(b.llm_provider));
+  const detailRows = [...input.filtered].sort((a, b) => a.metric_date.localeCompare(b.metric_date) || a.category.localeCompare(b.category) || a.llm_provider.localeCompare(b.llm_provider));
   const engineName = new Map(input.engines.map((e) => [e.id, e.label]));
   const t = detail.table(
     [
-      { header: "Date", type: "date", align: "left" }, { header: "Topic", type: "text" }, { header: "Answer Engine", type: "text" },
+      { header: "Date", type: "date", align: "left" }, { header: "Category", type: "text" }, { header: "Answer Engine", type: "text" },
       { header: "Visibility Score", type: "pct" }, { header: "Visibility Rank", type: "rank" }, { header: "Share of Voice", type: "pct" }, { header: "Share of Voice Rank", type: "rank" },
       { header: "Average Position", type: "decimal" }, { header: "Average Position Rank", type: "rank" },
     ],
-    detailRows.map((r) => [new Date(r.metric_date + "T00:00:00Z"), r.topic, engineName.get(r.llm_provider) ?? r.llm_provider, r.visibility_score, r.visibility_rank, r.share_of_voice_score, r.share_of_voice_rank, r.average_position, r.average_position_rank]),
+    detailRows.map((r) => [new Date(r.metric_date + "T00:00:00Z"), r.category, engineName.get(r.llm_provider) ?? r.llm_provider, r.visibility_score, r.visibility_rank, r.share_of_voice_score, r.share_of_voice_rank, r.average_position, r.average_position_rank]),
     { autoFilter: true },
   );
   report.freeze(detail, t.headerRow);
@@ -262,21 +262,21 @@ export async function buildAnalyticsReport(input: AnalyticsReportInput) {
 export type CitationPageRow = { url: string; page_name: string | null; brand_name: string | null; frequency: number };
 export type ThirdPartyRow = { hostname: string; website_name: string | null; frequency: number; response_frequency: number; brand_coverage: number; source_types: string[]; example_url: string | null };
 export type CitationsReportInput = ReportContext & {
-  topicLabel: string; engineLabels: string[]; totalEngines: number;
+  categoryLabel: string; engineLabels: string[]; totalEngines: number;
   brandPages: CitationPageRow[]; allPages: CitationPageRow[]; thirdParty: ThirdPartyRow[];
 };
 
 export async function buildCitationsReport(input: CitationsReportInput) {
   const report = await ReportBuilder.create({ title: input.projectName + " Citations Report", subject: "AI citation intelligence" });
   const enginesText = listText(input.engineLabels, "All engines", input.totalEngines);
-  const sub = subtitle(input, input.topicLabel + "  |  " + enginesText);
+  const sub = subtitle(input, input.categoryLabel + "  |  " + enginesText);
   const sum = (rows: CitationPageRow[]) => rows.reduce((total, r) => total + Number(r.frequency || 0), 0);
 
   const overview = report.addSheet("Overview", [38, 30, 20, 20]);
   overview.banner("Citations Report", sub);
   overview.keyValues([
     ...commonFilters(input),
-    ["Topic", input.topicLabel],
+    ["Category", input.categoryLabel],
     ["Answer engines", enginesText],
     ["Generated", generatedText(input.generatedAt)],
   ], 1);
@@ -331,7 +331,7 @@ export type LeaderboardRow = {
   previousRank: number | null; previousVisibility: number | null; previousCitations: number | null;
 };
 export type LeaderboardReportInput = ReportContext & {
-  topicLabel: string; engineLabels: string[]; totalEngines: number;
+  categoryLabel: string; engineLabels: string[]; totalEngines: number;
   previousRange: { start: string; end: string } | null;
   rows: LeaderboardRow[];
   coverageNote?: string;
@@ -340,14 +340,14 @@ export type LeaderboardReportInput = ReportContext & {
 export async function buildLeaderboardReport(input: LeaderboardReportInput) {
   const report = await ReportBuilder.create({ title: input.projectName + " Leaderboard Report", subject: "AI visibility leaderboard" });
   const enginesText = listText(input.engineLabels, "All engines", input.totalEngines);
-  const sub = subtitle(input, input.topicLabel + "  |  " + enginesText);
+  const sub = subtitle(input, input.categoryLabel + "  |  " + enginesText);
   const tracked = input.rows.find((r) => r.isTracked);
 
   const overview = report.addSheet("Overview", [38, 30, 20, 20]);
   overview.banner("Leaderboard Report", sub);
   overview.keyValues([
     ...commonFilters(input),
-    ["Topic", input.topicLabel],
+    ["Category", input.categoryLabel],
     ["Answer engines", enginesText],
     ["Compared with", input.previousRange ? formatDay(input.previousRange.start) + " to " + formatDay(input.previousRange.end) : "No earlier period for All Time"],
     ["Generated", generatedText(input.generatedAt)],

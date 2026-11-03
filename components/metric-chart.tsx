@@ -52,7 +52,7 @@ export function MetricChart({
     .sort();
   const requestedStart = dateRange?.start || observedDates[0];
   // Start at the first real observation for this specific series, not at another
-  // topic's earlier date. Missing dates after the first observation remain gaps.
+  // category's earlier date. Missing dates after the first observation remain gaps.
   const start = requestedStart && observedDates[0] && observedDates[0] > requestedStart
     ? observedDates[0]
     : requestedStart;

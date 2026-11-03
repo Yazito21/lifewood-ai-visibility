@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Download, FileSpreadsheet, FolderKanban, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { DEFAULT_TOPIC, parseTopicList, resolveProjectTopics, trackedBrandRows } from "@/lib/project-setup";
+import { DEFAULT_CATEGORY, parseCategoryList, resolveProjectCategories, trackedBrandRows } from "@/lib/project-setup";
 import { downloadBrandTemplate, parseBrandWorkbook, saveProjectBrandRegistry, validateBrandRows, type BrandImportRow } from "@/lib/brand-registry";
 
 type Project={id:string;brand_name:string;brand_description:string|null;brand_logo_url:string|null;tracking_market:string};
@@ -20,10 +20,10 @@ export default function ProjectsPage(){
   const [brandName,setBrandName]=useState("");
   const [description,setDescription]=useState("");
   const [trackedWebsite,setTrackedWebsite]=useState("");
-  const [topicsText,setTopicsText]=useState("");
+  const [categoriesText,setCategoriesText]=useState("");
   const [brandFile,setBrandFile]=useState<File|null>(null);
   const [brandRows,setBrandRows]=useState<BrandImportRow[]>([]);
-  const [fileTopics,setFileTopics]=useState<string[]>([]);
+  const [fileCategories,setFileCategories]=useState<string[]>([]);
   const [fileMessage,setFileMessage]=useState("");
   const [busy,setBusy]=useState(false);
   const [deleteTarget,setDeleteTarget]=useState<Project|null>(null);
@@ -53,41 +53,41 @@ export default function ProjectsPage(){
 
   const canCreate=role==="superadmin"||role==="admin";
 
-  function currentTopics(){return parseTopicList(topicsText)}
+  function currentCategories(){return parseCategoryList(categoriesText)}
   async function handleBrandFile(file:File|null){
-    setBrandFile(file);setBrandRows([]);setFileTopics([]);setFileMessage("");setError("");
+    setBrandFile(file);setBrandRows([]);setFileCategories([]);setFileMessage("");setError("");
     if(!file)return;
     try{
       const parsed=parseBrandWorkbook(await file.arrayBuffer());
-      setBrandRows(parsed.rows);setFileTopics(parsed.topics);
-      const typed=currentTopics();
-      const topics=resolveProjectTopics(typed,parsed.topics);
-      const errors=validateBrandRows(parsed.rows,topics,brandName);
-      const workbookTopics=new Set(parsed.topics);
-      if(typed.length&&(typed.some(topic=>!workbookTopics.has(topic))||parsed.topics.some(topic=>!typed.includes(topic)))){
-        errors.unshift("The workbook Topics sheet must match the topics entered above, or leave the topics box empty to use the workbook's topics.");
+      setBrandRows(parsed.rows);setFileCategories(parsed.categories);
+      const typed=currentCategories();
+      const categories=resolveProjectCategories(typed,parsed.categories);
+      const errors=validateBrandRows(parsed.rows,categories,brandName);
+      const workbookCategories=new Set(parsed.categories);
+      if(typed.length&&(typed.some(category=>!workbookCategories.has(category))||parsed.categories.some(category=>!typed.includes(category)))){
+        errors.unshift("The workbook Categories sheet must match the categories entered above, or leave the categories box empty to use the workbook's categories.");
       }
-      setFileMessage(errors.length?errors.slice(0,5).join(" "):`Validated ${parsed.rows.length} brand-topic rows across ${topics.length} topics.`);
+      setFileMessage(errors.length?errors.slice(0,5).join(" "):`Validated ${parsed.rows.length} brand-category rows across ${categories.length} categories.`);
       if(errors.length)setError(errors.join("\\n"));
     }catch(e){setError(e instanceof Error?e.message:"Unable to read this Excel workbook.");}
   }
   async function createProject(){
     if(!brandName.trim())return;
-    const typed=currentTopics();
-    let topics:string[];
+    const typed=currentCategories();
+    let categories:string[];
     let registryRows:BrandImportRow[];
     if(brandFile){
-      let parsed:{topics:string[];rows:BrandImportRow[]};
+      let parsed:{categories:string[];rows:BrandImportRow[]};
       try{parsed=parseBrandWorkbook(await brandFile.arrayBuffer())}catch(e){setError(e instanceof Error?e.message:"Unable to read the Excel workbook.");return;}
-      topics=resolveProjectTopics(typed,parsed.topics);
-      const validation=validateBrandRows(parsed.rows,topics,brandName);
-      if(typed.length&&(typed.some(topic=>!parsed.topics.includes(topic))||parsed.topics.some(topic=>!typed.includes(topic))))validation.unshift("The workbook Topics sheet must match the topics entered above, or leave the topics box empty to use the workbook's topics.");
+      categories=resolveProjectCategories(typed,parsed.categories);
+      const validation=validateBrandRows(parsed.rows,categories,brandName);
+      if(typed.length&&(typed.some(category=>!parsed.categories.includes(category))||parsed.categories.some(category=>!typed.includes(category))))validation.unshift("The workbook Categories sheet must match the categories entered above, or leave the categories box empty to use the workbook's categories.");
       if(validation.length){setError(validation.join("\\n"));setFileMessage("The registry has validation errors. Fix them in Excel and upload the workbook again.");return;}
       registryRows=parsed.rows;
     } else {
-      // No workbook: the tracked brand alone in each topic. Competitors can be added later in Settings.
-      topics=resolveProjectTopics(typed,[]);
-      registryRows=trackedBrandRows(topics,brandName.trim(),trackedWebsite.trim());
+      // No workbook: the tracked brand alone in each category. Competitors can be added later in Settings.
+      categories=resolveProjectCategories(typed,[]);
+      registryRows=trackedBrandRows(categories,brandName.trim(),trackedWebsite.trim());
     }
     setBusy(true);setError("");
     const {data:{user}}=await supabase.auth.getUser();
@@ -95,20 +95,20 @@ export default function ProjectsPage(){
     const normalizedWebsite=trackedWebsite.trim();
     const {data:project,error:projectError}=await supabase.from("projects").insert({
       brand_name:brandName.trim(),brand_description:description.trim()||null,
-      brand_domains:normalizedWebsite?[normalizedWebsite]:[],brand_terms:[],topics,created_by:user.id
+      brand_domains:normalizedWebsite?[normalizedWebsite]:[],brand_terms:[],categories,created_by:user.id
     }).select().single();
     if(projectError||!project){setError(projectError?.message??"Unable to create project.");setBusy(false);return}
     const memberRole=role==="superadmin"?"superadmin":"admin";
     const {error:memberError}=await supabase.from("project_members").insert({project_id:project.id,user_id:user.id,role:memberRole});
     if(memberError){await supabase.from("projects").delete().eq("id",project.id);setError(memberError.message);setBusy(false);return}
     try{
-      await saveProjectBrandRegistry(supabase,project.id,brandName.trim(),topics,registryRows,normalizedWebsite);
+      await saveProjectBrandRegistry(supabase,project.id,brandName.trim(),categories,registryRows,normalizedWebsite);
     }catch(e){
       await supabase.from("projects").delete().eq("id",project.id);
       setError("Project setup failed and the incomplete project was removed: "+(e instanceof Error?e.message:"Unable to save the brand registry."));
       setBusy(false);return;
     }
-    setBrandName("");setDescription("");setTrackedWebsite("");setTopicsText("");setBrandFile(null);setBrandRows([]);setFileTopics([]);setFileMessage("");setCreating(false);setBusy(false);
+    setBrandName("");setDescription("");setTrackedWebsite("");setCategoriesText("");setBrandFile(null);setBrandRows([]);setFileCategories([]);setFileMessage("");setCreating(false);setBusy(false);
     router.push("/platform/"+project.id+"/prompts?assistant=1");
   }
 
@@ -161,7 +161,7 @@ export default function ProjectsPage(){
           <div className="platform-card p-5"><p className="platform-stat-label">Brand Projects</p><p className="platform-stat-value">{projects.length}</p><p className="platform-stat-meta">Accessible workspaces</p></div>
           <div className="platform-card p-5"><p className="platform-stat-label">Tracked Projects</p><p className="platform-stat-value">{Object.keys(latest).length}</p><p className="platform-stat-meta">With daily visibility data</p></div>
           <div className="platform-card p-5"><p className="platform-stat-label">Execution-ready engines</p><p className="platform-stat-value">1</p><p className="platform-stat-meta">ChatGPT runner available; additional engines are planned</p></div>
-          <div className="platform-card p-5"><p className="platform-stat-label">Prompt Limit</p><p className="platform-stat-value">50</p><p className="platform-stat-meta">Per project, at least 5 per topic</p></div>
+          <div className="platform-card p-5"><p className="platform-stat-label">Prompt Limit</p><p className="platform-stat-value">50</p><p className="platform-stat-meta">Per project, at least 5 per category</p></div>
         </section>
 
         <section className="mt-8">
@@ -190,7 +190,7 @@ export default function ProjectsPage(){
     {creating&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-5" onMouseDown={e=>{if(e.currentTarget===e.target)setCreating(false)}}>
       <form onSubmit={e=>{e.preventDefault();void createProject()}} className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-[var(--line)] bg-[var(--card)] p-7 shadow-2xl">
         <div className="flex items-start justify-between gap-4"><div><p className="page-eyebrow">Workspace</p><h3 className="mt-1 text-2xl font-semibold">Create project</h3><p className="mt-2 text-sm text-[var(--muted-foreground)]">Add the client company name and an optional summary.</p></div><button type="button" onClick={()=>setCreating(false)} className="platform-btn px-3"><X size={18}/></button></div>
-        <div className="mt-6 space-y-5"><label className="block text-sm font-semibold">Tracked brand name<input value={brandName} onChange={e=>setBrandName(e.target.value)} placeholder="e.g. Lifewood" className="platform-input mt-2"/></label><label className="block text-sm font-semibold">Tracked brand primary website<input value={trackedWebsite} onChange={e=>setTrackedWebsite(e.target.value)} placeholder="e.g. lifewood.com" className="platform-input mt-2"/></label><label className="block text-sm font-semibold">Company summary <span className="font-normal text-[var(--muted-foreground)]">(optional)</span><textarea value={description} onChange={e=>setDescription(e.target.value)} rows={3} placeholder="Briefly describe the company and its services." className="platform-input mt-2 resize-y leading-6"/></label><label className="block text-sm font-semibold">Tracking topics <span className="font-normal text-[var(--muted-foreground)]">(optional · separate with commas or new lines)</span><textarea value={topicsText} onChange={e=>setTopicsText(e.target.value)} rows={3} placeholder="e.g. EHR software, Medical billing" className="platform-input mt-2 resize-y leading-6"/><span className="mt-1.5 block text-xs font-normal text-[var(--muted-foreground)]">Leave empty to use the workbook&apos;s topics, or a single &quot;{DEFAULT_TOPIC}&quot; topic. You can add topics later in Settings.</span></label><div className="rounded-2xl border border-[var(--line)] bg-[var(--soft)] p-4"><div className="flex items-start gap-3"><FileSpreadsheet size={20} className="mt-0.5 shrink-0 text-[var(--primary)]"/><div className="min-w-0 flex-1"><h4 className="text-sm font-semibold">Competitor registry workbook <span className="font-normal text-[var(--muted-foreground)]">(optional)</span></h4><p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">Upload one Excel workbook with Topics and Brands sheets to add up to 99 competitors per topic. You can skip this and add competitors later in Settings; ranks become meaningful once competitors are added.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={()=>downloadBrandTemplate(resolveProjectTopics(currentTopics(),[]),brandName.trim()||"Tracked Brand",trackedWebsite)} className="platform-btn text-xs disabled:opacity-40"><Download size={14}/>Download Excel template</button><label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-xs font-semibold"><Upload size={14}/>{brandFile?brandFile.name:"Upload completed workbook"}<input type="file" accept=".xlsx,.xls,.csv" className="sr-only" onChange={e=>{void handleBrandFile(e.target.files?.[0]??null);e.currentTarget.value="";}}/></label></div>{fileMessage&&<p className={`mt-3 text-xs ${fileMessage.startsWith("Validated")?"text-emerald-700":"text-amber-700"}`}>{fileMessage}</p>}</div></div></div></div>
+        <div className="mt-6 space-y-5"><label className="block text-sm font-semibold">Tracked brand name<input value={brandName} onChange={e=>setBrandName(e.target.value)} placeholder="e.g. Lifewood" className="platform-input mt-2"/></label><label className="block text-sm font-semibold">Tracked brand primary website<input value={trackedWebsite} onChange={e=>setTrackedWebsite(e.target.value)} placeholder="e.g. lifewood.com" className="platform-input mt-2"/></label><label className="block text-sm font-semibold">Company summary <span className="font-normal text-[var(--muted-foreground)]">(optional)</span><textarea value={description} onChange={e=>setDescription(e.target.value)} rows={3} placeholder="Briefly describe the company and its services." className="platform-input mt-2 resize-y leading-6"/></label><label className="block text-sm font-semibold">Tracking categories <span className="font-normal text-[var(--muted-foreground)]">(optional · separate with commas or new lines)</span><textarea value={categoriesText} onChange={e=>setCategoriesText(e.target.value)} rows={3} placeholder="e.g. EHR software, Medical billing" className="platform-input mt-2 resize-y leading-6"/><span className="mt-1.5 block text-xs font-normal text-[var(--muted-foreground)]">Leave empty to use the workbook&apos;s categories, or a single &quot;{DEFAULT_CATEGORY}&quot; category. You can add categories later in Settings.</span></label><div className="rounded-2xl border border-[var(--line)] bg-[var(--soft)] p-4"><div className="flex items-start gap-3"><FileSpreadsheet size={20} className="mt-0.5 shrink-0 text-[var(--primary)]"/><div className="min-w-0 flex-1"><h4 className="text-sm font-semibold">Competitor registry workbook <span className="font-normal text-[var(--muted-foreground)]">(optional)</span></h4><p className="mt-1 text-xs leading-5 text-[var(--muted-foreground)]">Upload one Excel workbook with Categories and Brands sheets to add up to 99 competitors per category. You can skip this and add competitors later in Settings; ranks become meaningful once competitors are added.</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={()=>downloadBrandTemplate(resolveProjectCategories(currentCategories(),[]),brandName.trim()||"Tracked Brand",trackedWebsite)} className="platform-btn text-xs disabled:opacity-40"><Download size={14}/>Download Excel template</button><label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--card)] px-3 py-2 text-xs font-semibold"><Upload size={14}/>{brandFile?brandFile.name:"Upload completed workbook"}<input type="file" accept=".xlsx,.xls,.csv" className="sr-only" onChange={e=>{void handleBrandFile(e.target.files?.[0]??null);e.currentTarget.value="";}}/></label></div>{fileMessage&&<p className={`mt-3 text-xs ${fileMessage.startsWith("Validated")?"text-emerald-700":"text-amber-700"}`}>{fileMessage}</p>}</div></div></div></div>
         <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={()=>setCreating(false)} className="platform-btn">Cancel</button><button disabled={busy||!brandName.trim()} className="platform-btn platform-btn-primary disabled:opacity-50">{busy?"Creating…":"Create project"}</button></div>
       </form>
     </div>}

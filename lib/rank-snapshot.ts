@@ -1,11 +1,11 @@
 // Dashboard rank cards and rank charts both derive from the same canonical daily
-// metric rows (visibility_daily, one row per project/date/topic/engine/location).
+// metric rows (visibility_daily, one row per project/date/category/engine/location).
 // Rank and population are computed once in Postgres (canonical_scoped_rank); the UI
 // never recomputes them, it only selects and formats.
 
 export type DailyMetric = {
   metric_date: string;
-  topic: string;
+  category: string;
   visibility_score: number | null;
   visibility_rank: number | null;
   rank_population_count: number | null;
@@ -41,16 +41,16 @@ function hasVerifiedPopulation(row: DailyMetric) {
 }
 
 /**
- * Latest row per topic, compared with that topic's first recorded day in `metrics`.
+ * Latest row per category, compared with that category's first recorded day in `metrics`.
  * Callers pass the rows for the selected reporting period, so the baseline is the start of the period
  * (or the first tracked day after it when earlier days have no data). The grain is unique, so a date tie cannot occur.
  */
-export function latestSnapshots(metrics: DailyMetric[], topics: string[]): Map<string, RankSnapshot> {
-  const byTopic = new Map<string, DailyMetric[]>();
-  for (const row of metrics) byTopic.set(row.topic, [...(byTopic.get(row.topic) ?? []), row]);
+export function latestSnapshots(metrics: DailyMetric[], categories: string[]): Map<string, RankSnapshot> {
+  const byCategory = new Map<string, DailyMetric[]>();
+  for (const row of metrics) byCategory.set(row.category, [...(byCategory.get(row.category) ?? []), row]);
   const snapshots = new Map<string, RankSnapshot>();
-  for (const topic of topics) {
-    const rows = (byTopic.get(topic) ?? []).slice().sort((a, b) => a.metric_date.localeCompare(b.metric_date));
+  for (const category of categories) {
+    const rows = (byCategory.get(category) ?? []).slice().sort((a, b) => a.metric_date.localeCompare(b.metric_date));
     const current = rows[rows.length - 1];
     if (!current) continue;
     const earlier = rows.filter((row) => row.metric_date !== current.metric_date);
@@ -58,7 +58,7 @@ export function latestSnapshots(metrics: DailyMetric[], topics: string[]): Map<s
     const startScoreRow = earlier.find((row) => row.visibility_score !== null);
     const startRank = startRankRow?.visibility_rank ?? null;
     const startScore = startScoreRow?.visibility_score ?? null;
-    snapshots.set(topic, {
+    snapshots.set(category, {
       ...current,
       startRank,
       startRankDate: startRankRow?.metric_date ?? null,
@@ -89,10 +89,10 @@ export function rankDisplay(row: DailyMetric | undefined): RankDisplay {
   return { rank: row.visibility_rank, population: null, text: String(row.visibility_rank), note: "Historical population unverified" };
 }
 
-/** Chart series for one topic: exactly the stored rows, no interpolation, no recalculation. */
-export function chartSeries(metrics: DailyMetric[], topic: string, key: "visibility_score" | "visibility_rank") {
+/** Chart series for one category: exactly the stored rows, no interpolation, no recalculation. */
+export function chartSeries(metrics: DailyMetric[], category: string, key: "visibility_score" | "visibility_rank") {
   return metrics
-    .filter((row) => row.topic === topic)
+    .filter((row) => row.category === category)
     .slice()
     .sort((a, b) => a.metric_date.localeCompare(b.metric_date))
     .map((row) => ({ label: row.metric_date, value: row[key] }));

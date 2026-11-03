@@ -56,7 +56,7 @@ type Project = {
   brand_description: string | null;
   brand_domains: string[] | null;
   brand_terms: string[] | null;
-  topics: string[] | null;
+  categories: string[] | null;
   tracking_locations: string[] | null;
   brand_profile: BrandProfile | null;
 };
@@ -136,7 +136,7 @@ async function analyze(ctx: Context) {
         `Brand: ${project.brand_name}`,
         `Description: ${project.brand_description || "Not provided"}`,
         `Website: ${project.brand_domains?.[0] || "Not provided"}`,
-        `Tracked topics: ${(project.topics ?? []).join(", ") || "Not provided"}`,
+        `Tracked categories: ${(project.categories ?? []).join(", ") || "Not provided"}`,
         `Market (ISO country code, GLOBAL = worldwide): ${location(project)}`,
         `Homepage text: ${homepage ?? "Website text unavailable"}`,
       ].join("\n"),
@@ -151,7 +151,7 @@ async function analyze(ctx: Context) {
   return { profile, source, updated_at: updatedAt };
 }
 
-function generationMessages(project: Project, profile: BrandProfile, topic: string, mode: SuggestionMode, language: string, wanted: number, avoid: string[]): ChatMessage[] {
+function generationMessages(project: Project, profile: BrandProfile, category: string, mode: SuggestionMode, language: string, wanted: number, avoid: string[]): ChatMessage[] {
   const modeRule = mode === "discovery"
     ? `Never mention ${project.brand_name}, its website or any of its product names. Write the questions a buyer asks before they know which company to choose.`
     : `Every question names ${project.brand_name} and asks how AI assistants see it (reputation, reviews, pricing, comparisons with alternatives).`;
@@ -164,7 +164,7 @@ function generationMessages(project: Project, profile: BrandProfile, topic: stri
     {
       role: "user",
       content: [
-        `Write ${wanted} questions about the topic "${topic}" in ${language}.`,
+        `Write ${wanted} questions about the category "${category}" in ${language}.`,
         `Market (ISO country code, GLOBAL = worldwide): ${location(project)}. Mention the market only where a real buyer would.`,
         modeRule,
         "Vary the intent: recommendations, comparisons, how-to, cost, trust and suitability for a specific need.",
@@ -177,11 +177,11 @@ function generationMessages(project: Project, profile: BrandProfile, topic: stri
 
 async function generate(ctx: Context, body: Record<string, unknown>) {
   const { project } = ctx;
-  const topic = String(body?.topic ?? "");
+  const category = String(body?.category ?? "");
   const mode = String(body?.mode ?? "discovery") as SuggestionMode;
   const language = String(body?.language ?? "English").trim() || "English";
   const count = Math.min(MAX_COUNT, Math.max(1, Math.trunc(Number(body?.count ?? MAX_COUNT)) || MAX_COUNT));
-  if (!(project.topics ?? []).includes(topic)) return json({ error: "INVALID_REQUEST", message: "Choose one of the project's topics." }, 400);
+  if (!(project.categories ?? []).includes(category)) return json({ error: "INVALID_REQUEST", message: "Choose one of the project's categories." }, 400);
   if (mode !== "discovery" && mode !== "brand") return json({ error: "INVALID_REQUEST", message: "Unknown prompt type." }, 400);
 
   let profileSource: string | undefined;
@@ -189,11 +189,11 @@ async function generate(ctx: Context, body: Record<string, unknown>) {
   const profile = project.brand_profile as BrandProfile;
 
   const { data: existingRows, error: existingError } = await ctx.admin.from("prompts")
-    .select("prompt,topic").eq("project_id", project.id);
+    .select("prompt,category").eq("project_id", project.id);
   if (existingError) return json({ error: "PROMPT_LOOKUP_FAILED", message: existingError.message }, 500);
   const shown = sanitizeExclude(body?.exclude);
   const existing = [...(existingRows ?? []).map((row: { prompt: string }) => row.prompt), ...shown];
-  const avoid = (existingRows ?? []).filter((row: { topic: string }) => row.topic === topic)
+  const avoid = (existingRows ?? []).filter((row: { category: string }) => row.category === category)
     .map((row: { prompt: string }) => row.prompt).concat(shown).slice(-MAX_EXISTING_IN_PROMPT);
   const brandTerms = [project.brand_name, ...(project.brand_terms ?? []), ...(project.brand_domains ?? [])];
 
@@ -201,12 +201,12 @@ async function generate(ctx: Context, body: Record<string, unknown>) {
   for (let round = 0; round < 2 && kept.length < count; round++) {
     const missing = count - kept.length;
     const candidates = await askJson(ctx, "generate",
-      generationMessages(project, profile, topic, mode, language, missing + EXTRA_CANDIDATES, [...avoid, ...kept]), 500, parseSuggestions);
+      generationMessages(project, profile, category, mode, language, missing + EXTRA_CANDIDATES, [...avoid, ...kept]), 500, parseSuggestions);
     kept.push(...filterSuggestions(candidates, [...existing, ...kept], { mode, brandTerms, limit: missing }));
   }
 
   return json({
-    suggestions: kept.map((prompt) => ({ prompt, topic, language, mode })),
+    suggestions: kept.map((prompt) => ({ prompt, category, language, mode })),
     ...(profileSource ? { profile_source: profileSource } : {}),
   });
 }
@@ -238,7 +238,7 @@ Deno.serve(async (req) => {
       admin.from("profiles").select("role").eq("id", userId).maybeSingle(),
       admin.from("project_members").select("role").eq("project_id", projectId).eq("user_id", userId).maybeSingle(),
       admin.from("projects")
-        .select("id,brand_name,brand_description,brand_domains,brand_terms,topics,tracking_locations,brand_profile")
+        .select("id,brand_name,brand_description,brand_domains,brand_terms,categories,tracking_locations,brand_profile")
         .eq("id", projectId).maybeSingle(),
     ]);
     const canEdit = ["superadmin", "admin"].includes(profile?.role) || ["superadmin", "admin"].includes(member?.role);

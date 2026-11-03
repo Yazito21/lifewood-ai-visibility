@@ -4,7 +4,7 @@ import { reduceEvidenceRows, type EvidenceRow } from "./evidence-reducer.ts";
 const base: EvidenceRow = {
   response_id: "response-1",
   brand_id: "brand-1",
-  topic: "AEO/GEO",
+  category: "AEO/GEO",
   match_source: "alias",
   matched_value: "Lifewood",
 };

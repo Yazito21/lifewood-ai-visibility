@@ -62,8 +62,8 @@ export default function ResponsesPage() {
   const [provider, setProvider] = useState<string[]>([]);
   const [trackingLocation, setTrackingLocation] = useState("MY");
   const [status, setStatus] = useState("all");
-  const [topicOptions, setTopicOptions] = useState<string[]>([]);
-  const [topics, setTopics] = useState<string[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [searched, setSearched] = useState(false);
   const [search, setSearch] = useState("");
   const [rows, setRows] = useState<ResponseRow[]>([]);
@@ -73,7 +73,7 @@ export default function ResponsesPage() {
   const [expanded, setExpanded] = useState<string[]>([]);
 
   const loadResponses = useCallback(async () => {
-    if (!fromDate || !toDate || !topics.length || !provider.length) { setError("Choose a date range, at least one topic, and at least one AI engine."); return; }
+    if (!fromDate || !toDate || !categories.length || !provider.length) { setError("Choose a date range, at least one category, and at least one AI engine."); return; }
     setLoading(true);
     setSearched(true);
     setError("");
@@ -110,30 +110,30 @@ export default function ResponsesPage() {
       setRows([]);
     } else {
       const ids = [...new Set(result.map((r) => r.prompt_id).filter((id): id is string => Boolean(id)))];
-      const topicByPrompt = new Map<string, string>();
+      const categoryByPrompt = new Map<string, string>();
       if (ids.length) {
         const { data: promptRows, error: promptLookupError } = await supabase.from("prompts")
-          .select("id,topic").eq("project_id", projectId).in("id", ids);
+          .select("id,category").eq("project_id", projectId).in("id", ids);
         if (promptLookupError) setError(promptLookupError.message);
-        for (const prompt of (promptRows ?? []) as Array<Record<string, unknown>>) topicByPrompt.set(String(prompt.id), String(prompt.topic ?? ""));
+        for (const prompt of (promptRows ?? []) as Array<Record<string, unknown>>) categoryByPrompt.set(String(prompt.id), String(prompt.category ?? ""));
       }
-      setRows(result.filter((r) => Boolean(r.prompt_id) && topics.includes(topicByPrompt.get(r.prompt_id!) || "")));
+      setRows(result.filter((r) => Boolean(r.prompt_id) && categories.includes(categoryByPrompt.get(r.prompt_id!) || "")));
     }
     setPage(1);
     setExpanded([]);
     setLoading(false);
-  }, [projectId, fromDate, toDate, topics, provider, trackingLocation]);
+  }, [projectId, fromDate, toDate, categories, provider, trackingLocation]);
 
   useEffect(() => {
     let cancelled = false;
     async function loadFilters() {
       const [{ data: project }, { data: promptRows }] = await Promise.all([
         supabase.from("projects").select("tracking_market").eq("id", projectId).single(),
-        supabase.from("prompts").select("id,topic").eq("project_id", projectId).limit(2000),
+        supabase.from("prompts").select("id,category").eq("project_id", projectId).limit(2000),
       ]);
       if (cancelled) return;
       setTrackingLocation(project?.tracking_market ?? "MY");
-      setTopicOptions([...new Set((promptRows ?? []).map((p) => String((p as Record<string, unknown>).topic ?? "")).filter(Boolean))].sort());
+      setCategoryOptions([...new Set((promptRows ?? []).map((p) => String((p as Record<string, unknown>).category ?? "")).filter(Boolean))].sort());
     }
     void loadFilters();
     return () => { cancelled = true; };
@@ -179,12 +179,12 @@ export default function ResponsesPage() {
         <header>
           <p className="page-eyebrow">Tracking data</p>
           <h1 className="page-title mt-1">Responses</h1>
-          <p className="page-description mt-2">Read the actual answers the AI engines gave during tracking runs. Pick a date range, topics and engines in the filter box, then press Show responses. Use the search bar to find a prompt or a phrase, open any answer to read it in full, and press Export Excel to download what you see.</p>
+          <p className="page-description mt-2">Read the actual answers the AI engines gave during tracking runs. Pick a date range, categories and engines in the filter box, then press Show responses. Use the search bar to find a prompt or a phrase, open any answer to read it in full, and press Export Excel to download what you see.</p>
         </header>
 
 
         <section className="ops-card p-5 sm:p-6">
-          <h2 className="text-sm font-semibold">Filter responses</h2><p className="mb-4 mt-1 text-xs text-[var(--muted-foreground)]">Choose which dates, topics and engines to load, then press Show responses.</p>
+          <h2 className="text-sm font-semibold">Filter responses</h2><p className="mb-4 mt-1 text-xs text-[var(--muted-foreground)]">Choose which dates, categories and engines to load, then press Show responses.</p>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="text-xs font-semibold text-[var(--muted-foreground)]">Start date
               <input type="date" value={fromDate} min={MIN_TRACKING_DATE} max={toDate || today} onChange={(e) => setFromDate(e.target.value)} className="platform-input mt-2 text-sm"/>
@@ -193,9 +193,9 @@ export default function ResponsesPage() {
               <input type="date" value={toDate} min={fromDate || MIN_TRACKING_DATE} max={today} onChange={(e) => setToDate(e.target.value)} className="platform-input mt-2 text-sm"/>
             </label>
           </div>
-          <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">Topics</p><div className="flex flex-wrap gap-2">
-            {topicOptions.map((topic) => <label key={topic} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs"><input type="checkbox" checked={topics.includes(topic)} onChange={(e) => setTopics((s) => e.target.checked ? [...s, topic] : s.filter((x) => x !== topic))} className="accent-emerald-600"/>{topic}</label>)}
-            {!topicOptions.length && <span className="text-xs text-[var(--muted-foreground)]">No topics found.</span>}
+          <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">Categories</p><div className="flex flex-wrap gap-2">
+            {categoryOptions.map((category) => <label key={category} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs"><input type="checkbox" checked={categories.includes(category)} onChange={(e) => setCategories((s) => e.target.checked ? [...s, category] : s.filter((x) => x !== category))} className="accent-emerald-600"/>{category}</label>)}
+            {!categoryOptions.length && <span className="text-xs text-[var(--muted-foreground)]">No categories found.</span>}
           </div></div>
           <div className="mt-4"><p className="mb-2 text-xs font-semibold text-[var(--muted-foreground)]">AI engines</p><div className="flex flex-wrap gap-2">
             {Object.entries(providerLabels).map(([id,label]) => <label key={id} className="inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-xs"><input type="checkbox" checked={provider.includes(id)} onChange={(e) => setProvider((s) => e.target.checked ? [...s,id] : s.filter((x) => x !== id))} className="accent-emerald-600"/>{label}</label>)}
@@ -212,7 +212,7 @@ export default function ResponsesPage() {
         <section className="ops-card overflow-hidden">
           {searched && <div className="border-b border-[var(--border)] px-5 py-4"><h2 className="text-sm font-semibold">Results</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Answers are grouped by prompt. Click a prompt to open it and read the answer from each engine.</p></div>}
           {loading ? <div className="space-y-3 p-5">{[0,1,2,3,4].map((n) => <div key={n} className="h-16 animate-pulse rounded-lg bg-[var(--soft)]"/>)}</div> :
-            !searched ? <div className="px-6 py-16 text-center"><FileText size={28} className="mx-auto text-[var(--muted-foreground)]"/><h2 className="mt-3 font-semibold">Choose filters to get started</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Select a date range, topics, and AI engines to view responses.</p></div> : !visible.length ? <div className="px-6 py-16 text-center">
+            !searched ? <div className="px-6 py-16 text-center"><FileText size={28} className="mx-auto text-[var(--muted-foreground)]"/><h2 className="mt-3 font-semibold">Choose filters to get started</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Select a date range, categories, and AI engines to view responses.</p></div> : !visible.length ? <div className="px-6 py-16 text-center">
               <FileText size={28} className="mx-auto text-[var(--muted-foreground)]"/>
               <h2 className="mt-3 font-semibold">No responses found</h2>
               <p className="mt-1 text-sm text-[var(--muted-foreground)]">Try another date range or filter. Responses are saved when a persistent tracking run completes.</p>
