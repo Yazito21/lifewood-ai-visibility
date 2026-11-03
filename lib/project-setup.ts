@@ -1,22 +1,22 @@
 import type { BrandImportRow } from "./brand-registry";
 
-/** Topic used when a project is created without typed topics or a workbook. */
-export const DEFAULT_TOPIC = "General";
+/** Category used when a project is created without typed categories or a workbook. */
+export const DEFAULT_CATEGORY = "General";
 
-export function parseTopicList(text: string): string[] {
+export function parseCategoryList(text: string): string[] {
   return [...new Set(text.split(/[;,\n]/).map((value) => value.trim()).filter(Boolean))];
 }
 
-/** Typed topics first, then the workbook's Topics sheet, then a single default topic. */
-export function resolveProjectTopics(typed: string[], workbookTopics: string[]): string[] {
+/** Typed categories first, then the workbook's Categories sheet, then a single default category. */
+export function resolveProjectCategories(typed: string[], workbookCategories: string[]): string[] {
   if (typed.length) return typed;
-  if (workbookTopics.length) return workbookTopics;
-  return [DEFAULT_TOPIC];
+  if (workbookCategories.length) return workbookCategories;
+  return [DEFAULT_CATEGORY];
 }
 
-/** Registry rows that put the tracked brand in every topic, used when no workbook is uploaded. */
-export function trackedBrandRows(topics: string[], brandName: string, website: string): BrandImportRow[] {
-  return topics.map((topic) => ({
-    topic, brand: brandName, aliases: [], website, otherWebsites: [], role: "tracked_brand", notes: "Tracked brand",
+/** Registry rows that put the tracked brand in every category, used when no workbook is uploaded. */
+export function trackedBrandRows(categories: string[], brandName: string, website: string): BrandImportRow[] {
+  return categories.map((category) => ({
+    category, brand: brandName, aliases: [], website, otherWebsites: [], role: "tracked_brand", notes: "Tracked brand",
   }));
 }

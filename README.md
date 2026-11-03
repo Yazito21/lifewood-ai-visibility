@@ -9,7 +9,7 @@ This repository is intentionally separate from the `lifewood-aeo-geo` operations
 The AI visibility platform is responsible for:
 
 - Brand/project configuration
-- Up to 50 tracked prompts per project, with at least 5 per topic
+- Up to 50 tracked prompts per project, with at least 5 per category
 - LLM/API configuration
 - Raw AI response retention
 - Daily visibility metrics
@@ -56,12 +56,12 @@ Visibility score, rank, population and citation counts follow one definition per
 
 - **One rank implementation:** `public.canonical_scoped_rank` (Postgres). It compares exact
   presence/response fractions; ties share a rank; the population is the tracked brand plus competitors with
-  valid observations for the same run/topic/date/engine/location. The dashboard cards, charts and leaderboard
+  valid observations for the same run/category/date/engine/location. The dashboard cards, charts and leaderboard
   read the stored result and never recompute it (`lib/rank-snapshot.ts`).
 - **Publication gate:** a run is published by setting `tracking_runs.published_at`. A trigger supersedes the
   previous run for the same scope/day, recomputes the tracked score from raw evidence (the update fails if it
   disagrees with the stored score) and stamps counts, rank and population.
-- **Overall:** pooled responses of the latest published topic runs of the day (`publish_overall_metrics`),
-  recorded as an `overall_aggregate` run. It is not an average of topic scores.
+- **Overall:** pooled responses of the latest published category runs of the day (`publish_overall_metrics`),
+  recorded as an `overall_aggregate` run. It is not an average of category scores.
 - **Checks:** run `select * from public.check_metric_integrity();` or execute
   `supabase/tests/metric_integrity_contract.sql` after migrations. Any `error` row means a metric must not be trusted.

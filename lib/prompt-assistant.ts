@@ -10,7 +10,7 @@ export type BrandProfile = {
   differentiators: string[];
 };
 
-export type Suggestion = { id: string; prompt: string; topic: string; language: string; mode: SuggestionMode; selected: boolean };
+export type Suggestion = { id: string; prompt: string; category: string; language: string; mode: SuggestionMode; selected: boolean };
 
 export function remainingSlots(existingCount: number): number {
   return Math.max(0, PROMPT_LIMIT - existingCount);

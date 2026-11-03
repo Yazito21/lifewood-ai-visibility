@@ -35,7 +35,7 @@ test("permission errors say so instead of asking for a retry", () => {
 });
 
 test("the server's message is shown when there is one", () => {
-  strictEqual(assistantErrorMessage("INVALID_REQUEST", "Choose one of the project's topics.", 400), "Choose one of the project's topics.");
+  strictEqual(assistantErrorMessage("INVALID_REQUEST", "Choose one of the project's categories.", 400), "Choose one of the project's categories.");
 });
 
 test("notShown drops prompts already in the panel, ignoring case and punctuation", () => {

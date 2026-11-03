@@ -4,7 +4,7 @@ import { Check, Loader2, RefreshCw, RotateCw, Sparkles, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { assistantErrorMessage, notShown, remainingSlots, PROMPT_LIMIT, type BrandProfile, type Suggestion, type SuggestionMode } from "@/lib/prompt-assistant";
 
-type SuggestionResponse = { prompt: string; topic: string; language: string; mode: SuggestionMode };
+type SuggestionResponse = { prompt: string; category: string; language: string; mode: SuggestionMode };
 
 const languages = ["English", "Malay", "Chinese", "Japanese", "Korean", "Thai", "Indonesian", "Arabic", "Other"];
 
@@ -22,17 +22,17 @@ async function invokeAssistant<T>(body: Record<string, unknown>): Promise<T> {
 let nextId = 0;
 const toSuggestion = (item: SuggestionResponse): Suggestion => ({ ...item, id: "s" + (nextId++), selected: true });
 
-export function PromptAssistantPanel({ projectId, topics, existingCount, onClose, onSave }: {
+export function PromptAssistantPanel({ projectId, categories, existingCount, onClose, onSave }: {
   projectId: string;
-  topics: string[];
+  categories: string[];
   existingCount: number;
   onClose: () => void;
-  onSave: (rows: { prompt: string; topic: string; language: string }[]) => Promise<void>;
+  onSave: (rows: { prompt: string; category: string; language: string }[]) => Promise<void>;
 }) {
   const [profile, setProfile] = useState<BrandProfile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [descriptionOnly, setDescriptionOnly] = useState(false);
-  const [topic, setTopic] = useState(topics[0] ?? "");
+  const [category, setCategory] = useState(categories[0] ?? "");
   const [language, setLanguage] = useState("English");
   const [mode, setMode] = useState<SuggestionMode>("discovery");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -78,15 +78,15 @@ export function PromptAssistantPanel({ projectId, topics, existingCount, onClose
   }, [onClose]);
 
   async function generate() {
-    if (!topic) return;
+    if (!category) return;
     setGenerating(true); setError(""); setNotice("");
     try {
       const shown = suggestions.map((item) => item.prompt);
-      const result = await invokeAssistant<{ suggestions: SuggestionResponse[]; profile_source?: string }>({ action: "generate", project_id: projectId, topic, mode, language, exclude: shown });
+      const result = await invokeAssistant<{ suggestions: SuggestionResponse[]; profile_source?: string }>({ action: "generate", project_id: projectId, category, mode, language, exclude: shown });
       if (result.profile_source === "description_only") setDescriptionOnly(true);
       const fresh = notShown(result.suggestions.map((item) => item.prompt), shown);
       const incoming = result.suggestions.filter((item) => fresh.includes(item.prompt));
-      if (!incoming.length) setNotice("No new prompts this time. The AI only came up with prompts you already have. Try another topic or type.");
+      if (!incoming.length) setNotice("No new prompts this time. The AI only came up with prompts you already have. Try another category or type.");
       setSuggestions((current) => [...incoming.map(toSuggestion), ...current]);
       if (!profile) {
         const { data } = await supabase.from("projects").select("brand_profile").eq("id", projectId).maybeSingle();
@@ -103,7 +103,7 @@ export function PromptAssistantPanel({ projectId, topics, existingCount, onClose
     setReplacingId(item.id); setError("");
     try {
       const shown = suggestions.map((value) => value.prompt);
-      const result = await invokeAssistant<{ suggestions: SuggestionResponse[] }>({ action: "generate", project_id: projectId, topic: item.topic, mode: item.mode, language: item.language, count: 1, exclude: shown });
+      const result = await invokeAssistant<{ suggestions: SuggestionResponse[] }>({ action: "generate", project_id: projectId, category: item.category, mode: item.mode, language: item.language, count: 1, exclude: shown });
       const replacement = result.suggestions.find((value) => notShown([value.prompt], shown).length > 0);
       if (replacement) setSuggestions((current) => current.map((value) => value.id === item.id ? toSuggestion(replacement) : value));
       else setNotice("Couldn't find a different prompt for that one. Edit it or untick it.");
@@ -122,7 +122,7 @@ export function PromptAssistantPanel({ projectId, topics, existingCount, onClose
     if (!selected.length || overLimit) return;
     setSaving(true); setError(""); setNotice("");
     try {
-      await onSave(selected.map((item) => ({ prompt: item.prompt.trim(), topic: item.topic, language: item.language })));
+      await onSave(selected.map((item) => ({ prompt: item.prompt.trim(), category: item.category, language: item.language })));
       const savedIds = new Set(selected.map((item) => item.id));
       setSuggestions((current) => current.filter((item) => !savedIds.has(item.id)));
       setNotice(`${selected.length} prompt${selected.length === 1 ? "" : "s"} added to the library.`);
@@ -165,8 +165,8 @@ export function PromptAssistantPanel({ projectId, topics, existingCount, onClose
         </section>
 
         <section className="grid gap-3 sm:grid-cols-2">
-          <label className="block text-sm font-semibold">Topic
-            <select value={topic} onChange={(event) => setTopic(event.target.value)} className="mt-2 w-full platform-input">{topics.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+          <label className="block text-sm font-semibold">Category
+            <select value={category} onChange={(event) => setCategory(event.target.value)} className="mt-2 w-full platform-input">{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select>
           </label>
           <label className="block text-sm font-semibold">Language
             <select value={language} onChange={(event) => setLanguage(event.target.value)} className="mt-2 w-full platform-input">{languages.map((value) => <option key={value} value={value}>{value}</option>)}</select>
@@ -184,7 +184,7 @@ export function PromptAssistantPanel({ projectId, topics, existingCount, onClose
           </div>
         </section>
 
-        <button onClick={() => void generate()} disabled={generating || profileLoading || !topic || slots === 0}
+        <button onClick={() => void generate()} disabled={generating || profileLoading || !category || slots === 0}
           className="inline-flex w-full items-center justify-center gap-2 platform-btn platform-btn-primary disabled:opacity-50">
           {generating ? <><Loader2 size={16} className="animate-spin"/> Generating…</> : <><Sparkles size={16}/> Generate 5 prompts</>}
         </button>
@@ -203,7 +203,7 @@ export function PromptAssistantPanel({ projectId, topics, existingCount, onClose
               </button>
             </div>
             <div className="mt-1 flex flex-wrap gap-1.5 pl-7 text-[11px] font-semibold">
-              <span className="rounded-full bg-[var(--soft)] px-2 py-0.5 text-[var(--green)]">{item.topic}</span>
+              <span className="rounded-full bg-[var(--soft)] px-2 py-0.5 text-[var(--green)]">{item.category}</span>
               <span className="rounded-full bg-[var(--soft)] px-2 py-0.5 text-[#66736c]">{item.language}</span>
               {item.mode === "brand" && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">Brand</span>}
             </div>

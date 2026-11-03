@@ -16,7 +16,7 @@ export type ProjectContext = {
   brand_domains: string[];
   brand_terms: string[];
   brand_logo_url: string | null;
-  topics: string[];
+  categories: string[];
 };
 export type UserRole = "superadmin" | "admin" | "viewer";
 
@@ -47,7 +47,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.replace("/login"); return; }
       const [{ data: p, error: projectError }, { data: profile }, { data: member }] = await Promise.all([
-        supabase.from("projects").select("id,brand_name,brand_description,brand_domains,brand_terms,brand_logo_url,topics").eq("id", projectId).single(),
+        supabase.from("projects").select("id,brand_name,brand_description,brand_domains,brand_terms,brand_logo_url,categories").eq("id", projectId).single(),
         supabase.from("profiles").select("role").eq("id", user.id).single(),
         supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle(),
       ]);

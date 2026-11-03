@@ -8,10 +8,10 @@ import { PromptAssistantPanel } from "@/components/prompt-assistant-panel";
 import { PROMPT_LIMIT } from "@/lib/prompt-assistant";
 import { supabase } from "@/lib/supabase";
 
-type Prompt = { id: string; prompt_number: number; prompt: string; topic: string; language: string; active: boolean };
+type Prompt = { id: string; prompt_number: number; prompt: string; category: string; language: string; active: boolean };
 type LatestMetric = { metric_date: string; visibility_rank: number | null; share_of_voice_rank: number | null; average_position_rank: number | null };
 const MAX_PROMPTS = PROMPT_LIMIT;
-const MIN_PROMPTS_PER_TOPIC = 5;
+const MIN_PROMPTS_PER_CATEGORY = 5;
 const languages = ["English", "Malay", "Chinese", "Japanese", "Korean", "Thai", "Indonesian", "Arabic", "Other"];
 
 export default function PromptsPage() {
@@ -20,16 +20,16 @@ export default function PromptsPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [prompts, setPrompts] = useState<Prompt[]>([]);
-  const [topics, setTopics] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [latestMetrics, setLatestMetrics] = useState<Record<string, LatestMetric>>({});
   const [role, setRole] = useState<UserRole>("viewer");
   const [search, setSearch] = useState("");
-  const [topicFilter, setTopicFilter] = useState("All");
+  const [categoryFilter, setCategoryFilter] = useState("All");
   const [expanded, setExpanded] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleteIds, setDeleteIds] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ prompt: "", topic: "", language: "English" });
+  const [form, setForm] = useState({ prompt: "", category: "", language: "English" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -40,28 +40,28 @@ export default function PromptsPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const { data: project, error: projectError } = await supabase.from("projects")
-      .select("topics,tracking_market").eq("id", projectId).single();
+      .select("categories,tracking_market").eq("id", projectId).single();
     const location = project?.tracking_market ?? "MY";
     const dataLocation = location;
     const [{ data: promptRows, error: promptError }, { data: profile }, { data: member }, { data: metrics, error: metricError }] = await Promise.all([
-      supabase.from("prompts").select("id,prompt_number,prompt,topic,language,active").eq("project_id", projectId).order("prompt_number"),
+      supabase.from("prompts").select("id,prompt_number,prompt,category,language,active").eq("project_id", projectId).order("prompt_number"),
       supabase.from("profiles").select("role").eq("id", user.id).single(),
       supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle(),
-      supabase.from("visibility_daily").select("metric_date,topic,visibility_rank,share_of_voice_rank,average_position_rank")
+      supabase.from("visibility_daily").select("metric_date,category,visibility_rank,share_of_voice_rank,average_position_rank")
         .eq("project_id", projectId).eq("llm_provider", "Overall").eq("tracking_location", dataLocation)
-        .neq("topic", "Overall").order("metric_date", { ascending: false }),
+        .neq("category", "Overall").order("metric_date", { ascending: false }),
     ]);
     if (projectError) setError(projectError.message);
     if (promptError) setError((current) => current ? current + " " + promptError.message : promptError.message);
     if (metricError) setError((current) => current ? current + " " + metricError.message : metricError.message);
     setPrompts(promptRows ?? []);
-    setTopics(project?.topics ?? []);
+    setCategories(project?.categories ?? []);
     setRole(profile?.role === "superadmin" ? "superadmin" : member?.role ?? profile?.role ?? "viewer");
-    const byTopic: Record<string, LatestMetric> = {};
+    const byCategory: Record<string, LatestMetric> = {};
     for (const metric of metrics ?? []) {
-      if (metric.topic && !byTopic[metric.topic]) byTopic[metric.topic] = metric as LatestMetric;
+      if (metric.category && !byCategory[metric.category]) byCategory[metric.category] = metric as LatestMetric;
     }
-    setLatestMetrics(byTopic);
+    setLatestMetrics(byCategory);
   }
 
   useEffect(() => { void load(); }, [projectId]);
@@ -75,15 +75,15 @@ export default function PromptsPage() {
   const filtered = useMemo(() => {
     const term = search.trim().toLocaleLowerCase();
     return prompts.filter((prompt) =>
-      (topicFilter === "All" || prompt.topic === topicFilter) &&
-      (!term || [prompt.prompt, prompt.topic, prompt.language].some((value) => value.toLocaleLowerCase().includes(term)))
+      (categoryFilter === "All" || prompt.category === categoryFilter) &&
+      (!term || [prompt.prompt, prompt.category, prompt.language].some((value) => value.toLocaleLowerCase().includes(term)))
     );
-  }, [prompts, search, topicFilter]);
+  }, [prompts, search, categoryFilter]);
   const visible = expanded ? filtered : filtered.slice(0, 10);
   const allFilteredSelected = filtered.length > 0 && filtered.every((prompt) => selectedIds.includes(prompt.id));
 
-  const topicCounts = useMemo(() => topics.map((topic) => ({ topic, count: prompts.filter((prompt) => prompt.topic === topic).length })), [topics, prompts]);
-  const underfilledTopics = topicCounts.filter((item) => item.count < MIN_PROMPTS_PER_TOPIC);
+  const categoryCounts = useMemo(() => categories.map((category) => ({ category, count: prompts.filter((prompt) => prompt.category === category).length })), [categories, prompts]);
+  const underfilledCategories = categoryCounts.filter((item) => item.count < MIN_PROMPTS_PER_CATEGORY);
 
   // Prompt numbers stay within 1..MAX_PROMPTS, so new prompts take the lowest numbers that are free.
   function freeNumbers(count: number) {
@@ -103,25 +103,25 @@ export default function PromptsPage() {
     );
   }
 
-  async function insertPrompts(rows: { prompt: string; topic: string; language: string }[]) {
+  async function insertPrompts(rows: { prompt: string; category: string; language: string }[]) {
     if (prompts.length + rows.length > MAX_PROMPTS) throw new Error(`The project can hold at most ${MAX_PROMPTS} prompts.`);
     const numbers = freeNumbers(rows.length);
     const { error: insertError } = await supabase.from("prompts").insert(rows.map((row, index) => ({
-      project_id: projectId, prompt_number: numbers[index], prompt: row.prompt, topic: row.topic, language: row.language,
+      project_id: projectId, prompt_number: numbers[index], prompt: row.prompt, category: row.category, language: row.language,
     })));
     if (insertError) throw new Error(insertError.message);
     await load();
   }
 
   async function addPrompt(keepOpen = false) {
-    if (!canEdit || !form.prompt.trim() || !form.topic) return;
+    if (!canEdit || !form.prompt.trim() || !form.category) return;
     if (prompts.length >= MAX_PROMPTS) { setError("The project already has " + MAX_PROMPTS + " prompts."); return; }
     setBusy(true); setError(""); setNotice("");
-    const insertError = await insertPrompts([{ prompt: form.prompt.trim(), topic: form.topic, language: form.language }])
+    const insertError = await insertPrompts([{ prompt: form.prompt.trim(), category: form.category, language: form.language }])
       .then(() => null, (err: Error) => err);
     if (insertError) setError(insertError.message);
     else {
-      setForm({ prompt: "", topic: topics[0] || "", language: "English" });
+      setForm({ prompt: "", category: categories[0] || "", language: "English" });
       if (!keepOpen) setOpen(false);
       setNotice("Prompt added successfully.");
     }
@@ -146,18 +146,18 @@ export default function PromptsPage() {
 
   function template() {
     const workbook = XLSX.utils.book_new();
-    const sheet = XLSX.utils.json_to_sheet([{ Prompt: EXAMPLE_PROMPT, Topic: topics[0] || "Example topic", Language: "English" }]);
+    const sheet = XLSX.utils.json_to_sheet([{ Prompt: EXAMPLE_PROMPT, Category: categories[0] || "Example category", Language: "English" }]);
     sheet["!cols"] = [{ wch: 70 }, { wch: 40 }, { wch: 14 }];
     XLSX.utils.book_append_sheet(workbook, sheet, "Prompts");
     const instructions = XLSX.utils.aoa_to_sheet([
       ["How to fill in the Prompts sheet"],
-      [`A project can hold up to ${MAX_PROMPTS} prompts in total, with at least ${MIN_PROMPTS_PER_TOPIC} prompts for every topic.`],
+      [`A project can hold up to ${MAX_PROMPTS} prompts in total, with at least ${MIN_PROMPTS_PER_CATEGORY} prompts for every category.`],
       [`This project currently has ${prompts.length} prompts, so you can upload up to ${Math.max(0, MAX_PROMPTS - prompts.length)} more.`],
       ["Replace or delete the example row. A row whose prompt is \"" + EXAMPLE_PROMPT + "\" is rejected."],
-      ["Every row needs a Prompt, a Topic and a Language."],
+      ["Every row needs a Prompt, a Category and a Language."],
       [],
-      ["Valid topics (type them exactly as shown)"],
-      ...topics.map((topic) => [topic]),
+      ["Valid categories (type them exactly as shown)"],
+      ...categories.map((category) => [category]),
       [],
       ["Valid languages"],
       ...languages.map((language) => [language]),
@@ -179,22 +179,22 @@ export default function PromptsPage() {
       const free = MAX_PROMPTS - prompts.length;
       if (rows.length > free) throw new Error(`The project has ${prompts.length} of ${MAX_PROMPTS} prompts, so ${free} more fit, but this file has ${rows.length} rows.`);
       const numbers = freeNumbers(rows.length);
-      const topicByKey = new Map(topics.map((topic) => [topic.trim().toLocaleLowerCase(), topic]));
+      const categoryByKey = new Map(categories.map((category) => [category.trim().toLocaleLowerCase(), category]));
       const languageByKey = new Map(languages.map((language) => [language.toLocaleLowerCase(), language]));
       const problems: string[] = [];
       const payload = rows.map((row, index) => {
         const line = index + 2;
         const prompt = String(row.Prompt ?? row.prompt ?? "").trim();
-        const topicText = String(row.Topic ?? row.topic ?? "").trim();
+        const categoryText = String(row.Category ?? row.category ?? row.Topic ?? row.topic ?? "").trim();
         const languageText = String(row.Language ?? row.language ?? "").trim();
-        if (!prompt || !topicText || !languageText) { problems.push(`Row ${line}: needs a Prompt, Topic and Language.`); return null; }
+        if (!prompt || !categoryText || !languageText) { problems.push(`Row ${line}: needs a Prompt, Category and Language.`); return null; }
         if (prompt === EXAMPLE_PROMPT) { problems.push(`Row ${line}: this is the template's example row; replace or delete it.`); return null; }
-        const topic = topicByKey.get(topicText.toLocaleLowerCase());
+        const category = categoryByKey.get(categoryText.toLocaleLowerCase());
         const language = languageByKey.get(languageText.toLocaleLowerCase());
-        if (!topic) problems.push(`Row ${line}: topic "${topicText}" is not one of this project's topics.`);
+        if (!category) problems.push(`Row ${line}: category "${categoryText}" is not one of this project's categories.`);
         if (!language) problems.push(`Row ${line}: language "${languageText}" is not supported.`);
-        if (!topic || !language) return null;
-        return { project_id: projectId, prompt_number: numbers[index], prompt, topic, language };
+        if (!category || !language) return null;
+        return { project_id: projectId, prompt_number: numbers[index], prompt, category, language };
       });
       if (problems.length) {
         const shown = problems.slice(0, 8).join(" ");
@@ -215,12 +215,12 @@ export default function PromptsPage() {
 
   return <ProjectShell><div className="ops-page">
     <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-      <div><p className="page-eyebrow">Prompts</p><h2 className="page-title mt-1">Prompt library</h2><p className="page-description mt-2">These are the questions we ask the AI answer engines every day to see whether your brand shows up. Search or filter to find a prompt, and tick the boxes to pick several at once. If you have edit access, you can add new prompts or delete the ones you picked, up to a total of 50, with at least 5 prompts for every topic.</p></div>
+      <div><p className="page-eyebrow">Prompts</p><h2 className="page-title mt-1">Prompt library</h2><p className="page-description mt-2">These are the questions we ask the AI answer engines every day to see whether your brand shows up. Search or filter to find a prompt, and tick the boxes to pick several at once. If you have edit access, you can add new prompts or delete the ones you picked, up to a total of 50, with at least 5 prompts for every category.</p></div>
       {canEdit && <div className="flex flex-wrap gap-2">
         <button onClick={template} className="inline-flex items-center gap-2 platform-btn px-4 py-3 text-sm font-semibold"><Download size={16}/> Template</button>
         <label className={"inline-flex items-center gap-2 platform-btn px-4 py-3 text-sm font-semibold " + (busy ? "pointer-events-none opacity-50" : "cursor-pointer")}><Upload size={16}/> Bulk upload<input type="file" accept=".xlsx,.xls,.csv" className="hidden" disabled={busy} onChange={upload}/></label>
-        <button disabled={prompts.length >= MAX_PROMPTS || busy || !topics.length} onClick={() => setAssistantOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-[#0d5b3a] px-4 py-3 text-sm font-semibold text-[var(--green)] disabled:opacity-40"><Sparkles size={16}/> AI prompt assistant</button>
-        <button disabled={prompts.length >= MAX_PROMPTS || busy} onClick={() => { setForm({ prompt: "", topic: topics[0] || "", language: "English" }); setOpen(true); }} className="inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-40"><Plus size={16}/> Add prompt</button>
+        <button disabled={prompts.length >= MAX_PROMPTS || busy || !categories.length} onClick={() => setAssistantOpen(true)} className="inline-flex items-center gap-2 rounded-xl border border-[#0d5b3a] px-4 py-3 text-sm font-semibold text-[var(--green)] disabled:opacity-40"><Sparkles size={16}/> AI prompt assistant</button>
+        <button disabled={prompts.length >= MAX_PROMPTS || busy} onClick={() => { setForm({ prompt: "", category: categories[0] || "", language: "English" }); setOpen(true); }} className="inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-40"><Plus size={16}/> Add prompt</button>
       </div>}
     </div>
 
@@ -228,7 +228,7 @@ export default function PromptsPage() {
     {error && <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
     {notice && <div role="status" className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{notice}</div>}
 
-    {underfilledTopics.length > 0 && <div role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Tracking needs at least {MIN_PROMPTS_PER_TOPIC} prompts for every topic. Still needed: {underfilledTopics.map((item) => item.topic + " (" + item.count + "/" + MIN_PROMPTS_PER_TOPIC + ")").join(", ")}.</div>}
+    {underfilledCategories.length > 0 && <div role="status" className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Tracking needs at least {MIN_PROMPTS_PER_CATEGORY} prompts for every category. Still needed: {underfilledCategories.map((item) => item.category + " (" + item.count + "/" + MIN_PROMPTS_PER_CATEGORY + ")").join(", ")}.</div>}
 
     <section className="mt-6 platform-card p-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -241,8 +241,8 @@ export default function PromptsPage() {
             <Search size={16} className="text-[#66736c]" aria-hidden="true"/>
             <input value={search} onChange={(event) => { setSearch(event.target.value); setExpanded(false); }} placeholder="Search prompts…" aria-label="Search prompts" className="w-full min-w-[190px] bg-transparent text-sm outline-none"/>
           </label>
-          <select value={topicFilter} onChange={(event) => { setTopicFilter(event.target.value); setExpanded(false); }} aria-label="Filter prompts by topic" className="platform-input text-sm">
-            <option value="All">All topics</option>{topics.map((value) => <option key={value} value={value}>{value}</option>)}
+          <select value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setExpanded(false); }} aria-label="Filter prompts by category" className="platform-input text-sm">
+            <option value="All">All categories</option>{categories.map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
         </div>
       </div>
@@ -259,18 +259,18 @@ export default function PromptsPage() {
         <table className="platform-table min-w-[1250px]">
           <thead><tr className="border-b border-[var(--line)] text-xs uppercase tracking-[.12em] text-[#66736c]">
             {canEdit && <th className="w-10 px-3 py-3"><input type="checkbox" checked={allFilteredSelected} onChange={toggleAllFiltered} aria-label="Select all filtered prompts" className="h-4 w-4 accent-[#0d5b3a]"/></th>}
-            <th className="px-3 py-3">#</th><th className="px-3 py-3">Prompt</th><th className="px-3 py-3">Topic</th><th className="px-3 py-3">Language</th>
+            <th className="px-3 py-3">#</th><th className="px-3 py-3">Prompt</th><th className="px-3 py-3">Category</th><th className="px-3 py-3">Language</th>
             <th className="px-3 py-3">Latest Visibility Rank</th><th className="px-3 py-3">Latest Share of Voice Rank</th><th className="px-3 py-3">Latest Average Position Rank</th>
             {canEdit && <th className="px-3 py-3">Delete</th>}
           </tr></thead>
           <tbody>
             {visible.map((prompt) => {
-              const metric = latestMetrics[prompt.topic];
+              const metric = latestMetrics[prompt.category];
               return <tr key={prompt.id} className="border-b border-[#eef0ee]">
                 {canEdit && <td className="px-3 py-3"><input type="checkbox" checked={selectedIds.includes(prompt.id)} onChange={() => togglePrompt(prompt.id)} aria-label={"Select prompt " + prompt.prompt_number} className="h-4 w-4 accent-[#0d5b3a]"/></td>}
                 <td className="px-3 py-3">{prompt.prompt_number}</td>
                 <td className="max-w-[420px] whitespace-normal px-3 py-3">{prompt.prompt}</td>
-                <td className="px-3 py-3"><span className="rounded-full bg-[var(--soft)] px-2.5 py-1 text-xs font-semibold text-[var(--green)]">{prompt.topic}</span></td>
+                <td className="px-3 py-3"><span className="rounded-full bg-[var(--soft)] px-2.5 py-1 text-xs font-semibold text-[var(--green)]">{prompt.category}</span></td>
                 <td className="px-3 py-3">{prompt.language}</td>
                 <td className="px-3 py-3 font-semibold">{metric?.visibility_rank ?? "N/A"}</td>
                 <td className="px-3 py-3 font-semibold">{metric?.share_of_voice_rank ?? "N/A"}</td>
@@ -280,7 +280,7 @@ export default function PromptsPage() {
             })}
             {!visible.length && <tr><td colSpan={canEdit ? 9 : 7} className="px-3 py-10 text-center text-sm text-[#66736c]">
               {!prompts.length && canEdit
-                ? <div className="mx-auto max-w-md"><Sparkles size={22} className="mx-auto text-[var(--green)]"/><p className="mt-2 font-semibold text-[#173b2a]">No prompts yet</p><p className="mt-1">Let the AI read the brand&apos;s website and suggest prompts you can review before tracking starts.</p><button onClick={() => setAssistantOpen(true)} disabled={!topics.length} className="mt-4 inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-40"><Sparkles size={16}/> Suggest prompts with AI</button></div>
+                ? <div className="mx-auto max-w-md"><Sparkles size={22} className="mx-auto text-[var(--green)]"/><p className="mt-2 font-semibold text-[#173b2a]">No prompts yet</p><p className="mt-1">Let the AI read the brand&apos;s website and suggest prompts you can review before tracking starts.</p><button onClick={() => setAssistantOpen(true)} disabled={!categories.length} className="mt-4 inline-flex items-center gap-2 platform-btn platform-btn-primary disabled:opacity-40"><Sparkles size={16}/> Suggest prompts with AI</button></div>
                 : "No prompts found."}
             </td></tr>}
           </tbody>
@@ -290,20 +290,20 @@ export default function PromptsPage() {
         <p className="text-sm text-[#66736c]">Showing {visible.length} of {filtered.length} prompts</p>
         <button type="button" onClick={() => setExpanded((value) => !value)} className="ops-filter-btn">{expanded ? "Show first 10" : "Show all " + filtered.length + " prompts"}</button>
       </div>}
-      <p className="mt-3 text-xs text-[#66736c]">Rank metrics are the latest available values for each prompt’s topic; the tracking system currently calculates these metrics at topic level.</p>
+      <p className="mt-3 text-xs text-[#66736c]">Rank metrics are the latest available values for each prompt’s category; the tracking system currently calculates these metrics at category level.</p>
     </section>
 
     {open && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-5" role="presentation">
       <div role="dialog" aria-modal="true" aria-labelledby="add-prompt-title" className="w-full max-w-xl rounded-3xl bg-white p-7 text-[#173b2a] shadow-xl">
         <div className="flex items-center justify-between"><h3 id="add-prompt-title" className="text-2xl font-semibold">Add prompt</h3><button onClick={() => setOpen(false)} aria-label="Close add prompt dialog"><X/></button></div>
         <label className="mt-6 block text-sm font-semibold">Prompt<textarea rows={5} value={form.prompt} onChange={(event) => setForm({ ...form, prompt: event.target.value })} className="mt-2 w-full platform-input"/></label>
-        <label className="mt-4 block text-sm font-semibold">Topic<select value={form.topic} onChange={(event) => setForm({ ...form, topic: event.target.value })} className="mt-2 w-full platform-input">{topics.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+        <label className="mt-4 block text-sm font-semibold">Category<select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} className="mt-2 w-full platform-input">{categories.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label className="mt-4 block text-sm font-semibold">Language<select value={form.language} onChange={(event) => setForm({ ...form, language: event.target.value })} className="mt-2 w-full platform-input">{languages.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-        <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={() => setOpen(false)} className="platform-btn">Cancel</button><button disabled={busy || !form.prompt.trim() || !form.topic} onClick={() => addPrompt(true)} className="rounded-xl border border-[#0d5b3a] px-4 py-3 text-sm font-semibold text-[var(--green)] disabled:opacity-40">Add &amp; next</button><button disabled={busy || !form.prompt.trim() || !form.topic} onClick={() => addPrompt(false)} className="platform-btn platform-btn-primary disabled:opacity-40">Add prompt</button></div>
+        <div className="mt-6 flex flex-wrap justify-end gap-2"><button onClick={() => setOpen(false)} className="platform-btn">Cancel</button><button disabled={busy || !form.prompt.trim() || !form.category} onClick={() => addPrompt(true)} className="rounded-xl border border-[#0d5b3a] px-4 py-3 text-sm font-semibold text-[var(--green)] disabled:opacity-40">Add &amp; next</button><button disabled={busy || !form.prompt.trim() || !form.category} onClick={() => addPrompt(false)} className="platform-btn platform-btn-primary disabled:opacity-40">Add prompt</button></div>
       </div>
     </div>}
 
-    {assistantOpen && canEdit && <PromptAssistantPanel projectId={projectId} topics={topics} existingCount={prompts.length} onClose={closeAssistant} onSave={insertPrompts}/>}
+    {assistantOpen && canEdit && <PromptAssistantPanel projectId={projectId} categories={categories} existingCount={prompts.length} onClose={closeAssistant} onSave={insertPrompts}/>}
 
     {deleteIds.length > 0 && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-5" role="presentation">
       <div role="alertdialog" aria-modal="true" aria-labelledby="delete-prompts-title" aria-describedby="delete-prompts-description" className="w-full max-w-md rounded-3xl bg-white p-7 text-[#173b2a] shadow-xl">

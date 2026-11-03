@@ -33,8 +33,8 @@ export default function DashboardPage() {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [trackingLocation, setTrackingLocation] = useState("MY");
   const [projectName, setProjectName] = useState("Project");
-  const [citationsByTopic, setCitationsByTopic] = useState<Record<string, AggregatedCitation[]>>({});
-  const [topics, setTopics] = useState<string[]>([]);
+  const [citationsByCategory, setCitationsByCategory] = useState<Record<string, AggregatedCitation[]>>({});
+  const [categories, setCategories] = useState<string[]>([]);
   const [period, setPeriod] = useState("Last 7 Days");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState(malaysiaDateString());
@@ -45,118 +45,118 @@ export default function DashboardPage() {
   const [canRunTracking, setCanRunTracking] = useState(false);
   const [isSuperadmin, setIsSuperadmin] = useState(false);
   const [trackingMessage, setTrackingMessage] = useState("");
-  const [showTopicPicker, setShowTopicPicker] = useState(false);
-  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [resumableBatch, setResumableBatch] = useState<any | null>(null);
 
   async function load() {
     setLoading(true); setError("");
     const { data: project, error: projectError } = await supabase
       .from("projects")
-      .select("brand_name,topics,tracking_market")
+      .select("brand_name,categories,tracking_market")
       .eq("id", projectId)
       .single();
     const location = project?.tracking_market ?? "MY";
     const dataLocation = location;
     setTrackingLocation(location);
     setProjectName(project?.brand_name || "Project");
-    const topicList: string[] = Array.isArray(project?.topics)
-      ? project.topics.filter((topic: unknown): topic is string => typeof topic === "string")
+    const categoryList: string[] = Array.isArray(project?.categories)
+      ? project.categories.filter((category: unknown): category is string => typeof category === "string")
       : [];
-    setTopics(topicList);
+    setCategories(categoryList);
     const start = dateStart(period, customStart, customEnd);
     const end = period === "Custom" ? customEnd : malaysiaDateString();
     const { data: chartRows, error: metricsError } = await supabase.from("visibility_daily")
-      .select("metric_date,topic,visibility_score,visibility_rank,rank_population_count,rank_population_status")
+      .select("metric_date,category,visibility_score,visibility_rank,rank_population_count,rank_population_status")
       .eq("project_id", projectId).eq("llm_provider", "Overall").eq("tracking_location", dataLocation)
       .gte("metric_date", start).lte("metric_date", end).order("metric_date");
 
     // Aggregate citations in Postgres, using the same RPC and brand-related filter as the Citations page.
-    // Fetching raw citation rows can silently truncate at the API row limit, leaving later topics blank.
+    // Fetching raw citation rows can silently truncate at the API row limit, leaving later categories blank.
     const citationResults = await Promise.all(
-      topicList.filter((topic) => topic !== "Overall").map(async (topic) => {
+      categoryList.filter((category) => category !== "Overall").map(async (category) => {
         const { data, error } = await supabase.rpc("get_cumulative_citations", {
           p_project_id: projectId,
           p_start_date: start,
           p_end_date: end,
-          p_topic: topic,
+          p_category: category,
           p_engines: [],
           p_brand_related_only: true,
           p_tracking_location: dataLocation,
         });
-        return { topic, data, error };
+        return { category, data, error };
       })
     );
     const citations: Record<string, AggregatedCitation[]> = {};
     for (const result of citationResults) {
       if (result.error) {
-        setError(result.error.message || "Unable to load cited pages for " + result.topic + ".");
+        setError(result.error.message || "Unable to load cited pages for " + result.category + ".");
       } else {
-        citations[result.topic] = ((result.data ?? []) as AggregatedCitation[]).slice(0, 5);
+        citations[result.category] = ((result.data ?? []) as AggregatedCitation[]).slice(0, 5);
       }
     }
 
     const firstError = projectError || metricsError;
     if (firstError) setError(firstError.message || "Unable to load dashboard data.");
-    setMetrics(chartRows ?? []); setCitationsByTopic(citations);
+    setMetrics(chartRows ?? []); setCitationsByCategory(citations);
     // Rank and population size are persisted together by the tracking pipeline
     // for this exact reporting scope; the UI does not reconstruct either value.
     setLoading(false);
   }
 
-  function openTopicPicker() {
-    setSelectedTopics(topics.filter((topic) => topic !== "Overall"));
-    setShowTopicPicker(true);
+  function openCategoryPicker() {
+    setSelectedCategories(categories.filter((category) => category !== "Overall"));
+    setShowCategoryPicker(true);
     setError("");
     setTrackingMessage("");
   }
 
   async function runTracking() {
-    const requestedTopics = [...selectedTopics];
-    if (!requestedTopics.length && !resumableBatch) {
-      setError("Select at least one topic to run tracking.");
+    const requestedCategories = [...selectedCategories];
+    if (!requestedCategories.length && !resumableBatch) {
+      setError("Select at least one category to run tracking.");
       return;
     }
-    setTracking(true); setShowTopicPicker(false); setTrackingMessage(""); setError("");
-    const outcomes: Array<{ topic: string; status: string; completed: number; total: number; message?: string }> = [];
+    setTracking(true); setShowCategoryPicker(false); setTrackingMessage(""); setError("");
+    const outcomes: Array<{ category: string; status: string; completed: number; total: number; message?: string }> = [];
     let batchId: string | undefined = resumableBatch?.id;
     try {
       if (!batchId) {
         const { data: authData } = await supabase.auth.getUser();
         const { data: batch, error: batchError } = await supabase.from("tracking_batches").insert({
           project_id: projectId, requested_by: authData.user?.id, status: "running",
-          topic_order: requestedTopics, started_at: new Date().toISOString(),
+          category_order: requestedCategories, started_at: new Date().toISOString(),
         }).select("*").single();
         if (batchError || !batch) throw new Error(batchError?.message || "Unable to create tracking batch.");
         batchId = batch.id;
-        const { error: insertTopicsError } = await supabase.from("tracking_batch_topics").insert(requestedTopics.map((topic, ordinal) => ({
-          batch_id: batchId, topic, ordinal, status: "queued",
+        const { error: insertCategoriesError } = await supabase.from("tracking_batch_categories").insert(requestedCategories.map((category, ordinal) => ({
+          batch_id: batchId, category, ordinal, status: "queued",
         })));
-        if (insertTopicsError) {
-          await supabase.from("tracking_batches").update({status:"failed",last_error:insertTopicsError.message,completed_at:new Date().toISOString()}).eq("id",batchId);
-          throw new Error(insertTopicsError.message);
+        if (insertCategoriesError) {
+          await supabase.from("tracking_batches").update({status:"failed",last_error:insertCategoriesError.message,completed_at:new Date().toISOString()}).eq("id",batchId);
+          throw new Error(insertCategoriesError.message);
         }
       }
-      const { data: batchTopics, error: readTopicsError } = await supabase.from("tracking_batch_topics")
+      const { data: batchCategories, error: readCategoriesError } = await supabase.from("tracking_batch_categories")
         .select("*").eq("batch_id", batchId).order("ordinal");
-      if (readTopicsError || !batchTopics?.length) throw new Error(readTopicsError?.message || "No saved batch topics found.");
-      const orderedTopics = batchTopics as Array<{id:string;topic:string;status:string;tracking_run_id:string|null;ordinal:number}>;
-      for (const item of orderedTopics) {
-        const topic = item.topic;
+      if (readCategoriesError || !batchCategories?.length) throw new Error(readCategoriesError?.message || "No saved batch categories found.");
+      const orderedCategories = batchCategories as Array<{id:string;category:string;status:string;tracking_run_id:string|null;ordinal:number}>;
+      for (const item of orderedCategories) {
+        const category = item.category;
         if (item.status === "completed") {
-          outcomes.push({topic,status:"completed",completed:0,total:0});
+          outcomes.push({category,status:"completed",completed:0,total:0});
           continue;
         }
-        await supabase.from("tracking_batch_topics").update({
+        await supabase.from("tracking_batch_categories").update({
           status:"running",attempt_count:undefined,started_at:new Date().toISOString(),last_error:null,updated_at:new Date().toISOString(),
         }).eq("id",item.id);
-        setTrackingMessage("Tracking topic " + (outcomes.length + 1) + " of " + orderedTopics.length + ": " + topic + "…");
+        setTrackingMessage("Tracking category " + (outcomes.length + 1) + " of " + orderedCategories.length + ": " + category + "…");
         const { data, error } = await supabase.functions.invoke("visibility-tracking", {
           body: {
             mode: "persistent",
             project_id: projectId,
             providers: ["chatgpt"],
-            topic,
+            category,
             ...(!isSuperadmin && item.tracking_run_id ? { tracking_batch_id: item.tracking_run_id } : {}),
           },
         });
@@ -165,35 +165,35 @@ export default function DashboardPage() {
           if (error.context instanceof Response) {
             try { const body = await error.context.clone().json(); message = body?.message || body?.error || message; } catch { /* use SDK message */ }
           }
-          await supabase.from("tracking_batch_topics").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
+          await supabase.from("tracking_batch_categories").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
           await supabase.from("tracking_batches").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",batchId);
-          throw new Error(topic + ": " + message);
+          throw new Error(category + ": " + message);
         }
         if (data?.error) {
           const message = String(data.message || data.error);
-          await supabase.from("tracking_batch_topics").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
+          await supabase.from("tracking_batch_categories").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
           await supabase.from("tracking_batches").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",batchId);
-          throw new Error(topic + ": " + message);
+          throw new Error(category + ": " + message);
         }
         const successful = data.status === "completed" && Number(data.failed_prompts ?? 0) === 0 &&
           Number(data.analysis_failures ?? 0) === 0 && Number(data.classification_failures?.length ?? 0) === 0;
         if (!successful) {
-          await supabase.from("tracking_batch_topics").update({status:"failed",tracking_run_id:data.run_id ?? null,last_error:data.message || "Topic did not complete successfully.",updated_at:new Date().toISOString()}).eq("id",item.id);
-          await supabase.from("tracking_batches").update({status:"failed",last_error:data.message || "Topic did not complete successfully.",updated_at:new Date().toISOString()}).eq("id",batchId);
+          await supabase.from("tracking_batch_categories").update({status:"failed",tracking_run_id:data.run_id ?? null,last_error:data.message || "Category did not complete successfully.",updated_at:new Date().toISOString()}).eq("id",item.id);
+          await supabase.from("tracking_batches").update({status:"failed",last_error:data.message || "Category did not complete successfully.",updated_at:new Date().toISOString()}).eq("id",batchId);
           outcomes.push({
-            topic,
+            category,
             status: String(data.status ?? "partial"),
             completed: Number(data.completed_prompts ?? 0),
             total: Number(data.total_prompts ?? 0),
-            message: data.message || "Topic did not complete successfully.",
+            message: data.message || "Category did not complete successfully.",
           });
-          throw new Error(topic + " finished with status " + data.status + ". Remaining topics were not started to avoid masking an incomplete run.");
+          throw new Error(category + " finished with status " + data.status + ". Remaining categories were not started to avoid masking an incomplete run.");
         }
-        await supabase.from("tracking_batch_topics").update({
+        await supabase.from("tracking_batch_categories").update({
           status:"completed",tracking_run_id:data.run_id ?? null,completed_at:new Date().toISOString(),last_error:null,updated_at:new Date().toISOString(),
         }).eq("id",item.id);
         outcomes.push({
-          topic,
+          category,
           status: "completed",
           completed: Number(data.completed_prompts ?? 0),
           total: Number(data.total_prompts ?? 0),
@@ -201,12 +201,12 @@ export default function DashboardPage() {
       }
       await supabase.from("tracking_batches").update({status:"completed",completed_at:new Date().toISOString(),last_error:null,updated_at:new Date().toISOString()}).eq("id",batchId);
       setResumableBatch(null);
-      setTrackingMessage("Tracking completed successfully for " + outcomes.length + " topic(s): " +
-        outcomes.map((item) => item.topic + (item.total ? " (" + item.completed + "/" + item.total + " prompts)" : " (already completed)")).join("; ") + ".");
+      setTrackingMessage("Tracking completed successfully for " + outcomes.length + " category(s): " +
+        outcomes.map((item) => item.category + (item.total ? " (" + item.completed + "/" + item.total + " prompts)" : " (already completed)")).join("; ") + ".");
       await load();
     } catch (e) {
       const summary = outcomes.length
-        ? " Completed: " + outcomes.map((item) => item.topic).join(", ") + "."
+        ? " Completed: " + outcomes.map((item) => item.category).join(", ") + "."
         : "";
       setError((e instanceof Error ? e.message : String(e)) + summary);
       if (batchId) {
@@ -296,7 +296,7 @@ export default function DashboardPage() {
 
   useEffect(() => { void load(); void findResumableBatch(); }, [projectId, period, customStart, customEnd]);
 
-  const cardTopics = useMemo(() => ["Overall", ...topics.filter((topic) => topic !== "Overall")], [topics]);
+  const cardCategories = useMemo(() => ["Overall", ...categories.filter((category) => category !== "Overall")], [categories]);
   const chartDateRange = useMemo(() => {
     const trackedDates = metrics.map((row) => row.metric_date).sort();
     const firstTrackedDate = trackedDates[0];
@@ -308,10 +308,10 @@ export default function DashboardPage() {
   }, [period, customStart, customEnd, metrics]);
   // Cards and charts read the same canonical daily rows (see lib/rank-snapshot.ts);
   // no rank or population is recalculated in the browser.
-  const latestByTopic = useMemo(() => latestSnapshots(metrics, cardTopics), [metrics, cardTopics]);
+  const latestByCategory = useMemo(() => latestSnapshots(metrics, cardCategories), [metrics, cardCategories]);
 
-  function chart(topic: string, key: "visibility_score" | "visibility_rank") {
-    return chartSeries(metrics, topic, key);
+  function chart(category: string, key: "visibility_score" | "visibility_rank") {
+    return chartSeries(metrics, category, key);
   }
 
   return (
@@ -320,7 +320,7 @@ export default function DashboardPage() {
         <section>
           <p className="page-eyebrow">Project Overview</p>
           <h2 className="page-title mt-1">Dashboard</h2>
-          <p className="page-description mt-2">This is your home base for seeing how often AI answer engines mention your brand. Use the period buttons to choose how far back to look, then scan the cards for each topic's latest rank and score. Scroll down for daily trend charts and the most cited pages. Use Run Tracking to collect fresh results, Export Raw Data to download the answers, and Refresh to reload the numbers.</p>
+          <p className="page-description mt-2">This is your home base for seeing how often AI answer engines mention your brand. Use the period buttons to choose how far back to look, then scan the cards for each category's latest rank and score. Scroll down for daily trend charts and the most cited pages. Use Run Tracking to collect fresh results, Export Raw Data to download the answers, and Refresh to reload the numbers.</p>
         </section>
 
 
@@ -332,48 +332,48 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {showTopicPicker && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation">
-          <div role="dialog" aria-modal="true" aria-labelledby="topic-picker-title" className="w-full max-w-xl rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
+        {showCategoryPicker && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="category-picker-title" className="w-full max-w-xl rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="page-eyebrow">{isSuperadmin ? "Tracking / Superadmin rerun" : "Tracking"}</p>
-                <h3 id="topic-picker-title" className="mt-1 text-xl font-semibold tracking-tight">Select topics to run</h3>
-                <p className="mt-2 text-sm text-[var(--muted-foreground)]">Topics are processed one at a time. The next topic starts only after the current topic completes successfully.</p>
+                <h3 id="category-picker-title" className="mt-1 text-xl font-semibold tracking-tight">Select categories to run</h3>
+                <p className="mt-2 text-sm text-[var(--muted-foreground)]">Categories are processed one at a time. The next category starts only after the current category completes successfully.</p>
               </div>
-              <button type="button" onClick={() => setShowTopicPicker(false)} className="platform-btn" aria-label="Close topic picker">Close</button>
+              <button type="button" onClick={() => setShowCategoryPicker(false)} className="platform-btn" aria-label="Close category picker">Close</button>
             </div>
             <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] pb-3">
-              <p className="text-sm font-semibold">{selectedTopics.length} of {topics.filter((topic) => topic !== "Overall").length} selected</p>
+              <p className="text-sm font-semibold">{selectedCategories.length} of {categories.filter((category) => category !== "Overall").length} selected</p>
               <div className="flex gap-2">
-                <button type="button" className="platform-btn" onClick={() => setSelectedTopics(topics.filter((topic) => topic !== "Overall"))}>Select all</button>
-                <button type="button" className="platform-btn" onClick={() => setSelectedTopics([])}>Clear</button>
+                <button type="button" className="platform-btn" onClick={() => setSelectedCategories(categories.filter((category) => category !== "Overall"))}>Select all</button>
+                <button type="button" className="platform-btn" onClick={() => setSelectedCategories([])}>Clear</button>
               </div>
             </div>
             <div className="mt-3 max-h-72 space-y-1 overflow-y-auto">
-              {topics.filter((topic) => topic !== "Overall").map((topic) => <label key={topic} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-3 text-sm hover:bg-[var(--soft)]">
-                <input type="checkbox" checked={selectedTopics.includes(topic)} onChange={(event) => setSelectedTopics((current) => event.target.checked ? [...current, topic] : current.filter((value) => value !== topic))} className="h-4 w-4 accent-[var(--primary)]" />
-                <span className="font-medium">{topic}</span>
+              {categories.filter((category) => category !== "Overall").map((category) => <label key={category} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-3 text-sm hover:bg-[var(--soft)]">
+                <input type="checkbox" checked={selectedCategories.includes(category)} onChange={(event) => setSelectedCategories((current) => event.target.checked ? [...current, category] : current.filter((value) => value !== category))} className="h-4 w-4 accent-[var(--primary)]" />
+                <span className="font-medium">{category}</span>
               </label>)}
-              {!topics.filter((topic) => topic !== "Overall").length && <p className="px-3 py-6 text-sm text-[var(--muted-foreground)]">No topics are configured for this project.</p>}
+              {!categories.filter((category) => category !== "Overall").length && <p className="px-3 py-6 text-sm text-[var(--muted-foreground)]">No categories are configured for this project.</p>}
             </div>
             <div className="mt-5 flex justify-end gap-2 border-t border-[var(--border)] pt-4">
-              <button type="button" className="platform-btn" onClick={() => setShowTopicPicker(false)}>Cancel</button>
-              <button type="button" className="platform-btn platform-btn-primary disabled:opacity-50" disabled={!selectedTopics.length || tracking} onClick={() => void runTracking()}>
-                <Play size={14} /> Run {selectedTopics.length || ""} topic{selectedTopics.length === 1 ? "" : "s"}
+              <button type="button" className="platform-btn" onClick={() => setShowCategoryPicker(false)}>Cancel</button>
+              <button type="button" className="platform-btn platform-btn-primary disabled:opacity-50" disabled={!selectedCategories.length || tracking} onClick={() => void runTracking()}>
+                <Play size={14} /> Run {selectedCategories.length || ""} category{selectedCategories.length === 1 ? "" : "s"}
               </button>
             </div>
           </div>
         </div>}
 
         {resumableBatch && canRunTracking && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-          <div><p className="font-semibold">An interrupted tracking batch can be resumed.</p><p className="mt-1">Completed topics will be skipped and remaining topics continue in saved order.</p></div>
+          <div><p className="font-semibold">An interrupted tracking batch can be resumed.</p><p className="mt-1">Completed categories will be skipped and remaining categories continue in saved order.</p></div>
           <button type="button" className="platform-btn platform-btn-primary" disabled={tracking || exporting} onClick={() => {
-            setSelectedTopics([]);
+            setSelectedCategories([]);
             setTracking(true);
-            setShowTopicPicker(false);
+            setShowCategoryPicker(false);
             void (async () => {
-              const { data: rows } = await supabase.from("tracking_batch_topics").select("topic").eq("batch_id",resumableBatch.id).order("ordinal");
-              setSelectedTopics((rows ?? []).map((row: {topic:string}) => row.topic));
+              const { data: rows } = await supabase.from("tracking_batch_categories").select("category").eq("batch_id",resumableBatch.id).order("ordinal");
+              setSelectedCategories((rows ?? []).map((row: {category:string}) => row.category));
               // runTracking reads the saved batch directly; state update is deferred, so use the saved batch state.
               await runTracking();
             })();
@@ -389,23 +389,23 @@ export default function DashboardPage() {
 
         <section className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
-            <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Each card shows one topic's most recent rank against competitors, its visibility score, and how both have changed since the start of the selected period. The previous rank and score are the values from the first tracked day in that period. Rank 1 is the best position, and an up arrow always means an improvement. The Overall card combines all topics.</p></div>
-            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={openTopicPicker} disabled={tracking || exporting || topics.filter((topic) => topic !== "Overall").length === 0} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><DownloadReportButton disabled={loading || tracking || exporting} build={async () => {
+            <div><p className="page-eyebrow">Latest Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Visibility Rank</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">Each card shows one category's most recent rank against competitors, its visibility score, and how both have changed since the start of the selected period. The previous rank and score are the values from the first tracked day in that period. Rank 1 is the best position, and an up arrow always means an improvement. The Overall card combines all categories.</p></div>
+            <div className="flex flex-wrap gap-2">{canRunTracking && <button onClick={openCategoryPicker} disabled={tracking || exporting || categories.filter((category) => category !== "Overall").length === 0} className="platform-btn platform-btn-primary disabled:opacity-50">{tracking ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}{tracking ? "Tracking…" : "Run Tracking"}</button>}<button onClick={exportRawResponses} disabled={exporting || tracking || loading} className="platform-btn disabled:opacity-50">{exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}{exporting ? "Preparing Excel…" : "Export Raw Data"}</button><DownloadReportButton disabled={loading || tracking || exporting} build={async () => {
               const { buildDashboardReport } = await import("@/lib/page-reports");
-              return buildDashboardReport({ projectName, locationLabel: trackingLocationLabel(trackingLocation), period, start: dateStart(period, customStart, customEnd), end: period === "Custom" ? customEnd : malaysiaDateString(), topics: cardTopics, metrics, citationsByTopic });
+              return buildDashboardReport({ projectName, locationLabel: trackingLocationLabel(trackingLocation), period, start: dateStart(period, customStart, customEnd), end: period === "Custom" ? customEnd : malaysiaDateString(), categories: cardCategories, metrics, citationsByCategory });
             }} /><button onClick={() => void load()} disabled={tracking || exporting} className="platform-btn"><RefreshCw size={14} /> Refresh</button></div>
           </div>
           {trackingMessage && <div className="mb-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-sm text-[var(--green)]">{trackingMessage}</div>}
-          {!loading && cardTopics.some((topic) => rankDisplay(latestByTopic.get(topic)).note) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">Some ranks are shown without a verified population (older runs without verified lineage) or have no eligible competitor observations. The rank shown is the same value plotted in the charts below; no denominator is invented.</div>}
-          {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardTopics.map((topic) => <div key={topic} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
+          {!loading && cardCategories.some((category) => rankDisplay(latestByCategory.get(category)).note) && <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">Some ranks are shown without a verified population (older runs without verified lineage) or have no eligible competitor observations. The rank shown is the same value plotted in the charts below; no denominator is invented.</div>}
+          {loading ? <div className="flex gap-4 overflow-hidden pb-1">{cardCategories.map((category) => <div key={category} className="h-40 min-w-[235px] flex-1 animate-pulse rounded-2xl bg-[var(--card)]" />)}</div> :
             <div className="flex gap-4 overflow-x-auto pb-2">
-              {cardTopics.map((topic) => {
-                const snapshot = latestByTopic.get(topic); const display = rankDisplay(snapshot);
-                const overall = topic === "Overall";
+              {cardCategories.map((category) => {
+                const snapshot = latestByCategory.get(category); const display = rankDisplay(snapshot);
+                const overall = category === "Overall";
                 const label = "text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--muted-foreground)]";
                 const fromText = (date: string | null, note?: string) => date ? <p className="mt-0.5 text-[10px] text-[var(--muted-foreground)]">on {date}{note ?? ""}</p> : null;
-                return <article key={topic} className={"platform-card min-w-[235px] flex-1 p-5 " + (overall ? "platform-card-overall" : "")}>
-                  <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{topic}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (overall ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>{snapshot?.metric_date ?? "No data"}</span></div>
+                return <article key={category} className={"platform-card min-w-[235px] flex-1 p-5 " + (overall ? "platform-card-overall" : "")}>
+                  <div className="flex items-center justify-between gap-3"><span className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">{category}</span><span className={"rounded-full px-2.5 py-1 text-[10px] font-bold " + (overall ? "platform-overall-pill" : "bg-[var(--soft)] text-[var(--primary)]")}>{snapshot?.metric_date ?? "No data"}</span></div>
                   <div className="mt-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
                     <div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Rank<MetricInfo metric="visibility_rank" /></p><div className="mt-1 flex flex-wrap items-baseline gap-x-2"><p className={"text-4xl font-semibold tracking-tight " + (overall ? "platform-overall-value" : "")}>{display.text}</p><ChangeBadge value={snapshot?.rankChange ?? null} /></div>{display.note && <p className="mt-1 text-[10px] font-medium text-amber-700">{display.note}</p>}</div>
                     <div className="text-right"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--muted-foreground)]">Score<MetricInfo metric="visibility_score" /></p><div className="mt-1 flex flex-wrap items-baseline justify-end gap-x-2"><p className={"text-lg font-semibold " + (overall ? "platform-overall-value" : "")}>{snapshot?.visibility_score != null ? snapshot.visibility_score.toFixed(1) + "%" : "N/A"}</p><ChangeBadge value={snapshot?.scoreChange ?? null} decimals={1} suffix="%" /></div></div>
@@ -420,21 +420,21 @@ export default function DashboardPage() {
         </section>
 
         <section className="space-y-4">
-          <div><p className="page-eyebrow">Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Daily Trends</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">These charts follow each topic day by day, with the score on the left and the rank on the right. Hover over a dot to see its exact value. If a date has no dot, nothing was tracked that day.</p></div>
+          <div><p className="page-eyebrow">Performance</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Daily Trends</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">These charts follow each category day by day, with the score on the left and the rank on the right. Hover over a dot to see its exact value. If a date has no dot, nothing was tracked that day.</p></div>
           <div className="space-y-5">
-            {cardTopics.map((topic) => <div key={topic} className="grid min-w-0 gap-5 xl:grid-cols-2"><MetricChart data={chart(topic, "visibility_score")} title={topic + " Daily Visibility Score"} description="Shows how often your brand appeared in AI answers for this topic. Higher is better. Read it left to right, with the dates along the bottom and the percentage up the side." format="percent" dateRange={chartDateRange} tone={topic === "Overall" ? "overall" : "default"} /><MetricChart data={chart(topic, "visibility_rank")} title={topic + " Daily Visibility Rank"} description="Shows where your brand placed against competitors each day. Rank 1 sits at the top and is the best, so a line moving up means you are climbing." invert dateRange={chartDateRange} tone={topic === "Overall" ? "overall" : "default"} /></div>)}
+            {cardCategories.map((category) => <div key={category} className="grid min-w-0 gap-5 xl:grid-cols-2"><MetricChart data={chart(category, "visibility_score")} title={category + " Daily Visibility Score"} description="Shows how often your brand appeared in AI answers for this category. Higher is better. Read it left to right, with the dates along the bottom and the percentage up the side." format="percent" dateRange={chartDateRange} tone={category === "Overall" ? "overall" : "default"} /><MetricChart data={chart(category, "visibility_rank")} title={category + " Daily Visibility Rank"} description="Shows where your brand placed against competitors each day. Rank 1 sits at the top and is the best, so a line moving up means you are climbing." invert dateRange={chartDateRange} tone={category === "Overall" ? "overall" : "default"} /></div>)}
           </div>
         </section>
 
         <section className="space-y-5">
-          <div><p className="page-eyebrow">Citations</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Top Cited Brand Pages</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">These are the pages from your own website that AI engines linked to most often, listed by topic for the selected period. Use this to see which of your pages the engines trust and use as sources.</p></div>
-          {cardTopics.filter((topic) => topic !== "Overall").map((topic) => {
-            const rows = citationsByTopic[topic] ?? [];
-            return <div key={topic} className="platform-card p-5 sm:p-6">
-              <div className="flex items-center gap-2"><span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--soft)] text-[var(--primary)]"><CalendarDays size={16} /></span><h4 className="text-base font-semibold">{topic}</h4></div>
+          <div><p className="page-eyebrow">Citations</p><h3 className="mt-1 text-xl font-semibold tracking-tight">Top Cited Brand Pages</h3><p className="mt-1 text-sm text-[var(--muted-foreground)]">These are the pages from your own website that AI engines linked to most often, listed by category for the selected period. Use this to see which of your pages the engines trust and use as sources.</p></div>
+          {cardCategories.filter((category) => category !== "Overall").map((category) => {
+            const rows = citationsByCategory[category] ?? [];
+            return <div key={category} className="platform-card p-5 sm:p-6">
+              <div className="flex items-center gap-2"><span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--soft)] text-[var(--primary)]"><CalendarDays size={16} /></span><h4 className="text-base font-semibold">{category}</h4></div>
               <div className="mt-4 overflow-x-auto"><table className="platform-table min-w-[760px]"><thead><tr><th>No.</th><th>Page</th><th>Page Name</th><th>Brand Name</th><th>Citation Occurrences<MetricInfo metric="citation_occurrences" /></th></tr></thead><tbody>
                 {rows.map((row, index) => <tr key={row.url}><td>{index + 1}</td><td className="max-w-[380px]"><a href={row.url} target="_blank" rel="noreferrer" className="inline-flex max-w-[360px] items-center gap-1 truncate font-semibold text-[var(--green)] hover:underline">{row.url}<ExternalLink size={13} /></a></td><td>{row.page_name || "N/A"}</td><td>{row.brand_name || "N/A"}</td><td className="font-semibold">{row.frequency}</td></tr>)}
-                {!rows.length && <tr><td colSpan={5} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No citations recorded for this topic and period.</td></tr>}
+                {!rows.length && <tr><td colSpan={5} className="py-8 text-center text-sm text-[var(--muted-foreground)]">No citations recorded for this category and period.</td></tr>}
               </tbody></table></div>
             </div>;
           })}

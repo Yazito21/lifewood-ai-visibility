@@ -145,7 +145,7 @@ export type Database = {
           page_name: string | null
           project_id: string
           prompt_id: string | null
-          topic: string | null
+          category: string | null
           tracking_location: string
           url: string
         }
@@ -160,7 +160,7 @@ export type Database = {
           page_name?: string | null
           project_id: string
           prompt_id?: string | null
-          topic?: string | null
+          category?: string | null
           tracking_location?: string
           url: string
         }
@@ -175,7 +175,7 @@ export type Database = {
           page_name?: string | null
           project_id?: string
           prompt_id?: string | null
-          topic?: string | null
+          category?: string | null
           tracking_location?: string
           url?: string
         }
@@ -205,7 +205,7 @@ export type Database = {
           llm_provider: string | null
           metric_date: string
           project_id: string
-          topic: string | null
+          category: string | null
           tracking_location: string
           visibility_score: number | null
           website: string | null
@@ -218,7 +218,7 @@ export type Database = {
           llm_provider?: string | null
           metric_date: string
           project_id: string
-          topic?: string | null
+          category?: string | null
           tracking_location?: string
           visibility_score?: number | null
           website?: string | null
@@ -231,7 +231,7 @@ export type Database = {
           llm_provider?: string | null
           metric_date?: string
           project_id?: string
-          topic?: string | null
+          category?: string | null
           tracking_location?: string
           visibility_score?: number | null
           website?: string | null
@@ -307,7 +307,7 @@ export type Database = {
           last_seen_date: string
           normalized_domain: string
           project_id: string
-          topic: string
+          category: string
           website: string | null
         }
         Insert: {
@@ -319,7 +319,7 @@ export type Database = {
           last_seen_date: string
           normalized_domain: string
           project_id: string
-          topic: string
+          category: string
           website?: string | null
         }
         Update: {
@@ -331,7 +331,7 @@ export type Database = {
           last_seen_date?: string
           normalized_domain?: string
           project_id?: string
-          topic?: string
+          category?: string
           website?: string | null
         }
         Relationships: [
@@ -502,7 +502,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
-          topics: string[]
+          categories: string[]
           tracking_locations: string[]
           tracking_market: string
           updated_at: string
@@ -516,7 +516,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
-          topics?: string[]
+          categories?: string[]
           tracking_locations?: string[]
           tracking_market?: string
           updated_at?: string
@@ -530,7 +530,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
-          topics?: string[]
+          categories?: string[]
           tracking_locations?: string[]
           tracking_market?: string
           updated_at?: string
@@ -546,7 +546,7 @@ export type Database = {
           project_id: string
           prompt: string
           prompt_number: number
-          topic: string
+          category: string
           updated_at: string
         }
         Insert: {
@@ -557,7 +557,7 @@ export type Database = {
           project_id: string
           prompt: string
           prompt_number: number
-          topic: string
+          category: string
           updated_at?: string
         }
         Update: {
@@ -568,7 +568,7 @@ export type Database = {
           project_id?: string
           prompt?: string
           prompt_number?: number
-          topic?: string
+          category?: string
           updated_at?: string
         }
         Relationships: [
@@ -594,7 +594,7 @@ export type Database = {
           occurrence_count: number
           project_id: string
           response_id: string
-          topic: string
+          category: string
         }
         Insert: {
           brand_id: string
@@ -608,7 +608,7 @@ export type Database = {
           occurrence_count?: number
           project_id: string
           response_id: string
-          topic: string
+          category: string
         }
         Update: {
           brand_id?: string
@@ -622,7 +622,7 @@ export type Database = {
           occurrence_count?: number
           project_id?: string
           response_id?: string
-          topic?: string
+          category?: string
         }
         Relationships: [
           {
@@ -663,7 +663,7 @@ export type Database = {
           project_id: string
           response_id: string | null
           source_type: string
-          topic: string
+          category: string
           tracking_location: string
           url: string
           website_name: string | null
@@ -682,7 +682,7 @@ export type Database = {
           project_id: string
           response_id?: string | null
           source_type: string
-          topic: string
+          category: string
           tracking_location?: string
           url: string
           website_name?: string | null
@@ -701,7 +701,7 @@ export type Database = {
           project_id?: string
           response_id?: string | null
           source_type?: string
-          topic?: string
+          category?: string
           tracking_location?: string
           url?: string
           website_name?: string | null
@@ -723,7 +723,7 @@ export type Database = {
           },
         ]
       }
-      topic_brand_assignments: {
+      category_brand_assignments: {
         Row: {
           aliases: string[]
           brand_id: string
@@ -732,7 +732,7 @@ export type Database = {
           notes: string | null
           project_id: string
           role: string
-          topic: string
+          category: string
           updated_at: string
           websites: string[]
         }
@@ -744,7 +744,7 @@ export type Database = {
           notes?: string | null
           project_id: string
           role?: string
-          topic: string
+          category: string
           updated_at?: string
           websites?: string[]
         }
@@ -756,20 +756,20 @@ export type Database = {
           notes?: string | null
           project_id?: string
           role?: string
-          topic?: string
+          category?: string
           updated_at?: string
           websites?: string[]
         }
         Relationships: [
           {
-            foreignKeyName: "topic_brand_assignments_brand_id_fkey"
+            foreignKeyName: "category_brand_assignments_brand_id_fkey"
             columns: ["brand_id"]
             isOneToOne: false
             referencedRelation: "brand_registry"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "topic_brand_assignments_project_id_fkey"
+            foreignKeyName: "category_brand_assignments_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -777,7 +777,7 @@ export type Database = {
           },
         ]
       }
-      topic_brand_observations: {
+      category_brand_observations: {
         Row: {
           average_position: number | null
           brand_id: string
@@ -789,7 +789,7 @@ export type Database = {
           presence_count: number
           project_id: string
           response_count: number
-          topic: string
+          category: string
           tracking_location: string
         }
         Insert: {
@@ -803,7 +803,7 @@ export type Database = {
           presence_count?: number
           project_id: string
           response_count?: number
-          topic: string
+          category: string
           tracking_location?: string
         }
         Update: {
@@ -817,19 +817,19 @@ export type Database = {
           presence_count?: number
           project_id?: string
           response_count?: number
-          topic?: string
+          category?: string
           tracking_location?: string
         }
         Relationships: [
           {
-            foreignKeyName: "topic_brand_observations_brand_id_fkey"
+            foreignKeyName: "category_brand_observations_brand_id_fkey"
             columns: ["brand_id"]
             isOneToOne: false
             referencedRelation: "brand_registry"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "topic_brand_observations_project_id_fkey"
+            foreignKeyName: "category_brand_observations_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -837,7 +837,7 @@ export type Database = {
           },
         ]
       }
-      tracking_batch_topics: {
+      tracking_batch_categories: {
         Row: {
           attempt_count: number
           batch_id: string
@@ -847,7 +847,7 @@ export type Database = {
           ordinal: number
           started_at: string | null
           status: string
-          topic: string
+          category: string
           tracking_run_id: string | null
           updated_at: string
         }
@@ -860,7 +860,7 @@ export type Database = {
           ordinal: number
           started_at?: string | null
           status?: string
-          topic: string
+          category: string
           tracking_run_id?: string | null
           updated_at?: string
         }
@@ -873,20 +873,20 @@ export type Database = {
           ordinal?: number
           started_at?: string | null
           status?: string
-          topic?: string
+          category?: string
           tracking_run_id?: string | null
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "tracking_batch_topics_batch_id_fkey"
+            foreignKeyName: "tracking_batch_categories_batch_id_fkey"
             columns: ["batch_id"]
             isOneToOne: false
             referencedRelation: "tracking_batches"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "tracking_batch_topics_tracking_run_id_fkey"
+            foreignKeyName: "tracking_batch_categories_tracking_run_id_fkey"
             columns: ["tracking_run_id"]
             isOneToOne: false
             referencedRelation: "tracking_runs"
@@ -904,7 +904,7 @@ export type Database = {
           requested_by: string
           started_at: string | null
           status: string
-          topic_order: Json
+          category_order: Json
           updated_at: string
         }
         Insert: {
@@ -916,7 +916,7 @@ export type Database = {
           requested_by: string
           started_at?: string | null
           status?: string
-          topic_order?: Json
+          category_order?: Json
           updated_at?: string
         }
         Update: {
@@ -928,7 +928,7 @@ export type Database = {
           requested_by?: string
           started_at?: string | null
           status?: string
-          topic_order?: Json
+          category_order?: Json
           updated_at?: string
         }
         Relationships: [
@@ -1038,7 +1038,7 @@ export type Database = {
           started_by: string | null
           status: string
           supersedes_run_id: string | null
-          topic: string | null
+          category: string | null
           total_prompts: number
           tracking_location: string
         }
@@ -1055,7 +1055,7 @@ export type Database = {
           started_by?: string | null
           status?: string
           supersedes_run_id?: string | null
-          topic?: string | null
+          category?: string | null
           total_prompts?: number
           tracking_location?: string
         }
@@ -1072,7 +1072,7 @@ export type Database = {
           started_by?: string | null
           status?: string
           supersedes_run_id?: string | null
-          topic?: string | null
+          category?: string | null
           total_prompts?: number
           tracking_location?: string
         }
@@ -1105,7 +1105,7 @@ export type Database = {
           project_id: string
           share_of_voice_rank: number | null
           share_of_voice_score: number | null
-          topic: string
+          category: string
           tracking_location: string
           visibility_rank: number | null
           visibility_score: number | null
@@ -1121,7 +1121,7 @@ export type Database = {
           project_id: string
           share_of_voice_rank?: number | null
           share_of_voice_score?: number | null
-          topic?: string
+          category?: string
           tracking_location?: string
           visibility_rank?: number | null
           visibility_score?: number | null
@@ -1137,7 +1137,7 @@ export type Database = {
           project_id?: string
           share_of_voice_rank?: number | null
           share_of_voice_score?: number | null
-          topic?: string
+          category?: string
           tracking_location?: string
           visibility_rank?: number | null
           visibility_score?: number | null
@@ -1195,7 +1195,7 @@ export type Database = {
         Returns: {
           competitor_count: number
           metric_date: string
-          topic: string
+          category: string
         }[]
       }
       get_cumulative_citations: {
@@ -1205,7 +1205,7 @@ export type Database = {
           p_engines?: string[]
           p_project_id: string
           p_start_date: string
-          p_topic?: string
+          p_category?: string
           p_tracking_location?: string
         }
         Returns: {
@@ -1221,7 +1221,7 @@ export type Database = {
           p_engines?: string[]
           p_project_id: string
           p_start_date: string
-          p_topic?: string
+          p_category?: string
           p_tracking_location?: string
         }
         Returns: {
@@ -1241,7 +1241,7 @@ export type Database = {
         Returns: {
           competitor_count: number
           metric_date: string
-          topic: string
+          category: string
           visibility_rank: number
         }[]
       }
@@ -1250,7 +1250,7 @@ export type Database = {
         Returns: {
           competitor_count: number
           metric_date: string
-          topic: string
+          category: string
         }[]
       }
       get_third_party_mentions: {
@@ -1259,7 +1259,7 @@ export type Database = {
           p_engines?: string[]
           p_project_id: string
           p_start_date: string
-          p_topic?: string
+          p_category?: string
           p_tracking_location?: string
         }
         Returns: {

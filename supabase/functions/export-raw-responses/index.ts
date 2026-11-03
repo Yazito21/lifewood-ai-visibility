@@ -77,7 +77,7 @@ Deno.serve(async (req: Request) => {
     const promptRows: Array<Record<string, unknown>> = [];
     for (let offset = 0; ; offset += 500) {
       const { data, error } = await admin.from("prompts")
-        .select("id,prompt_number,prompt,topic,language")
+        .select("id,prompt_number,prompt,category,language")
         .eq("project_id", projectId)
         .order("prompt_number", { ascending: true })
         .range(offset, offset + 499);

@@ -14,7 +14,7 @@ export type ZipLib = {
 };
 
 export type ResponseRow = Record<string, unknown>;
-export type PromptRow = { prompt_number?: unknown; prompt?: unknown; topic?: unknown; language?: unknown };
+export type PromptRow = { prompt_number?: unknown; prompt?: unknown; category?: unknown; language?: unknown };
 
 export type ExportSource = {
   /** Pages of responses: "full" has every column, "raw" only id/prompt/captured_at/raw_response. */
@@ -161,12 +161,12 @@ export function streamWorkbook(lib: ZipLib, source: ExportSource, meta: ExportMe
 
   const sheetNames = ["Summary", "Raw Responses", "Citation Links", "Response Text Chunks", "Raw JSON Chunks"];
   const responseHeaders = [
-    "Response_ID", "Captured_At", "Tracking_Location", "Run_ID", "Prompt_No", "Prompt_ID", "Prompt", "Topic", "Language", "Engine", "Status", "Error",
+    "Response_ID", "Captured_At", "Tracking_Location", "Run_ID", "Prompt_No", "Prompt_ID", "Prompt", "Category", "Language", "Engine", "Status", "Error",
     "Response Text (full if <= 30,000 chars)", "Raw Response JSON (full if <= 30,000 chars)", "Response_Text_Characters", "Raw_JSON_Characters",
     "Citation_Count", "Citation_URLs", "Complete Text In Chunks Sheet", "Complete JSON In Chunks Sheet",
   ];
   const citationHeaders = [
-    "Response_ID", "Captured_At", "Tracking_Location", "Run_ID", "Prompt_No", "Prompt_ID", "Prompt", "Topic", "Language", "Engine",
+    "Response_ID", "Captured_At", "Tracking_Location", "Run_ID", "Prompt_No", "Prompt_ID", "Prompt", "Category", "Language", "Engine",
     "Citation_Title", "Citation_URL", "Domain", "Citation_Source",
   ];
 
@@ -190,7 +190,7 @@ export function streamWorkbook(lib: ZipLib, source: ExportSource, meta: ExportMe
           const common = [
             String(row.id ?? ""), String(row.captured_at ?? ""), String(row.tracking_location ?? "LEGACY"), String(row.run_id ?? ""),
             prompt?.prompt_number ?? "", String(row.prompt_id ?? ""), String(row.prompt_snapshot ?? prompt?.prompt ?? ""),
-            String(prompt?.topic ?? ""), String(prompt?.language ?? ""), String(row.llm_provider ?? ""),
+            String(prompt?.category ?? ""), String(prompt?.language ?? ""), String(row.llm_provider ?? ""),
           ];
           emit([
             ...common, String(row.response_status ?? ""), String(row.error_message ?? ""),
