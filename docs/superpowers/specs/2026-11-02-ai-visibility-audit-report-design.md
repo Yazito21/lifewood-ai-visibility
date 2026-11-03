@@ -37,12 +37,12 @@ Pages are **16:9 landscape**, matching the template. Every page has the client l
 | 1 | Cover | `[Client brand]` · "AI Visibility & GEO Audit Report" · reporting period · "Generated on [date] as part of the SEO/GEO project operations for [client brand]." | project |
 | 2 | 1.0 Executive Summary | 4 KPI tiles: Overall visibility score, Overall rank (of N), Website citations in AI, Share of voice — each with a one-line note. Headline scores: AI Visibility, GEO Score, SEO Health. 1.1 The brand's current position (3 bullets). 1.2 How Lifewood can help (3 bullets). | tracking + audit + AI |
 | 3 | 2.0 Competitor Benchmark | Table: brand vs top 3 competitors — 2.1 visibility rank, 2.2 visibility score, 2.3 share of voice, 2.4 citations, 2.5 knowledge assets, 2.6 external presence (news · directories/websites · social), 2.7 domain authority, plus GEO quick checks (AI crawler access, llms.txt, schema, citability). One-line summary. | tracking + audit + manual |
-| 4 | 3.0 AI Visibility in Detail | Visibility score trend; results by AI engine; results by topic; prompts where the brand is absent but competitors appear (top 10 gaps); top cited domains/pages and whether the brand's own site is cited. | tracking |
+| 4 | 3.0 AI Visibility in Detail | Visibility score trend; results by AI engine; results by category; prompts where the brand is absent but competitors appear (top 10 gaps); top cited domains/pages and whether the brand's own site is cited. | tracking |
 | 5 | 4.0 GEO Audit | GEO Score and the six category scores with the skill's weights (Citability 25, Brand authority 20, E-E-A-T 20, Technical GEO 15, Schema 10, Platform 10); 2–3 evidence-backed findings per category. | audit |
 | 6 | 5.0 SEO Audit | SEO Health score; site-wide checks (HTTPS, robots.txt, sitemap, canonical, mobile viewport, JS-dependent content); per-page table for crawled pages (title, meta description, H1, word count, schema, status). | audit |
 | 7 | 6.0 The Brand's Current Position | Five pillars from the template, 3 points each: Website content & structure, Knowledge assets & resources, Branding & authority, Community engagement, Monitoring & research. | AI from findings |
 | 8 | 7.0 How Lifewood Can Help | Same five pillars, 3 initiatives each, each tied to a finding; grouped as quick wins / 30 days / 90 days. | AI from findings |
-| 9 | 8.0 Initial Targets | Overall + up to 3 topics: visibility score and rank, current vs target. Targets are suggested and editable. | tracking + editable |
+| 9 | 8.0 Initial Targets | Overall + up to 3 categories: visibility score and rank, current vs target. Targets are suggested and editable. | tracking + editable |
 | 10 | Methodology | How each score is calculated, engines and prompt count tracked, period and location, which checks are verified vs "check manually". | static + report data |
 | 11 | Thank you | Closing page. | static |
 
@@ -179,5 +179,5 @@ limit because each stage is short and progress is saved after each stage.
 2. `supabase functions deploy site-audit`.
 3. Reuses the `OPENROUTER_API_KEY` secret from the prompt assistant.
 
-Known blocker on the live database: `projects.topics` is missing, which breaks topic-dependent pages and the report's
-topic sections. It must be restored before the report is useful.
+Known blocker on the live database: `projects.topics` was renamed to `projects.categories` (main #91); the app must be on the merged code, otherwise category-dependent pages and the report
+category sections. It must be restored before the report is useful.
