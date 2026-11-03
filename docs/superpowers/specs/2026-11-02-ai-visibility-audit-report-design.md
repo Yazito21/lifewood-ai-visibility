@@ -179,5 +179,4 @@ limit because each stage is short and progress is saved after each stage.
 2. `supabase functions deploy site-audit`.
 3. Reuses the `OPENROUTER_API_KEY` secret from the prompt assistant.
 
-Known blocker on the live database: `projects.topics` was renamed to `projects.categories` (main #91); the app must be on the merged code, otherwise category-dependent pages and the report
-category sections. It must be restored before the report is useful.
+Note: the live database already uses category naming (`projects.categories`, main #91). This branch includes that change.
