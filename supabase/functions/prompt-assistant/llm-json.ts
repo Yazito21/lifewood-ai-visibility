@@ -1,3 +1,7 @@
+import { extractJson } from "../_shared/json-extract.ts";
+
+export { extractJson };
+
 export type BrandProfile = {
   summary: string;
   offerings: string[];
@@ -11,24 +15,6 @@ const MAX_PROMPT_CHARS = 300;
 
 function invalid(): never {
   throw new Error("MODEL_JSON_INVALID");
-}
-
-function tryParse(text: string): unknown {
-  try { return JSON.parse(text); } catch { return undefined; }
-}
-
-/** Parses the model reply as JSON: raw, inside a ```json fence, or the outermost {...} span. */
-export function extractJson(text: string): unknown {
-  const raw = tryParse(text.trim());
-  if (raw !== undefined) return raw;
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
-  const fromFence = fenced ? tryParse(fenced.trim()) : undefined;
-  if (fromFence !== undefined) return fromFence;
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  const span = start >= 0 && end > start ? tryParse(text.slice(start, end + 1)) : undefined;
-  if (span !== undefined) return span;
-  invalid();
 }
 
 function stringList(value: unknown): string[] {

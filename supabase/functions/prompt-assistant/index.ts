@@ -1,9 +1,9 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { htmlToText } from "./html-text.ts";
+import { htmlToText } from "../_shared/html-text.ts";
 import { type BrandProfile, parseProfile, parseSuggestions } from "./llm-json.ts";
-import { callOpenRouter, type ChatMessage, type OpenRouterResult } from "./openrouter.ts";
+import { callOpenRouter, type ChatMessage, type OpenRouterResult } from "../_shared/openrouter.ts";
 import { filterSuggestions, sanitizeExclude, type SuggestionMode } from "./prompt-dedupe.ts";
-import { isPublicHttpUrl, readTextCapped } from "./url-guard.ts";
+import { fetchPublic } from "../_shared/safe-fetch.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -48,7 +48,6 @@ const EXTRA_CANDIDATES = 3;
 const MAX_EXISTING_IN_PROMPT = 50;
 const WEBSITE_TIMEOUT_MS = 8_000;
 const WEBSITE_MAX_BYTES = 1_000_000;
-const WEBSITE_MAX_REDIRECTS = 3;
 
 type Project = {
   id: string;
@@ -90,33 +89,10 @@ function location(project: Project) {
 
 async function fetchHomepageText(domain: string | undefined): Promise<string | null> {
   if (!domain) return null;
-  let url = /^https?:\/\//i.test(domain) ? domain : "https://" + domain.replace(/^\/+/, "");
-  const signal = AbortSignal.timeout(WEBSITE_TIMEOUT_MS);
-  try {
-    // Redirects are followed by hand so every hop is checked against internal addresses.
-    for (let hop = 0; hop <= WEBSITE_MAX_REDIRECTS; hop++) {
-      if (!isPublicHttpUrl(url)) return null;
-      const response = await fetch(url, {
-        headers: { "User-Agent": "LifewoodAIVisibilityBot/1.0", Accept: "text/html" },
-        redirect: "manual",
-        signal,
-      });
-      const location = response.headers.get("location");
-      if (response.status >= 300 && response.status < 400 && location) {
-        await response.body?.cancel();
-        url = new URL(location, url).toString();
-        continue;
-      }
-      if (!response.ok || !(response.headers.get("content-type") ?? "").includes("text/html")) {
-        await response.body?.cancel();
-        return null;
-      }
-      return htmlToText(await readTextCapped(response, WEBSITE_MAX_BYTES));
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  const url = /^https?:\/\//i.test(domain) ? domain : "https://" + domain.replace(/^\/+/, "");
+  const page = await fetchPublic(url, { accept: "text/html", maxBytes: WEBSITE_MAX_BYTES, timeoutMs: WEBSITE_TIMEOUT_MS });
+  if (!page.ok || !page.contentType.includes("text/html")) return null;
+  return htmlToText(page.body);
 }
 
 async function analyze(ctx: Context) {
