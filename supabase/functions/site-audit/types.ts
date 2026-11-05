@@ -18,3 +18,11 @@ export type CrawlResult = {
   llmsText: string | null;
   sitemapUrls: string[];
 };
+
+export type EeatDimension = { score: number; evidence: string };
+export type EeatResult = {
+  experience: EeatDimension;
+  expertise: EeatDimension;
+  authoritativeness: EeatDimension;
+  trustworthiness: EeatDimension;
+};
