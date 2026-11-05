@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Admins generate a saved, editable, Lifewood-branded report per project — AI visibility from tracking data, competitor benchmark, GEO audit, SEO audit, five-pillar plan — viewable in the app and downloadable as a 16:9 PDF.
+**Goal:** Admins generate a saved, editable, Lifewood-branded report per project — AI visibility from tracking data, competitor benchmark, GEO audit, SEO audit, current position, targets, with SVG charts — viewable in the app and downloadable as a 16:9 PDF.
 
 **Architecture:** The browser gathers the AI visibility snapshot with the same queries the app pages use (extracted into `lib/`), then calls a new `site-audit` Edge Function. The function inserts an `audit_reports` row, replies at once, and finishes in the background (`EdgeRuntime.waitUntil`): crawl → deterministic checks ported from geo-seo-claude → competitor homepage checks → two OpenRouter calls (E-E-A-T, narrative) → scores → save. The report page polls the row every 3 s and renders 11 print-ready pages.
 
@@ -275,20 +275,20 @@ Contents (all idempotent: `if not exists`, `drop … if exists`, `create or repl
     ```ts
     type PillarKey = "website" | "knowledge" | "authority" | "community" | "monitoring";
     type Narrative = {
-      executiveSummary: { position: string[]; help: string[] };      // 3 each
+      executiveSummary: { position: string[] };                      // 3
       kpiNotes: { visibility: string; rank: string; citations: string; shareOfVoice: string };
       competitorSummary: string;
-      pillars: Record<PillarKey, { position: string[]; initiatives: { text: string; timeframe: "quick_win" | "30_days" | "90_days" }[] }>; // 3 + 3
+      pillars: Record<PillarKey, { position: string[] }>;            // 3 each
       targetNotes: string;
       fallback?: true;
     };
     ```
-    Missing lists become `[]`; unknown timeframe → `"30_days"`.
+    Missing lists become `[]`. No "How Lifewood can help" content (removed by the user).
   - `stripUnknownNumbers(text: string, allowedText: string): string` — numbers = `/\d+(?:[.,]\d+)?%?/g` normalised (drop `,` thousands separators and trailing `%`); a sentence containing a number absent from `allowedText`'s number set is removed. Years 2000–2100 are always allowed only if present in `allowedText` (no exception).
-  - `fallbackNarrative(findings: Record<string, string[]>): Narrative` — findings copied into pillar `position` lists, empty initiatives, `fallback: true`.
+  - `fallbackNarrative(findings: Record<string, string[]>): Narrative` — findings copied into pillar `position` lists, `fallback: true`.
 
 - [ ] **Step 1: Write failing tests:**
-  - `parses a full narrative`; `fills missing lists with []`; `unknown timeframe becomes 30_days`.
+  - `parses a full narrative`; `fills missing lists with []`; `ignores extra keys such as initiatives`.
   - `strips sentences with unknown numbers` — allowed `"score 42.5 rank 3 of 12"`, text `"Your score is 42.5. You could reach 80 soon. Rank 3 of 12."` → `"Your score is 42.5. Rank 3 of 12."`.
   - `allows thousands separators` — allowed `"1200"`, text `"1,200 citations."` kept.
   - `parseEeat clamps to 25 and rejects missing dimension`.
@@ -410,7 +410,7 @@ Behaviour:
 - Consumes: types from Task 11.
 - Produces:
   - `rating(score: number | null): { label: string; tone: "good" | "fair" | "poor" } ` — same bands; null → `{label:"Not measured", tone:"fair"}`. Tone: Excellent/Good → good, Fair → fair, Poor/Critical → poor.
-  - `textFor(narrative: Narrative | null, edits: ReportEdits, path: string): string` — `edits.text[path]` if set, else the value at the dotted `path` (e.g. `"pillars.website.initiatives.1.text"`), else `""`.
+  - `textFor(narrative: Narrative | null, edits: ReportEdits, path: string): string` — `edits.text[path]` if set, else the value at the dotted `path` (e.g. `"pillars.website.position.1"`), else `""`.
   - `setText(edits: ReportEdits, path: string, value: string | null): ReportEdits` — `null` removes the override (Reset to generated). Pure.
   - `suggestedTargets(snapshot: ReportSnapshot): { scope: string; currentScore: number|null; targetScore: number|null; currentRank: number|null; targetRank: number|null }[]` — Overall + up to 3 categories (lowest score first); target score = `min(100, round1(current + max(5, current × 0.25)))`; target rank = `max(1, current − 2)`; nulls stay null.
   - `targetsFor(snapshot, edits)` — suggested merged with `edits.targets` by `scope`.
@@ -418,7 +418,7 @@ Behaviour:
   - `fmtScore(n: number | null, dp = 1): string` (`"—"` for null), `fmtPercent`, `fmtDate(iso: string): string` (`"3 November 2026"`, `en-GB`).
   - `STEP_LABELS: Record<string, string>` — crawling "Crawling the website", checking "Running SEO and GEO checks", competitors "Checking competitors", scoring_content "Scoring content quality (E-E-A-T)", writing "Writing the report", saving "Saving".
 
-- [ ] **Step 1: Write failing tests:** `edit overrides generated text`, `setText null resets`, `path into initiatives`, `suggestedTargets overall 40 → 50 and rank 5 → 3`, `suggestedTargets low score uses +5` (10 → 15), `targetsFor applies edits by scope`, `stale running report is failed` (updated 11 min ago) / `fresh running stays running`, `rating null`, `fmtDate`.
+- [ ] **Step 1: Write failing tests:** `edit overrides generated text`, `setText null resets`, `path into pillar lists`, `suggestedTargets overall 40 → 50 and rank 5 → 3`, `suggestedTargets low score uses +5` (10 → 15), `targetsFor applies edits by scope`, `stale running report is failed` (updated 11 min ago) / `fresh running stays running`, `rating null`, `fmtDate`.
 - [ ] **Step 2:** `node --test lib/report-view.test.ts` → FAIL. **Step 3:** Implement. **Step 4:** PASS.
 - [ ] **Step 5: Commit** `feat: report view helpers (edits, targets, status, formatting)`
 
@@ -446,26 +446,57 @@ Behaviour:
 
 ---
 
+### Task 13b: SVG chart components
+
+**Files:**
+- Create: `lib/chart-geometry.ts`, `lib/chart-geometry.test.ts`, `components/report/charts/{score-gauge,bar-chart,grouped-bar-chart,stacked-bar-chart,donut-chart,line-chart,sparkline,status-grid}.tsx`
+
+**Interfaces:**
+- Produces (pure, tested):
+  - `linearScale(domain: [number, number], range: [number, number]): (v: number) => number`
+  - `niceMax(values: (number | null)[], floor = 1): number` — smallest of 1, 2, 2.5, 5, 10 × 10ⁿ ≥ max; 100 when all values are percentages ≤ 100 and `percent` flag set → signature `niceMax(values, { percent?: boolean })`.
+  - `arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number): string` — SVG `A` path, 0° = 12 o'clock, clockwise.
+  - `donutSlices(values: { label: string; value: number }[]): { label: string; value: number; start: number; end: number; pct: number }[]` — degrees, zero-sum → `[]`.
+  - `linePath(points: { x: number; y: number | null }[]): string` — gaps on null (new `M`).
+- Produces (components, all SVG with `viewBox`, `role="img"`, `aria-label`, a `<title>`, value labels on marks, and a text fallback "No data for this period" when every value is null/empty):
+  - `ScoreGauge({ label, score: number | null, max = 100 })` — 240° arc, tone colour from `rating()` (good `#046241`, fair `#ffb347`, poor `#a13f35`), number in the centre, rating label under it.
+  - `BarChart({ title, items: { label; value: number | null; highlight?: boolean }[], format?: "number" | "percent", horizontal = true })` — highlight bar (tracked brand) in `#046241`, others `#9fb8a8`.
+  - `GroupedBarChart({ title, groups: string[], series: { name; color; values: (number | null)[] }[] })` with legend.
+  - `StackedBarChart({ title, items: { label; parts: { name; value; color }[] }[] })` with legend.
+  - `DonutChart({ title, items: { label; value; highlight? }[] })` — centre shows the highlighted share.
+  - `LineChart({ title, points: { date: string; value: number | null }[], format })` — date labels thinned to ≤ 8.
+  - `Sparkline({ points })` — no axes.
+  - `StatusGrid({ title, rows: { label; status: "allowed" | "partial" | "blocked" }[] })` — coloured dot + word (never colour alone).
+  - Colours only from the Lifewood palette in Global Constraints plus `#9fb8a8` (muted green) and `#a13f35` (danger, already in `globals.css`).
+
+- [ ] **Step 1: Write failing tests** `lib/chart-geometry.test.ts`: `linearScale maps ends`; `niceMax 37 → 40`, `niceMax 0.8 → 1`, `niceMax percent → 100`; `arcPath 0→90 ends at 3 o'clock` (for cx=cy=50, r=40 path ends with `90 50`); `donutSlices pct sums to 100 and zero-sum gives []`; `linePath breaks at null` (two `M`).
+- [ ] **Step 2:** `node --test lib/chart-geometry.test.ts` → FAIL. **Step 3:** Implement geometry, then the components (use the `dataviz` skill's guidance for labels, contrast and legends). **Step 4:** Tests PASS; `npx tsc --noEmit -p .` clean.
+- [ ] **Step 5: Commit** `feat: SVG chart components for reports`
+
+---
+
 ### Task 14: Report page and report components
 
 **Files:**
-- Create: `app/platform/[projectId]/reports/[reportId]/page.tsx`, `components/report/report-page.tsx` (16:9 frame with client initial/logo + Lifewood logo + page number), `components/report/editable.tsx`, and one component per page: `cover.tsx`, `executive-summary.tsx`, `competitor-benchmark.tsx`, `ai-visibility-detail.tsx`, `geo-audit.tsx`, `seo-audit.tsx`, `current-position.tsx`, `how-lifewood-can-help.tsx`, `initial-targets.tsx`, `methodology.tsx`, `thank-you.tsx`
+- Create: `app/platform/[projectId]/reports/[reportId]/page.tsx`, `components/report/report-page.tsx` (16:9 frame with client initial/logo + Lifewood logo + page number), `components/report/editable.tsx`, and one component per page: `cover.tsx`, `executive-summary.tsx`, `competitor-benchmark.tsx`, `ai-visibility-detail.tsx`, `geo-audit.tsx`, `seo-audit.tsx`, `current-position.tsx`, `initial-targets.tsx`, `methodology.tsx`, `thank-you.tsx`
 
 **Interfaces:**
-- Consumes: `AuditReportRow` and types (Task 11), all of Task 12.
+- Consumes: `AuditReportRow` and types (Task 11), all of Task 12, chart components (Task 13b).
 - Produces: `<Editable path={string} value={string} canEdit={boolean} onSave={(path, value | null) => void} multiline? />` — click to edit, Save/Cancel, **Reset to generated** when an override exists. `ReportPage({ number, title?, brand, children })`.
 
 Behaviour:
 - Load the row; while `effectiveStatus` is queued/running poll every 3 s and show the checklist from `STEP_LABELS` (done ✓ / current spinner / pending). Failed: error message + **Retry** (admins) which regathers the snapshot with the same period and starts a new report.
-- Completed: toolbar (Back to reports · **Download PDF** → `window.print()`), then the 11 pages in spec §3 order with spec §3 content. Specifics:
+- Completed: toolbar (Back to reports · **Download PDF** → `window.print()`), then the 11 pages in spec §3 order (Cover, 1.0, 2.0, 2.1 charts, 3.0, 4.0, 5.0, 6.0, 7.0 targets, Methodology, Thank you) with spec §3 content. Specifics:
   - Cover: brand name, "AI Visibility & GEO Audit Report", period (`fmtDate` start – end), location label (`trackingLocationLabel`), the Global-Constraints cover line with `fmtDate(created_at)`. No "Prepared by".
-  - Executive summary: 4 KPI tiles (visibility score, rank `rankText` "of N", website citations, share of voice) with `kpiNotes`; headline scores AI Visibility / GEO Score / SEO Health with `rating`; 1.1 and 1.2 bullets via `Editable`.
+  - Executive summary: 4 KPI tiles (visibility score, rank `rankText` "of N", website citations, share of voice) with `kpiNotes`; three `ScoreGauge`s (AI Visibility / GEO Score / SEO Health) with `rating`; visibility `Sparkline`; 1.1 bullets via `Editable`. No 1.2.
   - Competitor benchmark: rows 2.1–2.7 × brand + 3 competitors; 2.5 from `audit.site.knowledgeAssets` (sum) and `CompetitorCheck.knowledgeAssets`; 2.6 `presence` "news & websites · directories · social"; 2.7 domain authority from `edits.manual.domainAuthority[name]` (admins edit, default "—"); GEO quick checks rows from audit; `competitorSummary`; "Unavailable" for unreachable competitors.
-  - AI visibility detail: trend chart (reuse `components/metric-chart.tsx`), engine table, category table, gaps table, top cited pages/domains, "Your website is / is not cited by AI answers". `hasData:false` → "No tracking runs in this period. Run tracking from the Dashboard, then generate a new report."
-  - GEO audit: GEO score + six category bars with weights and findings; manual-check links.
-  - SEO audit: SEO Health, site-wide checks list, per-page table (title, meta description, H1, words, schema, status).
-  - Sections 6.0 and 7.0: five pillars with titles "Website content & structure", "Knowledge assets & resources", "Branding & authority", "Community engagement", "Monitoring & research"; 7.0 groups initiatives by "Quick wins", "Next 30 days", "Next 90 days".
-  - Initial targets: `targetsFor` table; admins edit target cells (save into `edits.targets`).
+  - AI visibility detail: `LineChart` trend, `BarChart` by engine, `BarChart` by category, gaps table, top cited pages/domains, "Your website is / is not cited by AI answers". `hasData:false` → "No tracking runs in this period. Run tracking from the Dashboard, then generate a new report."
+  - GEO audit: `ScoreGauge` + `BarChart` of six categories (label shows weight) + `StatusGrid` of AI crawlers + findings; manual-check links.
+  - SEO audit: `ScoreGauge`, site-wide checks list, `BarChart` of pass rate per page check, per-page table (title, meta description, H1, words, schema, status).
+  - 2.1 Competitor charts (own page): `BarChart` visibility score, `DonutChart` share of voice, `BarChart` citations, `GroupedBarChart` knowledge assets, `StackedBarChart` external presence.
+  - Section 6.0: five pillars with titles "Website content & structure", "Knowledge assets & resources", "Branding & authority", "Community engagement", "Monitoring & research".
+  - **No "How Lifewood Can Help" page** (removed by the user).
+  - Initial targets (7.0): `targetsFor` table + `GroupedBarChart` current vs target; admins edit target cells (save into `edits.targets`).
   - Methodology: score formulas (weights, SEO Health composition), engines tracked, prompt count, period/location, which checks are verified vs "check manually" (domain authority, manual-check links), `audit.notices` and `audit.budgetSkipped`.
   - Website not reachable → sections 4.0/5.0 show "Could not be audited: {reason}".
 - Saving edits: `supabase.from("audit_reports").update({ edits }).eq("id", reportId)`; optimistic update; error banner on failure.

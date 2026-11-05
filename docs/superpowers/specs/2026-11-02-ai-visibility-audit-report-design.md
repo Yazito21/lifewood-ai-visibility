@@ -35,16 +35,22 @@ Pages are **16:9 landscape**, matching the template. Every page has the client l
 | # | Page | Content | Source |
 |---|---|---|---|
 | 1 | Cover | `[Client brand]` · "AI Visibility & GEO Audit Report" · reporting period · "Generated on [date] as part of the SEO/GEO project operations for [client brand]." | project |
-| 2 | 1.0 Executive Summary | 4 KPI tiles: Overall visibility score, Overall rank (of N), Website citations in AI, Share of voice — each with a one-line note. Headline scores: AI Visibility, GEO Score, SEO Health. 1.1 The brand's current position (3 bullets). 1.2 How Lifewood can help (3 bullets). | tracking + audit + AI |
-| 3 | 2.0 Competitor Benchmark | Table: brand vs top 3 competitors — 2.1 visibility rank, 2.2 visibility score, 2.3 share of voice, 2.4 citations, 2.5 knowledge assets, 2.6 external presence (news · directories/websites · social), 2.7 domain authority, plus GEO quick checks (AI crawler access, llms.txt, schema, citability). One-line summary. | tracking + audit + manual |
-| 4 | 3.0 AI Visibility in Detail | Visibility score trend; results by AI engine; results by category; prompts where the brand is absent but competitors appear (top 10 gaps); top cited domains/pages and whether the brand's own site is cited. | tracking |
-| 5 | 4.0 GEO Audit | GEO Score and the six category scores with the skill's weights (Citability 25, Brand authority 20, E-E-A-T 20, Technical GEO 15, Schema 10, Platform 10); 2–3 evidence-backed findings per category. | audit |
-| 6 | 5.0 SEO Audit | SEO Health score; site-wide checks (HTTPS, robots.txt, sitemap, canonical, mobile viewport, JS-dependent content); per-page table for crawled pages (title, meta description, H1, word count, schema, status). | audit |
-| 7 | 6.0 The Brand's Current Position | Five pillars from the template, 3 points each: Website content & structure, Knowledge assets & resources, Branding & authority, Community engagement, Monitoring & research. | AI from findings |
-| 8 | 7.0 How Lifewood Can Help | Same five pillars, 3 initiatives each, each tied to a finding; grouped as quick wins / 30 days / 90 days. | AI from findings |
-| 9 | 8.0 Initial Targets | Overall + up to 3 categories: visibility score and rank, current vs target. Targets are suggested and editable. | tracking + editable |
+| 2 | 1.0 Executive Summary | 4 KPI tiles: Overall visibility score, Overall rank (of N), Website citations in AI, Share of voice — each with a one-line note. **Charts:** three score gauges (AI Visibility, GEO Score, SEO Health) and a visibility-score sparkline. 1.1 The brand's current position (3 bullets). | tracking + audit + AI |
+| 3 | 2.0 Competitor Benchmark | Table: brand vs top 3 competitors — 2.1 visibility rank, 2.2 visibility score, 2.3 share of voice, 2.4 citations, 2.5 knowledge assets, 2.6 external presence (social · directories · websites & news), 2.7 domain authority, plus GEO quick checks (AI crawler access, llms.txt, schema, citability). One-line summary. | tracking + audit + manual |
+| 4 | 2.1 Competitor Charts | **Charts:** visibility score bars (brand vs top 3), share-of-voice donut, citations bars, knowledge assets grouped bars, external presence stacked bars. | tracking + audit |
+| 5 | 3.0 AI Visibility in Detail | **Charts:** visibility score trend line, bars by AI engine, bars by category. Tables: prompts where the brand is absent but competitors appear (top 10 gaps); top cited domains/pages and whether the brand's own site is cited. | tracking |
+| 6 | 4.0 GEO Audit | GEO Score gauge and **bar chart** of the six category scores with the skill's weights (Citability 25, Brand authority 20, E-E-A-T 20, Technical GEO 15, Schema 10, Platform 10); **AI crawler access grid** (allowed / partial / blocked); 2–3 evidence-backed findings per category. | audit |
+| 7 | 5.0 SEO Audit | SEO Health gauge; site-wide checks (HTTPS, robots.txt, sitemap, canonical, mobile viewport, JS-dependent content); **pass-rate bars** per page check across crawled pages; per-page table (title, meta description, H1, word count, schema, status). | audit |
+| 8 | 6.0 The Brand's Current Position | Five pillars from the template, 3 points each: Website content & structure, Knowledge assets & resources, Branding & authority, Community engagement, Monitoring & research. | AI from findings |
+| 9 | 7.0 Initial Targets | Overall + up to 3 categories: visibility score and rank, current vs target, with a **current-vs-target bar chart**. Targets are suggested and editable. | tracking + editable |
 | 10 | Methodology | How each score is calculated, engines and prompt count tracked, period and location, which checks are verified vs "check manually". | static + report data |
 | 11 | Thank you | Closing page. | static |
+
+**Removed at the user's request (2026-11-05):** "How Lifewood Can Help" (page and the executive-summary bullets).
+
+**Charts** are hand-built SVG components (the app has no chart library; `components/metric-chart.tsx` is SVG too), so
+they print sharply to PDF. Lifewood palette; every chart has a title, labelled values and a text fallback when data is
+missing.
 
 Where the template asks for data the platform cannot measure (domain authority), the field is **manual**: shown as
 "—" with an edit control for admins, and noted in the methodology.
@@ -125,7 +131,7 @@ AI calls (OpenRouter, `google/gemini-2.5-flash-lite`):
 1. **E-E-A-T** — input: extracted text of up to 5 crawled pages (≤ 6,000 words total) → JSON scores for experience,
    expertise, authoritativeness, trustworthiness with one evidence quote each.
 2. **Narrative** — input: the measured findings and snapshot numbers only → JSON for executive summary bullets,
-   KPI notes, five-pillar current position, five-pillar initiatives with timeframe, competitor summary, target notes.
+   KPI notes, five-pillar current position, competitor summary, target notes.
    The prompt forbids numbers that are not in the input; numbers in the output are checked against the input and
    any unknown number is removed.
 
@@ -141,7 +147,7 @@ External presence (template 2.6) comes from `get_third_party_mentions` source ty
 - `app/platform/[projectId]/reports/[reportId]/page.tsx`: progress checklist while running; the report when done.
   Admins can click any text block, manual field or target to edit; saving writes `edits`. **Reset to generated**
   per block.
-- `components/report/*`: one component per report page, shared by the screen and print views.
+- `components/report/*`: one component per report page, shared by the screen and print views; `components/report/charts/*`: SVG gauge, bar, grouped/stacked bar, donut, line and status-grid charts.
 - `lib/report-data.ts`: snapshot loaders shared with the existing pages. `lib/report-view.ts`: merge `narrative` +
   `edits`, format numbers, rating bands (with tests).
 - **Download PDF**: print stylesheet (`@page { size: 297mm 167mm }` ≈ 16:9, one report page per printed page,
