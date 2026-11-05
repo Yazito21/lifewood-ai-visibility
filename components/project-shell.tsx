@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import {
   Activity, ArrowLeft, BarChart3, BookOpen, LayoutDashboard,
-  Menu, Settings, ShieldCheck, UsersRound, X, FlaskConical, MessageSquareText, Trophy,
+  Menu, Settings, ShieldCheck, UsersRound, X, FlaskConical, MessageSquareText, Trophy, FileText,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -28,6 +28,7 @@ const baseNav = [
   ["Prompts", "/prompts", Activity],
   ["Responses", "/responses", MessageSquareText],
   ["Samples", "/samples", FlaskConical],
+  ["Reports", "/reports", FileText],
   ["Settings", "/settings", Settings],
 ] as const;
 
