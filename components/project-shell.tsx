@@ -89,7 +89,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
   const nav = [...baseNav, ...(role !== "viewer" ? [["Accounts", "/accounts", UsersRound] as const] : [])];
 
   return <div className="min-h-screen min-w-0 bg-[var(--background)] text-[var(--foreground)]">
-    <header className="relative overflow-hidden border-b border-[var(--border)] bg-[var(--lw-dark-serpent)] text-white shadow-[0_10px_35px_rgba(19,48,32,0.16)]">
+    <header className="platform-shell-chrome relative overflow-hidden border-b border-[var(--border)] bg-[var(--lw-dark-serpent)] text-white shadow-[0_10px_35px_rgba(19,48,32,0.16)]">
       <div className="pointer-events-none absolute inset-0 opacity-25 [background-image:linear-gradient(rgba(255,255,255,.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.055)_1px,transparent_1px)] [background-size:28px_28px]" />
       <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[var(--lw-saffaron)]/10 blur-3xl" />
       <div className="relative mx-auto w-full max-w-[1500px] px-4 sm:px-7 lg:px-8">
@@ -123,7 +123,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
       </div>
     </header>
 
-    <div className="w-full border-b border-[var(--border)] bg-[var(--card)] shadow-[0_2px_12px_rgba(19,48,32,0.06)]">
+    <div className="platform-shell-chrome w-full border-b border-[var(--border)] bg-[var(--card)] shadow-[0_2px_12px_rgba(19,48,32,0.06)]">
       <nav className="mx-auto flex w-full max-w-[1500px] justify-start gap-1 overflow-x-auto px-2 py-1.5 sm:justify-center sm:px-5 lg:px-8" aria-label="Project navigation">
         {nav.map(([label, segment, Icon]) => {
           const href = `/platform/${projectId}${segment}`;

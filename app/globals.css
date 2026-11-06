@@ -594,3 +594,17 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
 .report-edit-box { display: grid; gap: 4px; }
 .report-edit-actions { display: flex; gap: 6px; }
 .report-target-input { width: 64px; border: 1px solid #d7d1c1; border-radius: 6px; padding: 1px 6px; font-size: 11px; }
+
+@media print {
+  @page { size: 297mm 167mm; margin: 0; }
+  html, body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .platform-shell-chrome, .report-toolbar, .report-edit-button { display: none !important; }
+  .project-main { padding: 0 !important; max-width: none !important; }
+  .report-document { gap: 0; display: block; }
+  .report-page {
+    width: 297mm; height: 167mm; max-width: none; aspect-ratio: auto; margin: 0;
+    border-radius: 0; box-shadow: none; break-after: page; page-break-after: always;
+  }
+  .report-page:last-child { break-after: auto; page-break-after: auto; }
+  .report-target-input { border: none; padding: 0; }
+}
