@@ -65,17 +65,19 @@ function deps(options: { fetch?: typeof fetch; callAi?: AuditDeps["callAi"] } = 
   const patches: Record<string, unknown>[] = [];
   const usage: string[] = [];
   let calls = 0;
+  const timeouts: number[] = [];
   const d: AuditDeps = {
     fetch: options.fetch ?? fakeFetch(brandSite, ["https://down.com"]),
-    callAi: options.callAi ?? ((messages) => {
+    callAi: options.callAi ?? ((messages, _maxTokens, timeoutMs) => {
       calls++;
+      timeouts.push(timeoutMs);
       return Promise.resolve(aiReply(messages[0].content.includes("E-E-A-T") ? eeatJson : narrativeJson));
     }),
     save: (patch) => { patches.push(patch); return Promise.resolve(); },
     logUsage: (action) => { usage.push(action); return Promise.resolve(); },
     now: () => 0,
   };
-  return { d, patches, usage, calls: () => calls };
+  return { d, patches, usage, calls: () => calls, timeouts };
 }
 
 Deno.test("happy path saves steps in order and completes", async () => {
@@ -164,13 +166,15 @@ Deno.test("unexpected error marks the report failed", async () => {
 
 // ---- request handling ----
 
-function handlerDeps(role: { profile?: string; member?: string }, insert: "ok" | "conflict" = "ok") {
+function handlerDeps(role: { profile?: string; member?: string; createdBy?: string }, insert: "ok" | "conflict" | "stale" = "ok") {
   const started: string[] = [];
+  let expired = false;
   const h: HandlerDeps = {
     userIdForToken: (token) => Promise.resolve(token === "good" ? "u1" : null),
     roles: () => Promise.resolve({ profileRole: role.profile ?? null, memberRole: role.member ?? null }),
-    project: (id) => Promise.resolve(id === "p1" ? { id: "p1", brand_name: "Brand", brand_domains: ["brand.com"] } : null),
-    insertReport: () => Promise.resolve(insert === "ok" ? { id: "r1" } : { conflict: true }),
+    project: (id) => Promise.resolve(id === "p1" ? { id: "p1", brand_name: "Brand", brand_domains: ["brand.com"], created_by: role.createdBy ?? "someone-else" } : null),
+    expireStale: () => { expired = true; return Promise.resolve(); },
+    insertReport: () => Promise.resolve(insert === "ok" || (insert === "stale" && expired) ? { id: "r1" } : { conflict: true }),
     startAudit: (ctx) => { started.push(ctx.reportId); },
   };
   return { h, started };
@@ -182,8 +186,8 @@ const body = (extra: Record<string, unknown> = {}) => JSON.stringify({
 });
 const request = (b: string, token = "good") => new Request("http://x/site-audit", { method: "POST", headers: { Authorization: "Bearer " + token }, body: b });
 
-Deno.test("starts a report for an admin", async () => {
-  const { h, started } = handlerDeps({ profile: "admin" });
+Deno.test("starts a report for a project admin", async () => {
+  const { h, started } = handlerDeps({ member: "admin" });
   const res = await handleRequest(request(body()), h);
   assertEquals(res.status, 200);
   assertEquals(await res.json(), { report_id: "r1" });
@@ -197,18 +201,18 @@ Deno.test("rejects viewers", async () => {
 });
 
 Deno.test("rejects bad tokens", async () => {
-  const { h } = handlerDeps({ profile: "admin" });
+  const { h } = handlerDeps({ profile: "superadmin" });
   assertEquals((await handleRequest(request(body(), "bad"), h)).status, 401);
 });
 
 Deno.test("rejects oversized snapshot", async () => {
-  const { h } = handlerDeps({ profile: "admin" });
+  const { h } = handlerDeps({ profile: "superadmin" });
   const res = await handleRequest(request(body({ snapshot: { version: 1, padding: "x".repeat(600_000) } })), h);
   assertEquals(res.status, 400);
 });
 
 Deno.test("rejects bad dates and wrong snapshot version", async () => {
-  const { h } = handlerDeps({ profile: "admin" });
+  const { h } = handlerDeps({ profile: "superadmin" });
   assertEquals((await handleRequest(request(body({ period_start: "nope" })), h)).status, 400);
   assertEquals((await handleRequest(request(body({ period_start: "2026-11-02", period_end: "2026-11-01" })), h)).status, 400);
   assertEquals((await handleRequest(request(body({ snapshot: { version: 2 } })), h)).status, 400);
@@ -224,4 +228,35 @@ Deno.test("second report while one runs is rejected", async () => {
 Deno.test("unknown project is 404", async () => {
   const { h } = handlerDeps({ profile: "superadmin" });
   assertEquals((await handleRequest(request(body({ project_id: "p2" })), h)).status, 404);
+});
+
+Deno.test("stale running report is expired before starting", async () => {
+  const { h } = handlerDeps({ member: "admin" }, "stale");
+  assertEquals((await handleRequest(request(body()), h)).status, 200);
+});
+
+Deno.test("rejects platform admin who is not a project member", async () => {
+  const { h, started } = handlerDeps({ profile: "admin" });
+  assertEquals((await handleRequest(request(body()), h)).status, 403);
+  assertEquals(started, []);
+});
+
+Deno.test("allows platform admin who created the project", async () => {
+  const { h } = handlerDeps({ profile: "admin", createdBy: "u1" });
+  assertEquals((await handleRequest(request(body()), h)).status, 200);
+});
+
+Deno.test("AI calls get a timeout within the remaining budget", async () => {
+  const { d, timeouts } = deps();
+  let t = 0;
+  d.now = () => (t += 20_000);
+  await runAudit(context(), d);
+  assertEquals(timeouts.length > 0, true);
+  for (const ms of timeouts) assertEquals(ms > 0 && ms <= 30_000, true);
+});
+
+Deno.test("unreachable site has no GEO score", async () => {
+  const { d, patches } = deps({ fetch: fakeFetch(brandSite, ["https://brand.com"]) });
+  await runAudit(context(), d);
+  assertEquals(patches.at(-1)!.geo_score, null);
 });

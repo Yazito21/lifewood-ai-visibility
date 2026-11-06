@@ -8,7 +8,15 @@ export type OpenRouterResult = {
   cost: number | null;
 };
 
-type Deps = { apiKey?: string; model?: string; fetch?: typeof fetch };
+type Deps = {
+  apiKey?: string;
+  model?: string;
+  fetch?: typeof fetch;
+  /** Per-attempt timeout (default 30 s). */
+  timeoutMs?: number;
+  /** Retry once on rate limits, server errors and timeouts (default true). */
+  retry?: boolean;
+};
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "google/gemini-2.5-flash-lite";
@@ -16,7 +24,7 @@ const TIMEOUT_MS = 30_000;
 
 class RetryableError extends Error {}
 
-async function attempt(messages: ChatMessage[], maxTokens: number, apiKey: string, model: string, doFetch: typeof fetch) {
+async function attempt(messages: ChatMessage[], maxTokens: number, apiKey: string, model: string, doFetch: typeof fetch, timeoutMs: number) {
   let response: Response;
   try {
     response = await doFetch(ENDPOINT, {
@@ -35,7 +43,7 @@ async function attempt(messages: ChatMessage[], maxTokens: number, apiKey: strin
         response_format: { type: "json_object" },
         usage: { include: true },
       }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch {
     throw new RetryableError("AI_UNAVAILABLE");
@@ -64,12 +72,14 @@ export async function callOpenRouter(messages: ChatMessage[], maxTokens: number,
   if (!apiKey) throw new Error("AI_NOT_CONFIGURED");
   const model = deps.model || Deno.env.get("OPENROUTER_MODEL") || DEFAULT_MODEL;
   const doFetch = deps.fetch ?? fetch;
+  const timeoutMs = Math.max(1, Math.min(deps.timeoutMs ?? TIMEOUT_MS, TIMEOUT_MS));
   try {
-    return await attempt(messages, maxTokens, apiKey, model, doFetch);
+    return await attempt(messages, maxTokens, apiKey, model, doFetch, timeoutMs);
   } catch (error) {
     if (!(error instanceof RetryableError)) throw error;
+    if (deps.retry === false) throw new Error("AI_UNAVAILABLE");
     try {
-      return await attempt(messages, maxTokens, apiKey, model, doFetch);
+      return await attempt(messages, maxTokens, apiKey, model, doFetch, timeoutMs);
     } catch (retryError) {
       throw retryError instanceof RetryableError ? new Error("AI_UNAVAILABLE") : retryError;
     }

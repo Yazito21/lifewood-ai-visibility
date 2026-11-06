@@ -600,7 +600,8 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
   html, body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .platform-shell-chrome, .report-toolbar, .report-edit-button { display: none !important; }
   .project-main { padding: 0 !important; max-width: none !important; }
-  .report-document { gap: 0; display: block; }
+  .report-document { gap: 0; display: block; margin: 0 !important; }
+  .ops-page, .project-main, main { margin: 0 !important; padding: 0 !important; }
   .report-page {
     width: 297mm; height: 167mm; max-width: none; aspect-ratio: auto; margin: 0;
     border-radius: 0; box-shadow: none; break-after: page; page-break-after: always;

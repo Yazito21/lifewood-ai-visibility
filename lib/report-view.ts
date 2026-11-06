@@ -3,6 +3,11 @@ import type { Narrative, ReportEdits, ReportSnapshot, ReportStatus } from "./rep
 
 export type Tone = "good" | "fair" | "poor";
 
+/** Mirrors public.can_edit_project(): superadmin, project admin, or the platform admin who created the project. */
+export function canEditProject(profileRole: string | null | undefined, memberRole: string | null | undefined, createdByUser: boolean): boolean {
+  return profileRole === "superadmin" || memberRole === "admin" || memberRole === "superadmin" || (profileRole === "admin" && createdByUser);
+}
+
 const STALE_AFTER_MS = 10 * 60 * 1000;
 
 /** Rating bands from the geo-audit skill (same as site-audit scoring.ts). */

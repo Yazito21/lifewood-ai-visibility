@@ -1,6 +1,6 @@
 import { fetchPublic } from "../_shared/safe-fetch.ts";
 import { scorePageCitability } from "./citability.ts";
-import { parseSitemap } from "./crawl.ts";
+import { looksBlocked, parseSitemap } from "./crawl.ts";
 import { AI_CRAWLERS, parseRobots } from "./crawlers.ts";
 import { countKnowledgeAssets, totalAssets } from "./knowledge-assets.ts";
 import { analyzeLlmsTxt } from "./llms-txt.ts";
@@ -39,6 +39,7 @@ export async function checkCompetitor(c: CompetitorInput & { website: string }, 
   }
   const home = await fetchPublic(root + "/", { accept: "text/html", fetch: doFetch });
   if (!home.ok) return { ...base, error: home.reason === "http_error" ? `HTTP ${home.status}` : home.reason };
+  if (!home.contentType.includes("html") || looksBlocked(home.body)) return { ...base, error: "blocks automated visitors" };
   const homeOrigin = new URL(home.url).origin;
   const text = (url: string) => fetchPublic(url, { accept: "text/plain,application/xml", fetch: doFetch }).then((p) => (p.ok ? p.body : null));
   const [robotsText, llmsText, sitemapXml] = await Promise.all([

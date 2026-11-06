@@ -1,6 +1,6 @@
 import test from "node:test";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
-import { effectiveStatus, fmtDate, fmtScore, rating, setText, suggestedTargets, targetsFor, textFor } from "./report-view.ts";
+import { canEditProject, effectiveStatus, fmtDate, fmtScore, rating, setText, suggestedTargets, targetsFor, textFor } from "./report-view.ts";
 import type { Narrative, ReportSnapshot } from "./report-types.ts";
 
 const narrative: Narrative = {
@@ -90,4 +90,12 @@ test("fmtDate and fmtScore", () => {
   strictEqual(fmtScore(null), "—");
   strictEqual(fmtScore(42.456), "42.5");
   strictEqual(fmtScore(42, 0), "42");
+});
+
+test("platform admin needs membership or ownership to edit a project", () => {
+  strictEqual(canEditProject("admin", null, false), false);
+  strictEqual(canEditProject("admin", null, true), true);
+  strictEqual(canEditProject("viewer", "admin", false), true);
+  strictEqual(canEditProject("superadmin", null, false), true);
+  strictEqual(canEditProject("viewer", "viewer", false), false);
 });

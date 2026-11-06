@@ -12,6 +12,7 @@ import { periodFromChoice, type PeriodChoice } from "@/lib/report-data";
 import { effectiveStatus, fmtDate, fmtScore, rating, type Tone } from "@/lib/report-view";
 import { trackingLocationLabel } from "@/lib/tracking-locations";
 import type { ReportStatus } from "@/lib/report-types";
+import { canEditProject } from "@/lib/report-view";
 
 type ReportListRow = {
   id: string;
@@ -66,7 +67,7 @@ export default function ReportsPage() {
         supabase.from("audit_reports")
           .select("id,created_at,updated_at,period_label,period_start,period_end,status,ai_visibility_score,geo_score,seo_score,error")
           .eq("project_id", projectId).order("created_at", { ascending: false }),
-        supabase.from("projects").select("tracking_market").eq("id", projectId).maybeSingle(),
+        supabase.from("projects").select("tracking_market,created_by").eq("id", projectId).maybeSingle(),
         user ? supabase.from("profiles").select("role").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
         user ? supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
       ]);
@@ -74,8 +75,7 @@ export default function ReportsPage() {
       if (list.error) setError(list.error.message);
       setReports((list.data ?? []) as ReportListRow[]);
       setLocation(project.data?.tracking_market ?? "MY");
-      const roles = [profile.data?.role, member.data?.role];
-      setCanGenerate(roles.includes("admin") || roles.includes("superadmin"));
+      setCanGenerate(canEditProject(profile.data?.role, member.data?.role, project.data?.created_by === user?.id));
       setLoading(false);
     }
     void load();

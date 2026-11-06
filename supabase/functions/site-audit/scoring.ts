@@ -64,8 +64,11 @@ export function platformScore(byEngine: { visibilityScore: number | null }[]): n
   return Math.round(values.reduce((sum, v) => sum + clamp(v), 0) / values.length);
 }
 
-/** Weighted mean over the measured categories; weights of missing categories are redistributed. */
+/** Weighted mean over the measured categories; weights of missing categories are redistributed. Null without website data. */
 export function geoScore(scores: Record<GeoCategory, number | null>): number | null {
+  // Without any website measurement the "GEO score" would only restate AI visibility, so it is not given.
+  const website: GeoCategory[] = ["citability", "brand", "eeat", "technical", "schema"];
+  if (website.every((category) => scores[category] === null || !Number.isFinite(scores[category] as number))) return null;
   let total = 0;
   let weight = 0;
   for (const [category, w] of Object.entries(GEO_WEIGHTS) as [GeoCategory, number][]) {

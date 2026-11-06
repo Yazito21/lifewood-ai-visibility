@@ -60,17 +60,43 @@ function originFor(domain: string): string {
   return new URL(withScheme).origin;
 }
 
-async function fetchText(url: string, accept: string, doFetch?: typeof fetch): Promise<string | null> {
-  const page = await fetchPublic(url, { accept, fetch: doFetch });
+const PER_FETCH_MS = 8_000;
+
+/** Per-fetch timeout: 8 s, or less when the deadline is closer. */
+function fetchTimeout(deadline?: number): number {
+  return deadline ? Math.max(500, Math.min(PER_FETCH_MS, deadline - Date.now())) : PER_FETCH_MS;
+}
+const pastDeadline = (deadline?: number) => Boolean(deadline && Date.now() > deadline);
+
+async function fetchText(url: string, accept: string, deps: Deps): Promise<string | null> {
+  const page = await fetchPublic(url, { accept, fetch: deps.fetch, timeoutMs: fetchTimeout(deps.deadline) });
   return page.ok ? page.body : null;
 }
 
-async function fetchHtml(url: string, doFetch?: typeof fetch): Promise<FetchedHtml | null> {
+async function fetchHtml(url: string, deps: Deps): Promise<FetchedHtml | null> {
   const started = Date.now();
-  const page = await fetchPublic(url, { accept: "text/html", fetch: doFetch });
+  const page = await fetchPublic(url, { accept: "text/html", fetch: deps.fetch, timeoutMs: fetchTimeout(deps.deadline) });
   if (!page.ok || !page.contentType.includes("html")) return null;
   return { url: page.url, status: page.status, html: page.body, ms: Date.now() - started };
 }
+
+const CHALLENGE = /cf-chl|challenge-platform|__cf_bm|just a moment\.\.\.|attention required|captcha|access denied|sucuri|incapsula|ddos-guard|are you a robot/i;
+
+/** True when a homepage is a bot challenge or has no readable content and no links. */
+export function looksBlocked(html: string): boolean {
+  if (CHALLENGE.test(html.slice(0, 20_000))) return true;
+  const text = html.replace(/<(script|style|noscript)[\s\S]*?<\/\1>/gi, " ").replace(/<[^>]+>/g, " ");
+  const words = text.split(/\s+/).filter(Boolean).length;
+  return words < 30 && !/<a\s[^>]*href/i.test(html);
+}
+
+const sameSite = (url: string, origin: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "") === new URL(origin).hostname.replace(/^www\./, "");
+  } catch {
+    return false;
+  }
+};
 
 export function pageLinks(html: string, base: string): string[] {
   const out: string[] = [];
@@ -103,40 +129,44 @@ export async function crawlSite(domain: string, deps: Deps = {}): Promise<CrawlR
   } catch {
     return unreachable(domain, "The website address is not valid.");
   }
-  const home = await fetchPublic(origin + "/", { accept: "text/html", fetch: deps.fetch });
+  const home = await fetchPublic(origin + "/", { accept: "text/html", fetch: deps.fetch, timeoutMs: PER_FETCH_MS });
   if (!home.ok) {
     return unreachable(origin, home.reason === "http_error" ? `The website returned HTTP ${home.status}.` : FAILURE_TEXT[home.reason]);
   }
+  if (!home.contentType.includes("html")) return unreachable(origin, "The website did not return a web page.");
+  if (looksBlocked(home.body)) return unreachable(origin, "The website blocks automated visitors (bot protection), so it could not be audited.");
   const homeOrigin = new URL(home.url).origin;
   const homepage: FetchedHtml = { url: home.url, status: home.status, html: home.body, ms: 0 };
 
   const [robotsText, llmsText] = await Promise.all([
-    fetchText(homeOrigin + "/robots.txt", "text/plain", deps.fetch),
-    fetchText(homeOrigin + "/llms.txt", "text/plain", deps.fetch),
+    fetchText(homeOrigin + "/robots.txt", "text/plain", deps),
+    fetchText(homeOrigin + "/llms.txt", "text/plain", deps),
   ]);
-  const sitemapSources = [...(robotsText ?? "").matchAll(/^\s*sitemap\s*:\s*(\S+)/gim)].map((m) => m[1]);
+  // Sitemaps are only read from the site's own host.
+  const sitemapSources = [...(robotsText ?? "").matchAll(/^\s*sitemap\s*:\s*(\S+)/gim)].map((m) => m[1]).filter((url) => sameSite(url, homeOrigin));
   if (!sitemapSources.length) sitemapSources.push(homeOrigin + "/sitemap.xml");
 
   const sitemapUrls: string[] = [];
   const children: string[] = [];
   for (const source of sitemapSources.slice(0, 2)) {
-    const xml = await fetchText(source, "application/xml,text/xml", deps.fetch);
+    if (pastDeadline(deps.deadline)) break;
+    const xml = await fetchText(source, "application/xml,text/xml", deps);
     if (!xml) continue;
     const parsed = parseSitemap(xml);
     sitemapUrls.push(...parsed.urls);
     children.push(...parsed.childSitemaps);
   }
-  for (const child of children.slice(0, MAX_CHILD_SITEMAPS)) {
-    if (deps.deadline && Date.now() > deps.deadline) break;
-    const xml = await fetchText(child, "application/xml,text/xml", deps.fetch);
+  for (const child of children.filter((url) => sameSite(url, homeOrigin)).slice(0, MAX_CHILD_SITEMAPS)) {
+    if (pastDeadline(deps.deadline)) break;
+    const xml = await fetchText(child, "application/xml,text/xml", deps);
     if (xml) sitemapUrls.push(...parseSitemap(xml).urls);
   }
 
   const targets = pickKeyPages(homepage.url, [...sitemapUrls, ...pageLinks(homepage.html, homepage.url)]);
   const pages: FetchedHtml[] = [];
   for (let i = 0; i < targets.length; i += CONCURRENCY) {
-    if (deps.deadline && Date.now() > deps.deadline) break;
-    const batch = await Promise.all(targets.slice(i, i + CONCURRENCY).map((url) => fetchHtml(url, deps.fetch)));
+    if (pastDeadline(deps.deadline)) break;
+    const batch = await Promise.all(targets.slice(i, i + CONCURRENCY).map((url) => fetchHtml(url, deps)));
     pages.push(...batch.filter((page): page is FetchedHtml => page !== null));
   }
   return { origin: homeOrigin, reachable: true, homepage, pages, robotsText, llmsText, sitemapUrls };

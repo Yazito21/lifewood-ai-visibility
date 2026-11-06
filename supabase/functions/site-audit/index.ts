@@ -9,7 +9,7 @@ import { parseRobots } from "./crawlers.ts";
 import { buildFindings } from "./findings.ts";
 import { countKnowledgeAssets } from "./knowledge-assets.ts";
 import { analyzeLlmsTxt } from "./llms-txt.ts";
-import { eeatMessages, fallbackNarrative, type Narrative, narrativeMessages, parseEeat, parseNarrative } from "./narrative.ts";
+import { allowedNumbers, eeatMessages, fallbackNarrative, type Narrative, narrativeMessages, parseEeat, parseNarrative } from "./narrative.ts";
 import { extractSchema, mergeSchema } from "./schema.ts";
 import {
   brandScore, citabilityScore, eeatScore, geoScore, platformScore, schemaScore, seoHealth, technicalScore,
@@ -33,7 +33,8 @@ export type AuditContext = { reportId: string; brandName: string; website: strin
 
 export type AuditDeps = {
   fetch: typeof fetch;
-  callAi: (messages: ChatMessage[], maxTokens: number) => Promise<OpenRouterResult>;
+  /** timeoutMs caps each attempt; retry=false when there is no time for a second attempt. */
+  callAi: (messages: ChatMessage[], maxTokens: number, timeoutMs: number, retry: boolean) => Promise<OpenRouterResult>;
   save: (patch: Record<string, unknown>) => Promise<void>;
   logUsage: (action: "audit_eeat" | "audit_narrative", result: OpenRouterResult) => Promise<void>;
   now: () => number;
@@ -42,7 +43,9 @@ export type AuditDeps = {
 export type HandlerDeps = {
   userIdForToken: (token: string) => Promise<string | null>;
   roles: (userId: string, projectId: string) => Promise<{ profileRole: string | null; memberRole: string | null }>;
-  project: (projectId: string) => Promise<{ id: string; brand_name: string; brand_domains: string[] | null } | null>;
+  project: (projectId: string) => Promise<{ id: string; brand_name: string; brand_domains: string[] | null; created_by: string | null } | null>;
+  /** Marks reports stuck in queued/running for over 10 minutes as failed, so they no longer block new reports. */
+  expireStale: (projectId: string) => Promise<void>;
   insertReport: (row: Record<string, unknown>) => Promise<{ id: string } | { conflict: true } | { error: string }>;
   startAudit: (ctx: AuditContext) => void;
 };
@@ -50,10 +53,13 @@ export type HandlerDeps = {
 // ---------- constants ----------
 
 const MAX_SNAPSHOT_BYTES = 512 * 1024;
-const CRAWL_BUDGET_MS = 70_000;
-const COMPETITOR_BUDGET_MS = 90_000;
-const EEAT_BUDGET_MS = 100_000;
-const NARRATIVE_BUDGET_MS = 110_000;
+// Supabase Free plan stops a function after 150 s of wall-clock time; the job keeps 15 s in reserve.
+const TOTAL_BUDGET_MS = 135_000;
+const CRAWL_BUDGET_MS = 60_000;
+const COMPETITOR_START_LIMIT_MS = 80_000;
+const MIN_AI_WINDOW_MS = 20_000;
+const AI_TIMEOUT_MS = 30_000;
+const SAFETY_MS = 5_000;
 const MAX_COMPETITORS = 3;
 
 const AI_MESSAGES: Record<string, string> = {
@@ -78,16 +84,21 @@ function json(body: unknown, status = 200) {
 
 // ---------- audit job ----------
 
-async function askJson<T>(deps: AuditDeps, action: "audit_eeat" | "audit_narrative", messages: ChatMessage[], maxTokens: number, parse: (text: string) => T): Promise<{ value: T; cost: number }> {
+/** Calls the model within the remaining time; retries (network or bad JSON) only when there is time for it. */
+async function askJson<T>(deps: AuditDeps, remaining: () => number, action: "audit_eeat" | "audit_narrative", messages: ChatMessage[], maxTokens: number, parse: (text: string) => T): Promise<{ value: T; cost: number }> {
   let cost = 0;
   for (let attempt = 0; ; attempt++) {
-    const result = await deps.callAi(messages, maxTokens);
+    const left = remaining();
+    if (left < MIN_AI_WINDOW_MS) throw new Error("AI_TIME_BUDGET");
+    const timeout = Math.min(AI_TIMEOUT_MS, left - SAFETY_MS);
+    const result = await deps.callAi(messages, maxTokens, timeout, left > 2 * timeout + SAFETY_MS);
     cost += result.cost ?? 0;
     await deps.logUsage(action, result);
     try {
       return { value: parse(result.text), cost };
     } catch (error) {
       if (attempt >= 1 || !(error instanceof Error) || error.message !== "MODEL_JSON_INVALID") throw error;
+      if (remaining() < MIN_AI_WINDOW_MS) throw error;
     }
   }
 }
@@ -102,6 +113,7 @@ export async function runAudit(ctx: AuditContext, deps: AuditDeps): Promise<void
   try {
     const start = deps.now();
     const elapsed = () => deps.now() - start;
+    const remaining = () => TOTAL_BUDGET_MS - elapsed();
     const notices: string[] = [];
     const budgetSkipped: string[] = [];
     const snapshot = ctx.snapshot;
@@ -130,7 +142,7 @@ export async function runAudit(ctx: AuditContext, deps: AuditDeps): Promise<void
     await deps.save({ step: "competitors" });
     let competitors: CompetitorCheck[] = [];
     const rivals = (snapshot.competitors ?? []).filter((c) => !c.isTracked && c.website).slice(0, MAX_COMPETITORS);
-    if (elapsed() > COMPETITOR_BUDGET_MS) budgetSkipped.push("Competitor website checks");
+    if (rivals.length && elapsed() > COMPETITOR_START_LIMIT_MS) budgetSkipped.push("Competitor website checks");
     else competitors = await Promise.all(rivals.map((c) => checkCompetitor({ name: c.name, website: c.website as string }, deps.fetch)));
 
     await deps.save({ step: "scoring_content" });
@@ -140,14 +152,15 @@ export async function runAudit(ctx: AuditContext, deps: AuditDeps): Promise<void
       .map((page) => ({ url: page.url, text: htmlToText(page.html, 8000) ?? "" }))
       .filter((page) => page.text);
     let aiFailure: string | null = null;
-    if (pageTexts.length && elapsed() > EEAT_BUDGET_MS) budgetSkipped.push("Content quality (E-E-A-T) scoring");
+    if (pageTexts.length && remaining() < MIN_AI_WINDOW_MS) budgetSkipped.push("Content quality (E-E-A-T) scoring");
     else if (pageTexts.length) {
       try {
-        const result = await askJson(deps, "audit_eeat", eeatMessages(ctx.brandName, pageTexts), 700, parseEeat);
+        const result = await askJson(deps, remaining, "audit_eeat", eeatMessages(ctx.brandName, pageTexts), 700, parseEeat);
         eeat = result.value;
         aiCost += result.cost;
       } catch (error) {
-        aiFailure = aiCode(error);
+        if (error instanceof Error && error.message === "AI_TIME_BUDGET") budgetSkipped.push("Content quality (E-E-A-T) scoring");
+        else aiFailure = aiCode(error);
       }
     }
 
@@ -181,19 +194,20 @@ export async function runAudit(ctx: AuditContext, deps: AuditDeps): Promise<void
         competitorWebsites: competitors,
       },
     };
-    if (elapsed() > NARRATIVE_BUDGET_MS) {
+    if (remaining() < MIN_AI_WINDOW_MS) {
       budgetSkipped.push("AI-written report text");
       narrative = fallbackNarrative(findings);
     } else if (aiFailure && aiFailure !== "MODEL_JSON_INVALID") {
       narrative = fallbackNarrative(findings);
     } else {
       try {
-        const allowed = JSON.stringify(input);
-        const result = await askJson(deps, "audit_narrative", narrativeMessages(input), 1800, (text) => parseNarrative(text, allowed));
+        const allowed = allowedNumbers(input);
+        const result = await askJson(deps, remaining, "audit_narrative", narrativeMessages(input), 1800, (text) => parseNarrative(text, allowed));
         narrative = result.value;
         aiCost += result.cost;
       } catch (error) {
-        aiFailure = aiCode(error);
+        if (error instanceof Error && error.message === "AI_TIME_BUDGET") budgetSkipped.push("AI-written report text");
+        else aiFailure = aiCode(error);
         narrative = fallbackNarrative(findings);
       }
     }
@@ -275,9 +289,14 @@ export async function handleRequest(req: Request, deps: HandlerDeps): Promise<Re
     }
 
     const [roles, project] = await Promise.all([deps.roles(userId, projectId), deps.project(projectId)]);
-    const canEdit = ["superadmin", "admin"].includes(roles.profileRole ?? "") || ["superadmin", "admin"].includes(roles.memberRole ?? "");
+    // Same rule as public.can_edit_project(): superadmin, project admin, or the platform admin who created the project.
+    const canEdit = roles.profileRole === "superadmin" ||
+      ["superadmin", "admin"].includes(roles.memberRole ?? "") ||
+      (roles.profileRole === "admin" && project?.created_by === userId);
     if (!canEdit) return json({ error: "Not authorized." }, 403);
     if (!project) return json({ error: "PROJECT_NOT_FOUND" }, 404);
+
+    await deps.expireStale(projectId);
 
     const inserted = await deps.insertReport({
       project_id: projectId,
@@ -341,8 +360,15 @@ function liveDeps(): HandlerDeps {
       return { profileRole: profile?.role ?? null, memberRole: member?.role ?? null };
     },
     project: async (projectId) => {
-      const { data } = await admin.from("projects").select("id,brand_name,brand_domains").eq("id", projectId).maybeSingle();
+      const { data } = await admin.from("projects").select("id,brand_name,brand_domains,created_by").eq("id", projectId).maybeSingle();
       return data ?? null;
+    },
+    expireStale: async (projectId) => {
+      const cutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      const { error } = await admin.from("audit_reports")
+        .update({ status: "failed", error: "The report stopped making progress. Generate it again." })
+        .eq("project_id", projectId).in("status", ["queued", "running"]).lt("updated_at", cutoff);
+      if (error) console.error("EXPIRE_STALE_FAILED", error.message);
     },
     insertReport: async (row) => {
       const { data, error } = await admin.from("audit_reports").insert(row).select("id").single();
@@ -354,7 +380,7 @@ function liveDeps(): HandlerDeps {
       const who = requester;
       const job = runAudit(ctx, {
         fetch,
-        callAi: (messages, maxTokens) => callOpenRouter(messages, maxTokens),
+        callAi: (messages, maxTokens, timeoutMs, retry) => callOpenRouter(messages, maxTokens, { timeoutMs, retry }),
         save: async (patch) => {
           const { error } = await admin.from("audit_reports").update(patch).eq("id", ctx.reportId);
           if (error) throw new Error("REPORT_SAVE_FAILED: " + error.message);

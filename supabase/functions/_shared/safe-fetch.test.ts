@@ -78,3 +78,30 @@ Deno.test("caps the body", async () => {
   assertEquals(result.ok, true);
   if (result.ok) assertEquals(result.body.length, 1000);
 });
+
+Deno.test("rejects hostname resolving to a private address", async () => {
+  const result = await fetchPublic("https://sneaky.example.com/", {
+    accept: "text/html",
+    resolve: () => Promise.resolve(["10.0.0.5"]),
+    fetch: fakeFetch({ "https://sneaky.example.com/": { status: 200, body: "secret" } }),
+  });
+  assertEquals(result.ok, false);
+  if (!result.ok) assertEquals(result.reason, "unsafe_url");
+});
+
+Deno.test("rejects metadata, loopback and private addresses", async () => {
+  for (const ip of ["169.254.169.254", "127.0.0.1", "100.64.0.1", "::1", "fd00::1", "192.168.1.1", "172.16.0.1", "0.0.0.0", "::ffff:10.0.0.1"]) {
+    const result = await fetchPublic("https://x.example.com/", {
+      accept: "text/html", resolve: () => Promise.resolve([ip]), fetch: fakeFetch({ "https://x.example.com/": { status: 200 } }),
+    });
+    assertEquals(result.ok, false, ip);
+  }
+});
+
+Deno.test("allows hostnames resolving to public addresses", async () => {
+  const result = await fetchPublic("https://example.com/", {
+    accept: "text/html", resolve: () => Promise.resolve(["93.184.216.34", "2606:2800:220:1::248"]),
+    fetch: fakeFetch({ "https://example.com/": { status: 200, body: "ok" } }),
+  });
+  assertEquals(result.ok, true);
+});

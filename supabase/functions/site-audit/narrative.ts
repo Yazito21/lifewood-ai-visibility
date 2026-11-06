@@ -89,41 +89,74 @@ function normaliseNumber(token: string): string {
   return Number.isFinite(value) ? String(value) : cleaned;
 }
 
-/** Removes sentences that contain a number not present in the allowed text. */
-export function stripUnknownNumbers(text: string, allowedText: string): string {
-  const allowed = new Set((allowedText.match(NUMBER) ?? []).map(normaliseNumber));
+/** Every number written in a piece of text, normalised (thousands separators and % removed). */
+export function numbersIn(text: string): Set<string> {
+  return new Set((text.match(NUMBER) ?? []).map(normaliseNumber));
+}
+
+function addNumber(set: Set<string>, value: number) {
+  if (!Number.isFinite(value)) return;
+  for (const n of [value, Math.round(value), Math.round(value * 10) / 10, Math.abs(value), Math.round(Math.abs(value))]) set.add(String(n));
+}
+
+/**
+ * Numbers the report text may use: numeric values in the input (and their rounded forms) plus numbers
+ * written in the deterministic findings. Numbers inside other strings (dates, URLs, prompt text) do not count.
+ */
+export function allowedNumbers(input: NarrativeInput): Set<string> {
+  const allowed = new Set<string>();
+  const walk = (value: unknown, inFindings: boolean) => {
+    if (typeof value === "number") addNumber(allowed, value);
+    else if (typeof value === "string") {
+      if (inFindings) for (const n of numbersIn(value)) allowed.add(n);
+    } else if (Array.isArray(value)) value.forEach((item) => walk(item, inFindings));
+    else if (value && typeof value === "object") {
+      for (const [key, child] of Object.entries(value)) walk(child, inFindings || key === "findings");
+    }
+  };
+  walk(input.facts, false);
+  return allowed;
+}
+
+/** Removes sentences that contain a number not in the allowed set. */
+export function stripUnknownNumbers(text: string, allowed: Set<string>): string {
   const sentences = text.split(/(?<=[.!?])\s+/);
   const kept = sentences.filter((sentence) => (sentence.match(NUMBER) ?? []).every((n) => allowed.has(normaliseNumber(n))));
   return kept.map((s) => s.trim()).filter(Boolean).join(" ");
 }
 
-function str(value: unknown, allowed: string): string {
-  return typeof value === "string" ? stripUnknownNumbers(value.trim(), allowed) : "";
-}
-
-function list(value: unknown, allowed: string): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => str(item, allowed)).filter(Boolean).slice(0, MAX_ITEMS);
-}
-
-export function parseNarrative(text: string, allowedText: string): Narrative {
+/**
+ * Parses the narrative and applies the number guard. Throws MODEL_JSON_INVALID when the reply is empty or
+ * when more than half of its text was removed by the guard, so the plain-findings fallback is used instead.
+ */
+export function parseNarrative(text: string, allowed: Set<string>): Narrative {
   const data = extractJson(text) as Record<string, any> | null;
   if (!data || typeof data !== "object") invalid();
-  const pillars = Object.fromEntries(
-    PILLAR_KEYS.map((key) => [key, { position: list(data.pillars?.[key]?.position, allowedText) }]),
-  ) as Narrative["pillars"];
-  return {
-    executiveSummary: { position: list(data.executiveSummary?.position, allowedText) },
-    kpiNotes: {
-      visibility: str(data.kpiNotes?.visibility, allowedText),
-      rank: str(data.kpiNotes?.rank, allowedText),
-      citations: str(data.kpiNotes?.citations, allowedText),
-      shareOfVoice: str(data.kpiNotes?.shareOfVoice, allowedText),
-    },
-    competitorSummary: str(data.competitorSummary, allowedText),
-    pillars,
-    targetNotes: str(data.targetNotes, allowedText),
+  let generated = 0;
+  let kept = 0;
+  const str = (value: unknown): string => {
+    if (typeof value !== "string" || !value.trim()) return "";
+    generated++;
+    const clean = stripUnknownNumbers(value.trim(), allowed);
+    if (clean) kept++;
+    return clean;
   };
+  const list = (value: unknown): string[] => (Array.isArray(value) ? value.slice(0, MAX_ITEMS).map(str).filter(Boolean) : []);
+  const pillars = Object.fromEntries(PILLAR_KEYS.map((key) => [key, { position: list(data.pillars?.[key]?.position) }])) as Narrative["pillars"];
+  const narrative: Narrative = {
+    executiveSummary: { position: list(data.executiveSummary?.position) },
+    kpiNotes: {
+      visibility: str(data.kpiNotes?.visibility),
+      rank: str(data.kpiNotes?.rank),
+      citations: str(data.kpiNotes?.citations),
+      shareOfVoice: str(data.kpiNotes?.shareOfVoice),
+    },
+    competitorSummary: str(data.competitorSummary),
+    pillars,
+    targetNotes: str(data.targetNotes),
+  };
+  if (generated === 0 || kept * 2 < generated) invalid();
+  return narrative;
 }
 
 const FALLBACK_SOURCES: Record<PillarKey, string[]> = {

@@ -51,3 +51,42 @@ Deno.test("crawlSite fetches robots, llms.txt, sitemap and key pages", async () 
   assertEquals(result.sitemapUrls, ["https://a.com/about"]);
   assertEquals(result.pages.map((p) => p.url).sort(), ["https://a.com/about", "https://a.com/contact"]);
 });
+
+function siteFetch(site: Record<string, { body: string; type: string }>, seen: string[] = []): typeof fetch {
+  return ((input: string | URL | Request) => {
+    const url = String(input);
+    seen.push(url);
+    const page = site[url];
+    return Promise.resolve(page ? new Response(page.body, { status: 200, headers: { "content-type": page.type } }) : new Response("no", { status: 404 }));
+  }) as typeof fetch;
+}
+
+const okHome = "<html><title>A</title><body><p>" + "word ".repeat(100) + "</p><a href=\"/x\">x</a></body></html>";
+
+Deno.test("challenge page is unreachable", async () => {
+  const r = await crawlSite("https://a.com", { fetch: siteFetch({
+    "https://a.com/": { type: "text/html", body: "<html><head><title>Just a moment...</title></head><body><div id=\"cf-chl-widget\"></div></body></html>" },
+  }) });
+  assertEquals(r.reachable, false);
+  assertEquals(r.error?.includes("blocks automated visitors"), true);
+});
+
+Deno.test("non-HTML homepage is unreachable", async () => {
+  const r = await crawlSite("https://a.com", { fetch: siteFetch({ "https://a.com/": { type: "application/json", body: "{}" } }) });
+  assertEquals(r.reachable, false);
+});
+
+Deno.test("sitemap on another host is ignored", async () => {
+  const seen: string[] = [];
+  await crawlSite("https://a.com", { fetch: siteFetch({
+    "https://a.com/": { type: "text/html", body: okHome },
+    "https://a.com/robots.txt": { type: "text/plain", body: "Sitemap: https://evil.com/s.xml" },
+  }, seen) });
+  assertEquals(seen.includes("https://evil.com/s.xml"), false);
+});
+
+Deno.test("past the deadline only the homepage, robots and llms.txt are fetched", async () => {
+  const seen: string[] = [];
+  await crawlSite("https://a.com", { deadline: Date.now() - 1, fetch: siteFetch({ "https://a.com/": { type: "text/html", body: okHome } }, seen) });
+  assertEquals(seen.sort(), ["https://a.com/", "https://a.com/llms.txt", "https://a.com/robots.txt"]);
+});

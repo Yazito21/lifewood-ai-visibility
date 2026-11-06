@@ -11,7 +11,7 @@ import {
   GapsAndCitationsPage, GeoAuditPage, MethodologyPage, SeoAuditPage, TargetsPage, ThankYouPage, type ReportView,
 } from "@/components/report/sections";
 import { supabase } from "@/lib/supabase";
-import { effectiveStatus, STEP_LABELS, STEP_ORDER } from "@/lib/report-view";
+import { canEditProject, effectiveStatus, STEP_LABELS, STEP_ORDER } from "@/lib/report-view";
 import type { AuditReportRow, ReportEdits } from "@/lib/report-types";
 
 const POLL_MS = 3000;
@@ -53,14 +53,13 @@ export default function ReportPage() {
     void (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       const [project, profile, member] = await Promise.all([
-        supabase.from("projects").select("brand_name,brand_logo_url").eq("id", projectId).maybeSingle(),
+        supabase.from("projects").select("brand_name,brand_logo_url,created_by").eq("id", projectId).maybeSingle(),
         user ? supabase.from("profiles").select("role").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
         user ? supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
       ]);
       if (!alive) return;
       setBrand({ name: project.data?.brand_name ?? "", logoUrl: project.data?.brand_logo_url ?? null });
-      const roles = [profile.data?.role, member.data?.role];
-      setCanEdit(roles.includes("admin") || roles.includes("superadmin"));
+      setCanEdit(canEditProject(profile.data?.role, member.data?.role, project.data?.created_by === user?.id));
     })();
     return () => { alive = false; };
   }, [projectId]);

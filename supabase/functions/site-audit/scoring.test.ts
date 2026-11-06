@@ -97,3 +97,7 @@ Deno.test("seoHealth half page checks", () => {
   // site 40 + 60 * (3/6) = 70
   assertEquals(seoHealth(allSite, [weak]), 70);
 });
+
+Deno.test("platform alone gives no GEO score", () => {
+  assertEquals(geoScore({ citability: null, brand: null, eeat: null, technical: null, schema: null, platform: 30 }), null);
+});

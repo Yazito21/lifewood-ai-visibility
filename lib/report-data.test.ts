@@ -5,21 +5,26 @@ import { benchmarkShareOfVoice, gatherSnapshot, periodFromChoice } from "./repor
 type Rows = Record<string, unknown[]>;
 
 /** Minimal chainable stand-in for the Supabase client: every query on a table returns its fixture rows. */
-function fakeClient(tables: Rows, rpcs: Rows = {}) {
-  const query = (rows: unknown[]) => {
-    const result = { data: rows, error: null, count: rows.length };
+function fakeClient(tables: Rows, rpcs: Rows = {}, failingRpcs: string[] = []) {
+  const query = (rows: unknown[], failing = false) => {
+    let slice: [number, number] | null = null;
     const chain: Record<string, unknown> = {};
-    for (const method of ["select", "eq", "neq", "gte", "lte", "lt", "in", "order", "range", "limit", "not"]) {
+    for (const method of ["select", "eq", "neq", "gte", "lte", "lt", "in", "order", "limit", "not"]) {
       chain[method] = () => chain;
     }
+    chain.range = (from: number, to: number) => { slice = [from, to]; return chain; };
     chain.single = () => Promise.resolve({ data: rows[0] ?? null, error: null });
     chain.maybeSingle = chain.single;
-    chain.then = (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => Promise.resolve(result).then(resolve, reject);
+    chain.then = (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => {
+      const data = slice ? rows.slice(slice[0], slice[1] + 1) : rows.slice(0, 1000);
+      const result = failing ? { data: null, error: { message: "statement timeout" }, count: null } : { data, error: null, count: rows.length };
+      return Promise.resolve(result).then(resolve, reject);
+    };
     return chain;
   };
   return {
     from: (table: string) => query(tables[table] ?? []),
-    rpc: (name: string) => query(rpcs[name] ?? []),
+    rpc: (name: string) => query(rpcs[name] ?? [], failingRpcs.includes(name)),
   } as never;
 }
 
@@ -75,4 +80,21 @@ test("snapshot reads overall, engines, citations and third-party hosts", async (
   strictEqual(s.thirdPartyHosts, 1);
   strictEqual(s.topCitedDomains[0].hostname, "g2.com");
   strictEqual(s.promptCount, 2);
+});
+
+const project = [{ brand_name: "Brand", brand_domains: ["brand.com"], brand_terms: [], categories: ["Cat A"], tracking_market: "MY" }];
+const period = { label: "Last 7 Days", start: "2026-10-30", end: "2026-11-05" };
+
+test("gaps failure does not block the report", async () => {
+  const s = await gatherSnapshot(fakeClient({ projects: project }, {}, ["get_report_prompt_gaps"]), "p1", period);
+  deepStrictEqual(s.gaps, []);
+});
+
+test("engine rows beyond 1000 are read", async () => {
+  const rows = Array.from({ length: 1200 }, (_, i) => ({
+    metric_date: "2026-10-" + String(1 + Math.floor(i / 40)).padStart(2, "0"), category: "Overall", llm_provider: "chatgpt",
+    visibility_score: i === 1199 ? 77 : 10, share_of_voice_score: 5,
+  }));
+  const s = await gatherSnapshot(fakeClient({ projects: project, visibility_daily: rows }), "p1", period);
+  strictEqual(s.byEngine.find((e) => e.engine === "chatgpt")?.visibilityScore, 77);
 });

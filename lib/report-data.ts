@@ -122,13 +122,18 @@ export async function gatherSnapshot(client: SupabaseClient, projectId: string, 
   const overallSnap = snapshots.get("Overall");
   const overallRank = rankDisplay(overallSnap);
 
-  // Per-engine visibility and share of voice (Analytics query).
-  const { data: engineRows, error: engineError } = await client.from("visibility_daily")
-    .select("metric_date,category,llm_provider,visibility_score,share_of_voice_score")
-    .eq("project_id", projectId).eq("tracking_location", location).neq("llm_provider", "Overall")
-    .gte("metric_date", period.start).lte("metric_date", period.end).order("metric_date");
-  if (engineError) throw engineError;
-  const perEngine = ((engineRows ?? []) as { metric_date: string; category: string; llm_provider: string; visibility_score: unknown; share_of_voice_score: unknown }[])
+  // Per-engine visibility and share of voice (Analytics query), paged past the 1,000-row API limit.
+  const engineRows: unknown[] = [];
+  for (let offset = 0; offset < 20000; offset += 1000) {
+    const { data, error: engineError } = await client.from("visibility_daily")
+      .select("metric_date,category,llm_provider,visibility_score,share_of_voice_score")
+      .eq("project_id", projectId).eq("tracking_location", location).neq("llm_provider", "Overall")
+      .gte("metric_date", period.start).lte("metric_date", period.end).order("metric_date").range(offset, offset + 999);
+    if (engineError) throw engineError;
+    engineRows.push(...(data ?? []));
+    if ((data ?? []).length < 1000) break;
+  }
+  const perEngine = (engineRows as { metric_date: string; category: string; llm_provider: string; visibility_score: unknown; share_of_voice_score: unknown }[])
     .filter((row) => row.llm_provider && row.llm_provider !== "Overall");
   const engines = [...new Set(perEngine.map((row) => row.llm_provider))];
   const latestByEngine = engines.map((engine) => [...perEngine].reverse().find((row) => row.llm_provider === engine && row.category === "Overall" && num(row.visibility_score) !== null));
@@ -144,7 +149,8 @@ export async function gatherSnapshot(client: SupabaseClient, projectId: string, 
     client.from("prompts").select("id", { count: "exact", head: true }).eq("project_id", projectId),
     presenceByBrand(client, projectId, period, location),
   ]);
-  if (gapsResult.error) throw gapsResult.error;
+  // The gaps table is helpful but not essential: if it fails, the report still generates without it.
+  const gapRows = gapsResult.error ? [] : (gapsResult.data ?? []);
 
   // Competitor benchmark (Leaderboards logic, all engines, all categories).
   const leaderboard = engines.length
@@ -194,7 +200,7 @@ export async function gatherSnapshot(client: SupabaseClient, projectId: string, 
       return { category, visibilityScore: num(snap?.visibility_score), rank: snap?.visibility_rank ?? null, rankText: rankDisplay(snap).text };
     }),
     competitors,
-    gaps: ((gapsResult.data ?? []) as { prompt: string; category: string | null; competitors: string[] | null }[])
+    gaps: (gapRows as { prompt: string; category: string | null; competitors: string[] | null }[])
       .map((row) => ({ prompt: row.prompt, category: row.category, competitors: row.competitors ?? [] })),
     topCitedPages: allPages.slice(0, TOP_N).map((row) => ({ url: row.url, frequency: num(row.frequency) ?? 0, isBrand: isBrandUrl(row.url) })),
     topCitedDomains: thirdParty.slice(0, TOP_N).map((row) => ({ hostname: row.hostname, responses: num(row.response_frequency) ?? 0 })),
