@@ -2,6 +2,7 @@ import { reduceEvidenceRows } from "./evidence-reducer.ts";
 import { rankAgainstEligiblePopulation } from "./rank-population.ts";
 import { calculateEntityVisibility } from "./visibility-score.ts";
 import { buildCitationOccurrenceRows } from "./citation-occurrences.ts";
+import { callWithRetry, describeProviderFailures, newRetryState, sleepMs } from "./provider-retry.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -307,6 +308,8 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
   }
   const results: Array<Record<string, unknown> | undefined> = new Array(tasks.length);
   let cursor = 0;
+  // A category only completes when every prompt does, so momentary provider rejections (429, 5xx) are retried per prompt.
+  const retryState = newRetryState<Awaited<ReturnType<typeof callChatGPT>>>();
   async function worker() {
     while (true) {
       const index = cursor++;
@@ -315,7 +318,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
       const started = new Date().toISOString();
       try {
         const projectForLocation = { ...project, tracking_market: trackingLocation, tracking_location: trackingLocation };
-        const answer = await callChatGPT(apiKeys[provider], String(prompt.prompt ?? ""), projectForLocation);
+        const answer = await callWithRetry(() => callChatGPT(apiKeys[provider], String(prompt.prompt ?? ""), projectForLocation), retryState);
         const text = answer.text;
         if (answer.providerError) {
           results[index] = {
@@ -388,7 +391,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
     const responseKey = (r: Record<string, unknown>) => String(r.prompt_id) + "|" + String(r.tracking_location ?? "");
     const allowedIds = new Set(batch.map(responseKey));
     let lastError: unknown = new Error("ENTITY_EXTRACTION_FAILED");
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       const extractionController = new AbortController();
       const extractionTimeout = setTimeout(() => extractionController.abort(), 25000);
       try {
@@ -417,8 +420,9 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         if (!response.ok) {
           const apiMessage = String(payload?.error?.message ?? "Entity extraction failed (" + response.status + ")").slice(0, 250);
           // Retry only transient provider responses; validation/auth errors will not improve.
-          if (attempt === 0 && (response.status === 429 || response.status >= 500)) {
+          if (attempt < 2 && (response.status === 429 || response.status >= 500)) {
             lastError = new Error(apiMessage);
+            await sleepMs(2000 * (attempt + 1));
             continue;
           }
           throw new Error(apiMessage);
@@ -1481,7 +1485,7 @@ Deno.serve(async (req: Request) => {
       ? "completed"
       : succeeded.length ? "partial" : "failed";
     const runIssues = [
-      ...(failed.length ? [String(failed.length) + " prompt(s) failed"] : []),
+      ...(failed.length ? [String(failed.length) + " prompt(s) failed" + describeProviderFailures(failed)] : []),
       ...(extractionFailures ? [String(extractionFailures) + " response analysis item(s) failed"] : []),
       ...(classificationFailures.length ? [String(classificationFailures.length) + " category competitor classification(s) failed"] : []),
     ];
