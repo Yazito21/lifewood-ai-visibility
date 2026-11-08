@@ -20,3 +20,5 @@ jobs:
         run: deno test --no-check --node-modules-dir=none supabase/functions/visibility-tracking/citation-occurrences.test.ts
       - name: Test shared visibility metric (Issue 03)
         run: deno test --no-check --node-modules-dir=none supabase/functions/visibility-tracking/visibility-score.test.ts
+      - name: Test provider retry policy
+        run: deno test --no-check --node-modules-dir=none supabase/functions/visibility-tracking/provider-retry.test.ts
