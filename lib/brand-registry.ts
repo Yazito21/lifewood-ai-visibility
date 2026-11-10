@@ -52,7 +52,9 @@ export function parseBrandWorkbook(buffer: ArrayBuffer): { categories: string[];
   return { categories: [...new Set([...categoriesFromSheet, ...rows.map((row) => row.category)])], rows };
 }
 
-export function validateBrandRows(rows: BrandImportRow[], categories: string[], trackedBrand: string, enforceHundred = true): string[] {
+export const MAX_COMPETITORS_PER_CATEGORY = 99;
+
+export function validateBrandRows(rows: BrandImportRow[], categories: string[], trackedBrand: string): string[] {
   const errors: string[] = [];
   if (!categories.length) return ["Add at least one tracking category."];
   for (const category of categories) {
@@ -61,9 +63,8 @@ export function validateBrandRows(rows: BrandImportRow[], categories: string[], 
     const distinct = new Set(categoryRows.map((row) => normaliseBrandKey(row.brand)));
     if (tracked.length !== 1) errors.push(`${category}: expected exactly one tracked brand (${trackedBrand}); found ${tracked.length}.`);
     if (distinct.size !== categoryRows.length) errors.push(`${category}: duplicate brand names found. Each brand should appear once per category.`);
-    if (enforceHundred && categoryRows.length !== 100) errors.push(`${category}: expected 100 brands (1 tracked brand + 99 competitors); found ${categoryRows.length}.`);
     const competitorCount = categoryRows.filter((row) => row.role !== "tracked_brand" && normaliseBrandKey(row.brand) !== normaliseBrandKey(trackedBrand)).length;
-    if (enforceHundred && competitorCount !== 99) errors.push(`${category}: expected 99 competitors; found ${competitorCount}.`);
+    if (competitorCount > MAX_COMPETITORS_PER_CATEGORY) errors.push(`${category}: at most ${MAX_COMPETITORS_PER_CATEGORY} competitors are allowed; found ${competitorCount}.`);
     for (const row of categoryRows) if (!row.website.trim()) errors.push(`${category}: "${row.brand}" is missing its primary website.`);
   }
   for (const row of rows) if (!categories.includes(row.category)) errors.push(`"${row.category}" is not present in the Categories sheet.`);
@@ -74,10 +75,10 @@ export function downloadBrandTemplate(categories: string[], trackedBrand: string
   const workbook = XLSX.utils.book_new();
   const instructions = [
     ["AI Visibility Brand Registry Template"],
-    ["Use one row per brand per category. Each category must contain exactly 100 brands: 1 tracked brand and 99 competitors."],
+    ["Use one row per brand per category. Each category must contain 1 tracked brand and can have up to 99 competitors."],
     ["Required columns on Brands: Category, Brand, Aliases, Website, Other Websites, Role, Notes."],
     ["Separate multiple aliases and additional websites with semicolons. Use verified official domains only."],
-    ["The tracked brand must appear exactly once in each category. Leave the blank competitor rows blank until filled."],
+    ["The tracked brand must appear exactly once in each category. Competitor slots are optional: leave unused rows blank."],
     ["Do not rename the Categories or Brands sheets."],
   ];
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(instructions), "Instructions");
@@ -181,7 +182,7 @@ export function downloadBrandRegistryWorkbook(categories: string[], rows: BrandI
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
     ["AI Visibility Brand Registry"],
-    ["Edit the Brands sheet and upload it in Settings. Each category should contain one tracked brand and 99 competitors."],
+    ["Edit the Brands sheet and upload it in Settings. Each category should contain one tracked brand and up to 99 competitors."],
   ]), "Instructions");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Category"], ...categories.map((category) => [category])]), "Categories");
   const data: Array<Array<string>> = [["Category", "Brand", "Aliases", "Website", "Other Websites", "Role", "Notes"]];

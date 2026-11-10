@@ -622,7 +622,7 @@ Deno.serve(async (req: Request) => {
         }, 409);
       }
 
-      // Validate the fixed 100-brand comparison set only for categories included in this run.
+      // Validate the brand comparison set (one tracked brand, up to 99 competitors) only for categories included in this run.
       const { data: setupAssignments, error: setupAssignmentError } = await admin.from("category_brand_assignments")
         .select("category,brand_id,role,include_in_metrics").eq("project_id", projectId).eq("include_in_metrics", true);
       if (setupAssignmentError) return json({ error: "BRAND_REGISTRY_VALIDATION_FAILED", message: setupAssignmentError.message }, 500);
@@ -632,10 +632,10 @@ Deno.serve(async (req: Request) => {
         const tracked = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "tracked_brand").map((row: Record<string, unknown>) => String(row.brand_id))).size;
         const competitors = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "competitor").map((row: Record<string, unknown>) => String(row.brand_id))).size;
         return { category, total, tracked, competitors };
-      }).filter((item) => item.total !== 100 || item.tracked !== 1 || item.competitors !== 99);
+      }).filter((item) => item.tracked !== 1 || item.competitors > 99);
       if (invalidCategories.length) return json({
         error: "BRAND_REGISTRY_INCOMPLETE",
-        message: "Each tracking category must contain exactly 100 configured brands: one tracked brand and 99 competitors. Update the project’s fixed brand registry in Settings before running tracking.",
+        message: "Each tracking category must contain one tracked brand and at most 99 competitors. Update the project’s brand registry in Settings before running tracking.",
         categories: invalidCategories,
       }, 409);
     }

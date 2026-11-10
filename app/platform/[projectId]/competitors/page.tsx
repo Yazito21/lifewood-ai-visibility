@@ -10,110 +10,23 @@ import { brandDisplayName } from "@/lib/brand-display";
 import { MetricInfo } from "@/components/metric-info";
 import { DownloadReportButton } from "@/components/download-report-button";
 import { trackingLocationLabel } from "@/lib/tracking-locations";
+import {
+  loadCompetitorRegistry, loadPeriodScope, rankPeriod, rootWebsite,
+  type BrandMetric, type DateRange, type DirectCompetitor, type DirectObservation, type OwnMetric,
+} from "@/lib/leaderboard";
 
-type DirectCompetitor = {
-  id: string;
-  category: string;
-  normalized_domain: string;
-  brand_name: string;
-  website: string | null;
-};
-type DirectObservation = {
-  brand_id: string;
-  metric_date: string;
-  llm_provider: string;
-  presence_count: number;
-  response_count: number;
-  citation_count: number;
-  tracking_location: string;
-  run_id: string | null;
-};
-type OwnMetric = {
-  metric_date: string;
-  category: string;
-  llm_provider: string;
-  visibility_score: number | string | null;
-  citation_count: number | null;
-  run_id: string | null;
-};
-type BrandMetric = {
-  key: string;
-  brand_name: string;
-  website: string | null;
-  visibility_score: number;
-  citations: number;
-};
 type RankedBrand = BrandMetric & {
   rank: number;
   previousRank: number | null;
   previousVisibility: number | null;
   previousCitations: number | null;
 };
-type DateRange = { start: string; end: string };
 const LLMS = ["chatgpt", "gemini", "perplexity", "google_ai_overview", "claude"];
 const labels: Record<string, string> = {
   chatgpt: "ChatGPT", gemini: "Gemini", perplexity: "Perplexity",
   google_ai_overview: "Google AI Overview", claude: "Claude",
 };
 
-function hostFromUrl(value: string | null | undefined) {
-  if (!value) return null;
-  try {
-    return new URL(value.includes("://") ? value : "https://" + value).hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, "") || null;
-  } catch { return null; }
-}
-function rootWebsite(value: string | null | undefined) {
-  const host = hostFromUrl(value);
-  return host ? "https://" + host : null;
-}
-function numberValue(value: number | string | null | undefined) {
-  const number = Number(value ?? 0);
-  return Number.isFinite(number) ? number : 0;
-}
-function aggregateCompetitorRows(directCompetitors: DirectCompetitor[], observations: DirectObservation[], ownMetrics: OwnMetric[]): BrandMetric[] {
-  const byId = new Map<string, DirectObservation[]>();
-  const ownScopeKeys = new Set(ownMetrics.filter((row) => row.visibility_score !== null && row.run_id).map((row) => `${row.metric_date}::${row.llm_provider}::${row.run_id}`));
-  for (const observation of observations) {
-    const bucket = byId.get(observation.brand_id) ?? [];
-    bucket.push(observation);
-    byId.set(observation.brand_id, bucket);
-  }
-  return directCompetitors.map((competitor) => {
-    const records = byId.get(competitor.id) ?? [];
-    const matchedRecords = records.filter((row) => numberValue(row.response_count) > 0 && ownScopeKeys.has(`${row.metric_date}::${row.llm_provider}::${row.run_id}`));
-    const scores = matchedRecords.map((row) => 100 * numberValue(row.presence_count) / numberValue(row.response_count));
-    return {
-      key: competitor.normalized_domain,
-      brand_name: competitor.brand_name || competitor.normalized_domain,
-      website: rootWebsite(competitor.website || competitor.normalized_domain),
-      visibility_score: scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : 0,
-      citations: matchedRecords.reduce((sum, row) => sum + numberValue(row.citation_count), 0),
-    };
-  });
-}
-function aggregateOwnRow(metrics: OwnMetric[], projectName: string, projectWebsite: string | null): BrandMetric {
-  const scores = metrics.filter((row) => row.visibility_score !== null).map((row) => numberValue(row.visibility_score));
-  return {
-    key: "__tracked_brand__",
-    brand_name: projectName,
-    website: projectWebsite,
-    visibility_score: scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : 0,
-    citations: metrics.reduce((sum, row) => sum + numberValue(row.citation_count), 0),
-  };
-}
-function competitorsObservedInPeriod(directCompetitors: DirectCompetitor[], observations: DirectObservation[], ownMetrics: OwnMetric[]) {
-  // A competitor enters this period leaderboard only when its observation has
-  // a valid response count and a tracked-brand metric exists for the exact
-  // same date and engine. Missing/stale scope rows are not zero-valued entries.
-  const ownScopes = new Set(ownMetrics.filter((row) => row.visibility_score !== null && row.run_id).map((row) => `${row.metric_date}::${row.llm_provider}::${row.run_id}`));
-  const eligibleIds = new Set(observations.filter((row) => numberValue(row.response_count) > 0 && ownScopes.has(`${row.metric_date}::${row.llm_provider}::${row.run_id}`)).map((row) => row.brand_id));
-  return directCompetitors.filter((competitor) => eligibleIds.has(competitor.id));
-}
-function rankBrands(rows: BrandMetric[]) {
-  // Deterministic tie-breaks: visibility score, citations, then canonical name.
-  return [...rows].sort((a, b) => b.visibility_score - a.visibility_score || b.citations - a.citations || a.brand_name.localeCompare(b.brand_name))
-    .map((row, index) => ({ ...row, rank: index + 1 }));
-}
 function getPeriodStart(period: string, customStart: string, customEnd: string) { return reportingDateRange(period, customStart, customEnd).start; }
 function MetricChange({ value, suffix = "", lowerIsBetter = false }: { value: number | null; suffix?: string; lowerIsBetter?: boolean }) {
   if (value === null || !Number.isFinite(value)) return <span className="ml-2 text-xs font-medium text-[#87918b]">N/A</span>;
@@ -157,95 +70,6 @@ export default function LeaderboardsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    async function fetchCompetitorRegistry(selectedCategory: string) {
-      const assignmentRows: Array<{ category:string; brand_id:string; role:string }> = [];
-      for(let offset=0;;offset+=1000){
-        let query=supabase.from("category_brand_assignments").select("category,brand_id,role")
-          .eq("project_id",projectId).eq("include_in_metrics",true).eq("role","competitor")
-          .order("category").range(offset,offset+999);
-        if(selectedCategory!=="Overall")query=query.eq("category",selectedCategory);
-        const {data,error:queryError}=await query;
-        if(queryError)throw queryError;
-        const batch=(data??[]) as Array<{category:string;brand_id:string;role:string}>;
-        assignmentRows.push(...batch);
-        if(batch.length<1000)break;
-      }
-      const brandIds=[...new Set(assignmentRows.map(row=>row.brand_id))];
-      const brandRows:Array<{id:string;canonical_name:string;normalized_key:string;primary_website:string|null;is_active:boolean}>=[];
-      for(let i=0;i<brandIds.length;i+=80){
-        const {data,error:queryError}=await supabase.from("brand_registry")
-          .select("id,canonical_name,normalized_key,primary_website,is_active")
-          .eq("project_id",projectId).eq("is_active",true).in("id",brandIds.slice(i,i+80));
-        if(queryError)throw queryError;
-        brandRows.push(...((data??[]) as typeof brandRows));
-      }
-      const byId=new Map(brandRows.map(row=>[row.id,row]));
-      const unique=new Map<string,DirectCompetitor>();
-      for(const assignment of assignmentRows){
-        const brand=byId.get(assignment.brand_id);
-        if(!brand)continue;
-        unique.set(brand.id,{
-          id:brand.id,category:selectedCategory,
-          normalized_domain:brand.id,
-          brand_name:brand.canonical_name,
-          website:rootWebsite(brand.primary_website),
-        });
-      }
-      return [...unique.values()];
-    }
-    // Published run per date and engine: every selected engine has its own runs, so look each one up.
-    async function fetchPublishedRunIds(range: DateRange, location: string, selectedCategory: string, engines: string[]) {
-      const published = new Map<string, string>();
-      for (const engine of engines) {
-        const { data, error: queryError } = await supabase.rpc("get_published_run_ids_for_leaderboard", {
-          p_project_id: projectId,
-          p_start_date: range.start,
-          p_end_date: range.end,
-          p_category: selectedCategory,
-          p_provider: engine,
-          p_tracking_location: location,
-        });
-        if (queryError) throw queryError;
-        for (const row of (data ?? []) as Array<{ metric_date: string; run_id: string }>) published.set(row.metric_date + "::" + engine, row.run_id);
-      }
-      return published;
-    }
-    async function fetchObservations(ids: string[], range: DateRange, location: string, engines: string[], selectedCategory: string) {
-      if (!ids.length || !engines.length) return [] as DirectObservation[];
-      const all: DirectObservation[] = [];
-      for (let i = 0; i < ids.length; i += 80) {
-        const chunk = ids.slice(i, i + 80);
-        for (let offset = 0; ; offset += 1000) {
-          const { data, error: queryError } = await supabase.from("category_brand_observations")
-            .select("brand_id,metric_date,llm_provider,presence_count,response_count,citation_count,tracking_location,run_id")
-            .eq("project_id", projectId).eq("category", selectedCategory).eq("tracking_location", location)
-            .gte("metric_date", range.start).lte("metric_date", range.end)
-            .in("brand_id", chunk).in("llm_provider", engines)
-            .order("metric_date", { ascending: true }).range(offset, offset + 999);
-          if (queryError) throw queryError;
-          const batch = (data ?? []) as DirectObservation[];
-          all.push(...batch);
-          if (batch.length < 1000) break;
-        }
-      }
-      return all;
-    }
-    async function fetchOwnMetrics(range: DateRange, location: string, selectedCategory: string, engines: string[]) {
-      if (!engines.length) return [] as OwnMetric[];
-      const all: OwnMetric[] = [];
-      for (let offset = 0; ; offset += 1000) {
-        const { data, error: queryError } = await supabase.from("visibility_daily")
-          .select("metric_date,category,llm_provider,visibility_score,citation_count,run_id")
-          .eq("project_id", projectId).eq("tracking_location", location)
-          .eq("category", selectedCategory).gte("metric_date", range.start).lte("metric_date", range.end)
-          .in("llm_provider", engines).order("metric_date", { ascending: true }).range(offset, offset + 999);
-        if (queryError) throw queryError;
-        const batch = (data ?? []) as OwnMetric[];
-        all.push(...batch);
-        if (batch.length < 1000) break;
-      }
-      return all;
-    }
     async function load() {
       setLoading(true);
       setError("");
@@ -255,42 +79,23 @@ export default function LeaderboardsPage() {
         if (projectError) throw projectError;
         const location = project?.tracking_market ?? "MY";
         const selectedCategory = category === "All" ? "Overall" : category;
-        const registry = await fetchCompetitorRegistry(selectedCategory);
-        const ids = registry.map((row) => row.id);
-        const currentRange = { start, end };
-        const [currentObservationsRaw, currentOwnRaw, currentPublishedRuns] = await Promise.all([
-          fetchObservations(ids, currentRange, location, llms, selectedCategory),
-          fetchOwnMetrics(currentRange, location, selectedCategory, llms),
-          fetchPublishedRunIds(currentRange, location, selectedCategory, llms),
-        ]);
-        const currentObservations = currentObservationsRaw.filter((row) => row.run_id && currentPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
-        const currentOwn = currentOwnRaw.filter((row) => row.run_id && currentPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
-        const [previousObservationsRaw, previousOwnRaw, previousPublishedRuns] = previousRange ? await Promise.all([
-          fetchObservations(ids, previousRange, location, llms, selectedCategory),
-          fetchOwnMetrics(previousRange, location, selectedCategory, llms),
-          fetchPublishedRunIds(previousRange, location, selectedCategory, llms),
-        ]) : [[], [], new Map<string,string>()] as [DirectObservation[], OwnMetric[], Map<string,string>];
-        const previousObservations = previousObservationsRaw.filter((row) => row.run_id && previousPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
-        const previousOwn = previousOwnRaw.filter((row) => row.run_id && previousPublishedRuns.get(row.metric_date + "::" + row.llm_provider) === row.run_id);
+        const brandName = project?.brand_name ?? "";
+        const brandDomains: string[] = project?.brand_domains ?? [];
+        const filteredRegistry = await loadCompetitorRegistry(supabase, projectId, selectedCategory, brandName, brandDomains);
+        const competitorIds = filteredRegistry.map((row) => row.id);
+        const scopeArgs = { projectId, competitorIds, location, category: selectedCategory, engines: llms };
+        const current = await loadPeriodScope(supabase, { ...scopeArgs, range: { start, end } });
+        const previous = previousRange ? await loadPeriodScope(supabase, { ...scopeArgs, range: previousRange }) : { observations: [], own: [] };
         if (cancelled) return;
-        const domains = (project?.brand_domains ?? []).map((value: string) => hostFromUrl(value)).filter(Boolean);
-        // Preserve registry identity and exclude the tracked brand here. The
-        // rank population is filtered later by response-backed observations
-        // that match the tracked brand's date and engine within each period.
-        const filteredRegistry = registry.filter((row) => {
-          const domain = row.normalized_domain || hostFromUrl(row.website);
-          return domain && !domains.includes(domain) && row.brand_name.trim().toLocaleLowerCase() !== (project?.brand_name ?? "").trim().toLocaleLowerCase();
-        });
-        const eligibleIds = new Set(filteredRegistry.map((competitor) => competitor.id));
         setProjectName(project?.brand_name ?? "Tracked brand");
         setTrackingMarket(location);
         setProjectWebsite(rootWebsite(project?.brand_domains?.[0] ?? null));
         setCategories((project?.categories ?? []).filter((value: string) => value && value !== "Overall"));
         setDirectCompetitors(filteredRegistry);
-        setCurrentCompetitorObservations(currentObservations.filter((row) => eligibleIds.has(row.brand_id)));
-        setPreviousCompetitorObservations(previousObservations.filter((row) => eligibleIds.has(row.brand_id)));
-        setCurrentOwnMetrics(currentOwn);
-        setPreviousOwnMetrics(previousOwn);
+        setCurrentCompetitorObservations(current.observations);
+        setPreviousCompetitorObservations(previous.observations);
+        setCurrentOwnMetrics(current.own);
+        setPreviousOwnMetrics(previous.own);
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : "Unable to load leaderboard data.");
       } finally {
@@ -305,22 +110,17 @@ export default function LeaderboardsPage() {
   // observed during the selected period, location, category, and engine filters.
   // Build the previous-period ranking from its own active set so rank deltas
   // compare like-for-like periods rather than today's registry against old data.
-  const currentActiveCompetitors = useMemo(
-    () => competitorsObservedInPeriod(directCompetitors, currentCompetitorObservations, currentOwnMetrics),
-    [directCompetitors, currentCompetitorObservations, currentOwnMetrics],
+  const currentRanking = useMemo(
+    () => rankPeriod(directCompetitors, { observations: currentCompetitorObservations, own: currentOwnMetrics }, projectName, projectWebsite),
+    [directCompetitors, currentCompetitorObservations, currentOwnMetrics, projectName, projectWebsite],
   );
-  const previousActiveCompetitors = useMemo(
-    () => competitorsObservedInPeriod(directCompetitors, previousCompetitorObservations, previousOwnMetrics),
-    [directCompetitors, previousCompetitorObservations, previousOwnMetrics],
+  const previousRanking = useMemo(
+    () => rankPeriod(directCompetitors, { observations: previousCompetitorObservations, own: previousOwnMetrics }, projectName, projectWebsite),
+    [directCompetitors, previousCompetitorObservations, previousOwnMetrics, projectName, projectWebsite],
   );
-  const currentRows = useMemo(() => rankBrands([
-    aggregateOwnRow(currentOwnMetrics, projectName, projectWebsite),
-    ...aggregateCompetitorRows(currentActiveCompetitors, currentCompetitorObservations, currentOwnMetrics),
-  ]), [projectName, projectWebsite, currentOwnMetrics, currentActiveCompetitors, currentCompetitorObservations]);
-  const previousRows = useMemo(() => rankBrands([
-    aggregateOwnRow(previousOwnMetrics, projectName, projectWebsite),
-    ...aggregateCompetitorRows(previousActiveCompetitors, previousCompetitorObservations, previousOwnMetrics),
-  ]), [projectName, projectWebsite, previousOwnMetrics, previousActiveCompetitors, previousCompetitorObservations]);
+  const currentActiveCompetitors = currentRanking.active;
+  const currentRows = currentRanking.rows;
+  const previousRows = previousRanking.rows;
   const previousByKey = useMemo(() => new Map(previousRows.map((row) => [row.key, row])), [previousRows]);
   const rows: RankedBrand[] = currentRows.map((row) => {
     const previous = previousByKey.get(row.key);
