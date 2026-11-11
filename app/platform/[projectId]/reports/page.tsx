@@ -57,12 +57,12 @@ function Field({ label, value, onChange, placeholder = "Enter information", mult
     ? <textarea className="platform-input min-h-20 resize-y text-sm" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
     : <input className="platform-input text-sm" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />}</label>;
 }
-function SlideFrame({ number, title, children, preview = false }: { number: string; title: string; children: React.ReactNode; preview?: boolean }) {
+function SlideFrame({ number, title, children, preview = false, pageNumber = number }: { number: string; title: string; children: React.ReactNode; preview?: boolean; pageNumber?: string }) {
   return <article className={preview ? "monthly-slide monthly-slide-preview" : "monthly-slide"}>
     <div className="monthly-slide-top"><span>DR. D SIGNATURE CLINIC</span><span>AI VISIBILITY PROGRESS REPORT</span></div>
-    <div className="monthly-slide-heading"><span>{number}</span><h3>{title}</h3></div>
+    <div className="monthly-slide-heading">{number && <span>{number}</span>}<h3>{title}</h3></div>
     <div className="monthly-slide-content">{children}</div>
-    <div className="monthly-slide-footer"><span>LIFEWOOD · AI VISIBILITY INTELLIGENCE</span><span>{number === "10" ? "" : number.padStart(2, "0")}</span></div>
+    <div className="monthly-slide-footer"><span>LIFEWOOD · AI VISIBILITY INTELLIGENCE</span><span>{pageNumber}</span></div>
   </article>;
 }
 function Kpi({ label, value, note }: { label: string; value: string; note?: string }) {
@@ -87,6 +87,7 @@ export default function ReportsPage() {
 
   const categories = useMemo(() => snapshot?.brand.categories ?? [], [snapshot]);
   const slides = ["Cover", "Executive Summary", "Overall Visibility Score Progression", "Comparison with Competitors", "Citation Summary", "What Have Been Done", "What Needs To Be Done", "Recommended Action Plans", "Targets", "Thank You"];
+  const sectionNumbers = ["", "1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "7.0", "8.0", ""];
 
   const loadSaved = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -230,10 +231,10 @@ export default function ReportsPage() {
         <div className="monthly-editor-layout">
           <aside className="monthly-slide-nav"><p className="mb-2 text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Report slides</p>{slides.map((name,i)=><button key={name} onClick={()=>setActiveSlide(i+1)} className={activeSlide===i+1?"is-active":""}><span>{String(i+1).padStart(2,"0")}</span>{name}</button>)}</aside>
           <div className="monthly-editor-main"><div className="monthly-editor-toolbar"><div><span className="text-xs text-[var(--muted-foreground)]">Slide {activeSlide} of 10</span><h3 className="font-bold">{slides[activeSlide-1]}</h3></div><div className="flex gap-2"><button className="platform-btn" disabled={activeSlide===1} onClick={()=>setActiveSlide(v=>v-1)}>Previous</button><button className="platform-btn" disabled={activeSlide===10} onClick={()=>setActiveSlide(v=>v+1)}>Next</button></div></div>
-            <div className="monthly-workspace"><div className="monthly-form-panel"><h4 className="mb-3 text-sm font-bold">Slide information</h4>{editor(activeSlide)}</div><div className="monthly-preview-panel"><div className="mb-2 flex items-center justify-between"><h4 className="text-sm font-bold">Slide preview</h4><span className="text-[10px] text-[var(--muted-foreground)]">16:9</span></div><SlideFrame number={String(activeSlide)} title={slides[activeSlide-1]} preview>{preview(activeSlide)}</SlideFrame></div></div>
+            <div className="monthly-workspace"><div className="monthly-form-panel"><h4 className="mb-3 text-sm font-bold">Slide information</h4>{editor(activeSlide)}</div><div className="monthly-preview-panel"><div className="mb-2 flex items-center justify-between"><h4 className="text-sm font-bold">Slide preview</h4><span className="text-[10px] text-[var(--muted-foreground)]">16:9</span></div><SlideFrame number={sectionNumbers[activeSlide-1]} pageNumber={String(activeSlide).padStart(2,"0")} title={slides[activeSlide-1]} preview>{preview(activeSlide)}</SlideFrame></div></div>
           </div>
         </div>
-        <div className="monthly-print hidden">{slides.map((name,i)=><SlideFrame key={name} number={String(i+1)} title={name}>{preview(i+1)}</SlideFrame>)}</div>
+        <div className="monthly-print hidden">{slides.map((name,i)=><SlideFrame key={name} number={sectionNumbers[i]} pageNumber={String(i+1).padStart(2,"0")} title={name}>{preview(i+1)}</SlideFrame>)}</div>
         <div className="mt-4 flex gap-2 overflow-x-auto pb-2">{slides.map((name,i)=><button key={name} onClick={()=>setActiveSlide(i+1)} className={"shrink-0 rounded-lg border px-3 py-2 text-xs "+(activeSlide===i+1?"border-[var(--primary)] bg-[var(--accent)]":"border-[var(--line)]")}>{i+1}. {name}</button>)}</div>
       </section>}
       <section className="mt-8 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5"><div className="mb-4 flex items-center justify-between"><h2 className="font-bold">Saved Reports</h2><span className="text-xs text-[var(--muted-foreground)]">{saved.length} saved</span></div>{saved.length===0?<p className="text-sm text-[var(--muted-foreground)]">No saved client reports yet.</p>:<div className="overflow-x-auto"><table className="platform-table"><thead><tr><th>Created</th><th>Type</th><th>Period</th><th>Status</th><th /></tr></thead><tbody>{saved.map(r=><tr key={r.id}><td>{new Date(r.created_at).toLocaleDateString("en-MY")}</td><td>{TYPES.find(t=>t.id===r.report_type)?.name ?? r.report_type}</td><td>{r.period_start} – {r.period_end}</td><td><span className="monthly-ready">Draft</span></td><td className="text-right"><button className="platform-btn" onClick={()=>openSaved(r)}>Open</button></td></tr>)}</tbody></table></div>}</section>
