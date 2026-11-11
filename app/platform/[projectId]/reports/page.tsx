@@ -10,6 +10,7 @@ import { malaysiaDateString, shiftDateString, MIN_TRACKING_DATE } from "@/lib/re
 import { trackingLocationLabel } from "@/lib/tracking-locations";
 import type { ReportSnapshot } from "@/lib/report-types";
 import { canEditProject } from "@/lib/report-view";
+import { generateMonthlyReportPptx } from "@/lib/monthly-report-pptx";
 
 type ReportType = "monthly" | "simple" | "introductory" | "technical_audit" | "competitor_comparison";
 type ReportRow = { id: string; report_type: ReportType; period_start: string; period_end: string; status: string; created_at: string; snapshot: ReportSnapshot; content: Content };
@@ -85,6 +86,7 @@ export default function ReportsPage() {
   const [canEdit, setCanEdit] = useState(false);
   const [templateExists, setTemplateExists] = useState(false);
   const [templateUploading, setTemplateUploading] = useState(false);
+  const [exportingPptx, setExportingPptx] = useState(false);
   const [templateError, setTemplateError] = useState("");
   const templatePath = "Client_Monthly_Report_Template.pptx";
   const templateDownloadUrl = supabase.storage.from("client-report-templates").getPublicUrl(templatePath).data.publicUrl;
@@ -122,6 +124,25 @@ export default function ReportsPage() {
       });
     return () => { active = false; };
   }, []);
+
+  async function exportPowerPoint() {
+    if (!snapshot || !templateExists) return;
+    setExportingPptx(true);
+    setError("");
+    try {
+      const blob = await generateMonthlyReportPptx(templateDownloadUrl, snapshot, content);
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = (snapshot.brand.name || "Client").replace(/[^a-z0-9-_]+/gi, "-") + "-AI-Visibility-Report-" + snapshot.period.start + "-to-" + snapshot.period.end + ".pptx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to generate the PowerPoint report.");
+    } finally { setExportingPptx(false); }
+  }
 
   async function uploadTemplate(file?: File) {
     if (!file) return;
@@ -289,7 +310,7 @@ export default function ReportsPage() {
       </section>
       {error&&<div className="sample-error mt-4 rounded-xl p-3 text-sm">{error}</div>}{notice&&<div className="platform-notice-success mt-4 rounded-xl p-3 text-sm">{notice}</div>}
       {snapshot&&<section className="mt-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Monthly report editor</h2><p className="text-xs text-[var(--muted-foreground)]">{snapshot.brand.name} · {snapshot.period.start} to {snapshot.period.end} · {trackingLocationLabel(snapshot.location)}</p></div><div className="flex flex-wrap gap-2"><button className="platform-btn" onClick={()=>window.print()}><Download size={14}/> Print / PDF</button><button className="platform-btn platform-btn-primary" disabled={saving || !canEdit} title={!canEdit ? "Only project editors can save reports" : undefined} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button></div>{!canEdit&&<p className="mt-2 text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}</div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Monthly report editor</h2><p className="text-xs text-[var(--muted-foreground)]">{snapshot.brand.name} · {snapshot.period.start} to {snapshot.period.end} · {trackingLocationLabel(snapshot.location)}</p></div><div className="flex flex-wrap gap-2"><button className="platform-btn" onClick={()=>window.print()}><Download size={14}/> Print / PDF</button><button className="platform-btn platform-btn-primary" disabled={exportingPptx || !templateExists} title={!templateExists ? "Upload the PowerPoint template first" : undefined} onClick={exportPowerPoint}>{exportingPptx?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>} Export PowerPoint</button><button className="platform-btn platform-btn-primary" disabled={saving || !canEdit} title={!canEdit ? "Only project editors can save reports" : undefined} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button></div>{!canEdit&&<p className="mt-2 text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}</div>
         <div className="mb-4 flex gap-2 overflow-x-auto pb-2">{slides.map((name,i)=><a key={name} href={"#monthly-slide-"+(i+1)} className="shrink-0 rounded-lg border border-[var(--line)] px-3 py-2 text-xs hover:bg-[var(--accent)]">{i+1}. {name}</a>)}</div>
         <div className="monthly-slides-list">{slides.map((name,i)=><section id={"monthly-slide-"+(i+1)} key={name} className="monthly-slide-editor">
           <div className="monthly-editor-toolbar"><div><span className="text-xs text-[var(--muted-foreground)]">Slide {i+1} of 10</span><h3 className="font-bold">{name}</h3></div><span className="text-[10px] text-[var(--muted-foreground)]">16:9 preview</span></div>
