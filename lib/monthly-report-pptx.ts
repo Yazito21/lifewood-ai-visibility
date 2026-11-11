@@ -88,6 +88,12 @@ function updateChartCache(xml: string, seriesIndex: number, values: number[], la
 const dateLabel = (value: string) => new Date(value + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 const pct = (value: number | null | undefined) => value == null ? "N/A" : value.toFixed(1) + "%";
 const fmt = (value: number | null | undefined) => value == null ? "N/A" : value.toLocaleString("en-MY");
+const periodLabel = (snapshot: ReportSnapshot) => {
+  const startMonth = snapshot.period.start.slice(0, 7);
+  const endMonth = snapshot.period.end.slice(0, 7);
+  if (startMonth === endMonth) return new Date(snapshot.period.start + "T00:00:00").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  return dateLabel(snapshot.period.start) + " to " + dateLabel(snapshot.period.end);
+};
 
 export async function generateMonthlyReportPptx(
   templateUrl: string,
@@ -112,7 +118,7 @@ export async function generateMonthlyReportPptx(
 
   await editSlide(1, (xml) => {
     xml = setShapeText(xml, "Text 1", snapshot.brand.name);
-    xml = setShapeText(xml, "Text 3", snapshot.period.label + " Report");
+    xml = setShapeText(xml, "Text 3", periodLabel(snapshot) + " Report");
     return setShapeText(xml, "Text 4", "Prepared by " + (content.preparedBy || "Lifewood") + " on " + dateLabel(snapshot.period.end) + " as part of the " + (content.projectName || "AI Visibility") + " for " + snapshot.brand.name + ".");
   });
 
@@ -125,7 +131,7 @@ export async function generateMonthlyReportPptx(
     xml = setShapeText(xml, "Text 8", "Brand website citations in the reporting period", 1);
     xml = setShapeText(xml, "Text 18", content.knowledgeAssets || "N/A", 1);
     xml = setShapeText(xml, "Text 20", "Audited knowledge assets; manually supplied", 1);
-    xml = setShapeText(xml, "Text 23", "Improvements made in " + snapshot.period.label);
+    xml = setShapeText(xml, "Text 23", "Improvements made in " + periodLabel(snapshot));
     xml = setShapeText(xml, "Text 24", content.summaryDone || "Progress summary to be completed");
     xml = setShapeText(xml, "Text 27", "Where to focus next");
     return setShapeText(xml, "Text 28", content.summaryFocus || "Priorities to be completed");
@@ -175,8 +181,9 @@ export async function generateMonthlyReportPptx(
     xml = setShapeText(xml, "Text 10", total ? "100%" : "0%");
     xml = setShapeText(xml, "Text 11", "of the brand website citations collected");
     xml = setShapeText(xml, "Text 12", "Citation totals by configured category");
-    xml = setShapeText(xml, "Text 14", total ? "100%" : "0%");
-    xml = setShapeText(xml, "Text 15", "of citations are attributed to tracked brand pages");
+    const topPageShare = total > 0 ? allPages.slice(0, 3).reduce((sum, page) => sum + page.frequency, 0) / total * 100 : null;
+    xml = setShapeText(xml, "Text 14", pct(topPageShare));
+    xml = setShapeText(xml, "Text 15", "of website citations went to the top three cited pages");
     xml = setShapeText(xml, "Text 16", String(new Set(allPages.map((p) => p.url)).size) + " of the listed brand pages were cited");
     xml = setShapeText(xml, "Text 18", "Share of citations pointing to " + snapshot.brand.name + " website");
     xml = setShapeText(xml, "Text 19", citationEntries.map(([name, item]) => name + " " + fmt(item.citations)).join(" · "));
