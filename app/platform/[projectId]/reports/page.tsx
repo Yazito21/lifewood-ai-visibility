@@ -40,7 +40,7 @@ function emptyContent(categories: string[]): Content {
       { area: "Community", title: "", description: "" }, { area: "Monitoring", title: "", description: "" },
     ],
     actions: [BLANK_ACTION(), { ...BLANK_ACTION(), week: "Week 2" }, { ...BLANK_ACTION(), week: "Week 3" }, { ...BLANK_ACTION(), week: "Week 4" }, { ...BLANK_ACTION(), week: "Ongoing" }],
-    targets: Object.fromEntries(["Overall", ...categories].map((c) => [c, { score: "" }])),
+    targets: Object.fromEntries(["Overall", ...categories].map((c) => [c, { score: "" }])), competitorAssets: {},
     citationByCategory: {},
   };
 }
