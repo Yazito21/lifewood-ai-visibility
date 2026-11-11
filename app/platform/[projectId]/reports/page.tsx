@@ -85,6 +85,7 @@ export default function ReportsPage() {
   const [canEdit, setCanEdit] = useState(false);
 
   const categories = useMemo(() => snapshot?.brand.categories ?? [], [snapshot]);
+  const websiteCitationTotal = useMemo(() => Object.values(content.citationByCategory).reduce((sum, item) => sum + item.citations, 0), [content.citationByCategory]);
   const slides = ["Cover", "Executive Summary", "Overall Visibility Score Progression", "Comparison with Competitors", "Citation Summary", "What Have Been Done", "What Needs To Be Done", "Recommended Action Plans", "Targets", "Thank You"];
   const sectionNumbers = ["", "1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "7.0", "8.0", ""];
 
@@ -125,11 +126,22 @@ export default function ReportsPage() {
       if (!data.hasData) throw new Error("No AI visibility tracking data was found for this period and tracking location.");
       const next = emptyContent(data.brand.categories);
       const citationByCategory: Content["citationByCategory"] = {};
-      const args = { p_project_id: projectId, p_start_date: start, p_end_date: end, p_engines: [], p_brand_related_only: true, p_tracking_location: data.location };
+      const { data: projectInfo, error: projectInfoError } = await supabase.from("projects").select("brand_domains").eq("id", projectId).single();
+      if (projectInfoError) throw projectInfoError;
+      const brandHosts = ((projectInfo?.brand_domains ?? []) as string[]).map((domain) => {
+        try { return new URL(domain.includes("://") ? domain : "https://" + domain).hostname.toLowerCase().replace(/^www\\./, ""); } catch { return ""; }
+      }).filter(Boolean);
+      const args = { p_project_id: projectId, p_start_date: start, p_end_date: end, p_engines: [], p_brand_related_only: false, p_tracking_location: data.location };
       const results = await Promise.all(data.brand.categories.map(async (category) => {
         const { data: rows, error: rpcError } = await supabase.rpc("get_cumulative_citations", { ...args, p_category: category });
         if (rpcError) throw rpcError;
-        const pages = (rows ?? []) as { url: string; frequency: number }[];
+        const allPages = (rows ?? []) as { url: string; frequency: number }[];
+        const pages = allPages.filter((page) => {
+          try {
+            const host = new URL(page.url).hostname.toLowerCase().replace(/^www\\./, "");
+            return brandHosts.some((brandHost) => host === brandHost || host.endsWith("." + brandHost));
+          } catch { return false; }
+        });
         return [category, { citations: pages.reduce((sum, p) => sum + Number(p.frequency || 0), 0), pages: pages.slice(0, 10) }] as const;
       }));
       for (const [category, value] of results) citationByCategory[category] = value;
@@ -186,7 +198,7 @@ export default function ReportsPage() {
     if (!snapshot) return <div className="monthly-preview-empty"><FileText size={32} /><p>Generate a monthly report to see the slide preview.</p></div>;
     const s = snapshot;
     if (slide === 1) return <div className="monthly-cover"><span>{s.brand.name}</span><h2>AI Visibility Progress Report</h2><p>{s.period.start} to {s.period.end}</p><small>Prepared by {content.preparedBy || "Team Name"} as part of {content.projectName || "Project Name"}.</small></div>;
-    if (slide === 2) return <><div className="monthly-kpis"><Kpi label="Overall visibility score" value={pct(s.overall.visibilityScore)} note="Latest score in period" /><Kpi label="Share of voice" value={pct(s.overall.shareOfVoice)} note="Average across available engines" /><Kpi label="Website citations in AI" value={fmt(s.overall.brandCitations)} note="Brand-related cited-page occurrences" /><Kpi label="Knowledge assets" value={content.knowledgeAssets || "—"} note="Enter the latest website audit count" /></div><div className="monthly-preview-two"><div><b>Improvements made</b><p>{content.summaryDone || "Add a summary of completed work."}</p></div><div><b>Where to focus next</b><p>{content.summaryFocus || "Add the next reporting period's priorities."}</p></div></div></>;
+    if (slide === 2) return <><div className="monthly-kpis"><Kpi label="Overall visibility score" value={pct(s.overall.visibilityScore)} note="Latest score in period" /><Kpi label="Share of voice" value={pct(s.overall.shareOfVoice)} note="Average across available engines" /><Kpi label="Website citations in AI" value={fmt(websiteCitationTotal)} note="Citations to the brand website" /><Kpi label="Knowledge assets" value={content.knowledgeAssets || "—"} note="Enter the latest website audit count" /></div><div className="monthly-preview-two"><div><b>Improvements made</b><p>{content.summaryDone || "Add a summary of completed work."}</p></div><div><b>Where to focus next</b><p>{content.summaryFocus || "Add the next reporting period's priorities."}</p></div></div></>;
     if (slide === 3) return <div className="monthly-chart-layout"><div><b>Daily visibility score</b><div className="monthly-bars">{s.trend.slice(-16).map((v, i) => <div key={i} title={v.date + ": " + pct(v.score)}><i style={{ height: Math.max(3, v.score ?? 0) + "%" }} /><small>{v.date.slice(8)}</small></div>)}</div></div><div className="monthly-category-stack"><Kpi label="Latest overall score" value={pct(s.overall.visibilityScore)} />{s.byCategory.map((c) => <Kpi key={c.category} label={"Latest " + c.category} value={pct(c.visibilityScore)} />)}</div></div>;
     if (slide === 4) return <div className="monthly-table-wrap"><table className="monthly-table"><thead><tr><th>Metric</th>{s.competitors.map((c) => <th key={c.name}>{c.name}</th>)}</tr></thead><tbody>{[["Visibility score", (c: typeof s.competitors[number]) => pct(c.visibilityScore)], ["Share of voice", (c: typeof s.competitors[number]) => pct(c.shareOfVoice)], ["Citations", (c: typeof s.competitors[number]) => fmt(c.citations)], ["External websites", (c: typeof s.competitors[number]) => fmt(c.presence.websites)], ["Directories", (c: typeof s.competitors[number]) => fmt(c.presence.directories)], ["Social", (c: typeof s.competitors[number]) => fmt(c.presence.social)]].map(([label, fn]) => <tr key={String(label)}><th>{String(label)}</th>{s.competitors.map((c) => <td key={c.name}>{(fn as (v: typeof c) => string)(c)}</td>)}</tr>)}</tbody></table></div>;
     if (slide === 5) {
