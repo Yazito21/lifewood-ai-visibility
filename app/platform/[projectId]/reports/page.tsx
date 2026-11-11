@@ -91,8 +91,19 @@ export default function ReportsPage() {
   const loadSaved = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     const [dataResult, projectResult, profileResult, memberResult] = await Promise.all([
-      supabase.from("client_reports").select("id,report_type,period_start,period_end,status,created_at,snapshot,content").eq("project_id", projectId).order("created_at", { ascending: false }).limit(30);
-    if (e) setError(e.message); else setSaved((data ?? []) as ReportRow[]);
+      supabase.from("client_reports").select("id,report_type,period_start,period_end,status,created_at,snapshot,content")
+        .eq("project_id", projectId).order("created_at", { ascending: false }).limit(30),
+      supabase.from("projects").select("created_by").eq("id", projectId).maybeSingle(),
+      user ? supabase.from("profiles").select("role").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
+      user ? supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
+    ]);
+    if (dataResult.error) setError(dataResult.error.message);
+    else setSaved((dataResult.data ?? []) as ReportRow[]);
+    setCanEdit(Boolean(user && canEditProject(
+      profileResult.data?.role,
+      memberResult.data?.role,
+      projectResult.data?.created_by === user.id,
+    )));
   }, [projectId]);
 
   useEffect(() => { void loadSaved(); }, [loadSaved]);
