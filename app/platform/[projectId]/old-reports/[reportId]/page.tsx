@@ -105,7 +105,7 @@ export default function ReportPage() {
 
   return <ProjectShell><div className="ops-page">
     <div className="report-toolbar flex flex-wrap items-center justify-between gap-3">
-      <Link href={`/platform/${projectId}/reports`} className="platform-btn"><ArrowLeft size={16} /> Back to reports</Link>
+      <Link href={`/platform/${projectId}/old-reports`} className="platform-btn"><ArrowLeft size={16} /> Back to reports</Link>
       {view && <button type="button" className="platform-btn platform-btn-primary" onClick={() => window.print()}><Download size={16} /> Download PDF</button>}
     </div>
     {error && <div role="alert" className="report-toolbar mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
