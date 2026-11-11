@@ -146,6 +146,7 @@ export default function ReportsPage() {
       }));
       for (const [category, value] of results) citationByCategory[category] = value;
       next.citationByCategory = citationByCategory;
+      next.competitorAssets = Object.fromEntries(data.competitors.filter((row) => !row.isTracked).map((row) => [row.name, ""]));
       setSnapshot(data); setContent(next);
       setNotice("Monthly report data loaded. Complete the highlighted manual fields, then save your draft.");
     } catch (e) {
@@ -245,7 +246,7 @@ export default function ReportsPage() {
           <div className="monthly-workspace"><div className="monthly-form-panel"><h4 className="mb-3 text-sm font-bold">Slide information</h4>{editor(i+1)}</div><div className="monthly-preview-panel"><h4 className="mb-2 text-sm font-bold">Slide preview</h4><SlideFrame number={sectionNumbers[i]} pageNumber={String(i+1).padStart(2,"0")} title={name} preview>{preview(i+1)}</SlideFrame></div></div>
         </section>)}</div>
         <div className="monthly-print hidden">{slides.map((name,i)=><SlideFrame key={name} number={sectionNumbers[i]} pageNumber={String(i+1).padStart(2,"0")} title={name}>{preview(i+1)}</SlideFrame>)}</div>
-        <div className="mt-4 flex gap-2 overflow-x-auto pb-2">{slides.map((name,i)=><button key={name} onClick={()=>setActiveSlide(i+1)} className={"shrink-0 rounded-lg border px-3 py-2 text-xs "+(activeSlide===i+1?"border-[var(--primary)] bg-[var(--accent)]":"border-[var(--line)]")}>{i+1}. {name}</button>)}</div>
+        
       </section>}
       <section className="mt-8 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5"><div className="mb-4 flex items-center justify-between"><h2 className="font-bold">Saved Reports</h2><span className="text-xs text-[var(--muted-foreground)]">{saved.length} saved</span></div>{saved.length===0?<p className="text-sm text-[var(--muted-foreground)]">No saved client reports yet.</p>:<div className="overflow-x-auto"><table className="platform-table"><thead><tr><th>Created</th><th>Type</th><th>Period</th><th>Status</th><th /></tr></thead><tbody>{saved.map(r=><tr key={r.id}><td>{new Date(r.created_at).toLocaleDateString("en-MY")}</td><td>{TYPES.find(t=>t.id===r.report_type)?.name ?? r.report_type}</td><td>{r.period_start} – {r.period_end}</td><td><span className="monthly-ready">Draft</span></td><td className="text-right"><button className="platform-btn" onClick={()=>openSaved(r)}>Open</button></td></tr>)}</tbody></table></div>}</section>
     </div>
