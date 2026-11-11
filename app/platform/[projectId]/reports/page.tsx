@@ -142,7 +142,7 @@ export default function ReportsPage() {
   }
 
   async function save() {
-    if (!snapshot) return;
+    if (!snapshot || !canEdit) return;
     setSaving(true); setError(""); setNotice("");
     try {
       const { data: auth } = await supabase.auth.getUser();
