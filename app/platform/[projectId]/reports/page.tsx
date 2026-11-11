@@ -83,6 +83,11 @@ export default function ReportsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [canEdit, setCanEdit] = useState(false);
+  const [templateExists, setTemplateExists] = useState(false);
+  const [templateUploading, setTemplateUploading] = useState(false);
+  const [templateError, setTemplateError] = useState("");
+  const templatePath = "Client_Monthly_Report_Template.pptx";
+  const templateDownloadUrl = supabase.storage.from("client-report-templates").getPublicUrl(templatePath).data.publicUrl;
 
   const categories = useMemo(() => snapshot?.brand.categories ?? [], [snapshot]);
   const websiteCitationTotal = useMemo(() => Object.values(content.citationByCategory).reduce((sum, item) => sum + item.citations, 0), [content.citationByCategory]);
@@ -108,6 +113,37 @@ export default function ReportsPage() {
   }, [projectId]);
 
   useEffect(() => { void loadSaved(); }, [loadSaved]);
+
+  useEffect(() => {
+    let active = true;
+    void supabase.storage.from("client-report-templates").list("", { search: templatePath })
+      .then(({ data, error: listError }) => {
+        if (active) setTemplateExists(!listError && Boolean(data?.some((item) => item.name === templatePath)));
+      });
+    return () => { active = false; };
+  }, []);
+
+  async function uploadTemplate(file?: File) {
+    if (!file) return;
+    setTemplateError("");
+    if (file.type !== "application/vnd.openxmlformats-officedocument.presentationml.presentation" && !file.name.toLowerCase().endsWith(".pptx")) {
+      setTemplateError("Please select a PowerPoint .pptx file.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setTemplateError("The template must be 10 MB or smaller.");
+      return;
+    }
+    setTemplateUploading(true);
+    try {
+      const { error: uploadError } = await supabase.storage.from("client-report-templates")
+        .upload(templatePath, file, { upsert: true, contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
+      if (uploadError) throw uploadError;
+      setTemplateExists(true);
+    } catch (e) {
+      setTemplateError(e instanceof Error ? e.message : "Unable to upload the PowerPoint template.");
+    } finally { setTemplateUploading(false); }
+  }
 
   function update<K extends keyof Content>(key: K, value: Content[K]) {
     setContent((prev) => ({ ...prev, [key]: value }));
@@ -232,6 +268,20 @@ export default function ReportsPage() {
   return <ProjectShell>
     <div className="ops-page">
       <header className="page-heading"><p className="page-eyebrow">Client Deliverables</p><h1 className="page-title mt-1">Reports</h1><p className="page-description mt-2">Create client-ready reports from tracking data, complete the editable sections, review each slide and save drafts.</p></header>
+      <section className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="font-bold">Monthly report PowerPoint template</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Original 10-slide Lifewood template, retained as the reference design.</p></div>
+          <div className="flex flex-wrap items-center gap-2">
+            {templateExists ? <a className="platform-btn platform-btn-primary" href={templateDownloadUrl} download="Client_Monthly_Report_Template.pptx"><Download size={14}/> Download template</a> : <span className="text-xs text-[var(--muted-foreground)]">Template file has not been uploaded to platform storage yet.</span>}
+            {canEdit && <label className="platform-btn cursor-pointer">
+              {templateUploading ? <Loader2 size={14} className="animate-spin"/> : <Plus size={14}/>} {templateExists ? "Replace template" : "Upload template"}
+              <input className="hidden" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" disabled={templateUploading} onChange={(e) => { void uploadTemplate(e.target.files?.[0]); e.currentTarget.value = ""; }}/>
+            </label>}
+          </div>
+        </div>
+        {templateError && <p className="mt-3 text-xs text-red-600">{templateError}</p>}
+        {!templateExists && <p className="mt-2 text-xs text-[var(--muted-foreground)]">An Admin or Superadmin must upload the supplied PowerPoint once. It will then be available to download for all authenticated platform users.</p>}
+      </section>
       <section className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-bold">Report type</h2><span className="text-xs text-[var(--muted-foreground)]">5 report formats</span></div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{TYPES.map(t=><button key={t.id} onClick={()=>{setReportType(t.id);setSnapshot(null);setActiveId(null);setError("");setNotice("");}} className={"rounded-xl border p-3 text-left transition "+(reportType===t.id?"border-[var(--primary)] bg-[var(--accent)] ring-1 ring-[var(--primary)]":"border-[var(--line)] hover:bg-[var(--accent)]")}><div className="flex items-center justify-between gap-2"><b className="text-sm">{t.name}</b>{t.ready?<span className="monthly-ready">Available</span>:<span className="monthly-soon">Coming soon</span>}</div><p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">{t.description}</p></button>)}</div>
