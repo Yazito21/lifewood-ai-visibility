@@ -10,6 +10,7 @@ import { malaysiaDateString, shiftDateString, MIN_TRACKING_DATE } from "@/lib/re
 import { trackingLocationLabel } from "@/lib/tracking-locations";
 import type { ReportSnapshot } from "@/lib/report-types";
 import { canEditProject } from "@/lib/report-view";
+import { generateMonthlyReportPptx } from "@/lib/monthly-report-pptx";
 
 type ReportType = "monthly" | "simple" | "introductory" | "technical_audit" | "competitor_comparison";
 type ReportRow = { id: string; report_type: ReportType; period_start: string; period_end: string; status: string; created_at: string; snapshot: ReportSnapshot; content: Content };
@@ -83,6 +84,13 @@ export default function ReportsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [canEdit, setCanEdit] = useState(false);
+  const [canManageTemplate, setCanManageTemplate] = useState(false);
+  const [templateExists, setTemplateExists] = useState(false);
+  const [templateUploading, setTemplateUploading] = useState(false);
+  const [exportingPptx, setExportingPptx] = useState(false);
+  const [templateError, setTemplateError] = useState("");
+  const templatePath = "Client_Monthly_Report_Template.pptx";
+  const templateDownloadUrl = supabase.storage.from("client-report-templates").getPublicUrl(templatePath).data.publicUrl;
 
   const categories = useMemo(() => snapshot?.brand.categories ?? [], [snapshot]);
   const websiteCitationTotal = useMemo(() => Object.values(content.citationByCategory).reduce((sum, item) => sum + item.citations, 0), [content.citationByCategory]);
@@ -100,6 +108,7 @@ export default function ReportsPage() {
     ]);
     if (dataResult.error) setError(dataResult.error.message);
     else setSaved((dataResult.data ?? []) as ReportRow[]);
+    setCanManageTemplate(Boolean(user && ["admin", "superadmin"].includes(String(profileResult.data?.role ?? "").toLowerCase())));
     setCanEdit(Boolean(user && canEditProject(
       profileResult.data?.role,
       memberResult.data?.role,
@@ -108,6 +117,56 @@ export default function ReportsPage() {
   }, [projectId]);
 
   useEffect(() => { void loadSaved(); }, [loadSaved]);
+
+  useEffect(() => {
+    let active = true;
+    void supabase.storage.from("client-report-templates").list("", { search: templatePath })
+      .then(({ data, error: listError }) => {
+        if (active) setTemplateExists(!listError && Boolean(data?.some((item) => item.name === templatePath)));
+      });
+    return () => { active = false; };
+  }, [templatePath]);
+
+  async function exportPowerPoint() {
+    if (!snapshot || !templateExists) return;
+    setExportingPptx(true);
+    setError("");
+    try {
+      const blob = await generateMonthlyReportPptx(templateDownloadUrl, snapshot, content);
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = (snapshot.brand.name || "Client").replace(/[^a-z0-9-_]+/gi, "-") + "-AI-Visibility-Report-" + snapshot.period.start + "-to-" + snapshot.period.end + ".pptx";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to generate the PowerPoint report.");
+    } finally { setExportingPptx(false); }
+  }
+
+  async function uploadTemplate(file?: File) {
+    if (!file) return;
+    setTemplateError("");
+    if (file.type !== "application/vnd.openxmlformats-officedocument.presentationml.presentation" && !file.name.toLowerCase().endsWith(".pptx")) {
+      setTemplateError("Please select a PowerPoint .pptx file.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setTemplateError("The template must be 10 MB or smaller.");
+      return;
+    }
+    setTemplateUploading(true);
+    try {
+      const { error: uploadError } = await supabase.storage.from("client-report-templates")
+        .upload(templatePath, file, { upsert: true, contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
+      if (uploadError) throw uploadError;
+      setTemplateExists(true);
+    } catch (e) {
+      setTemplateError(e instanceof Error ? e.message : "Unable to upload the PowerPoint template.");
+    } finally { setTemplateUploading(false); }
+  }
 
   function update<K extends keyof Content>(key: K, value: Content[K]) {
     setContent((prev) => ({ ...prev, [key]: value }));
@@ -231,7 +290,21 @@ export default function ReportsPage() {
 
   return <ProjectShell>
     <div className="ops-page">
-      <header className="page-heading"><p className="page-eyebrow">Client Deliverables</p><h1 className="page-title mt-1">Reports</h1><p className="page-description mt-2">Create client-ready reports from tracking data, complete the editable sections, review each slide and save drafts.</p></header>
+      <header className="page-heading"><p className="page-eyebrow">Client Deliverables</p><h1 className="page-title mt-1">Reports</h1><p className="page-description mt-2">Create client-ready reports from tracking data. Export PowerPoint to retain the supplied 10-slide template design, artwork and formatting.</p></header>
+      <section className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="font-bold">Monthly report PowerPoint template</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Original 10-slide Lifewood template, retained as the reference design.</p></div>
+          <div className="flex flex-wrap items-center gap-2">
+            {templateExists ? <a className="platform-btn platform-btn-primary" href={templateDownloadUrl} download="Client_Monthly_Report_Template.pptx"><Download size={14}/> Download template</a> : <span className="text-xs text-[var(--muted-foreground)]">Template file has not been uploaded to platform storage yet.</span>}
+            {canManageTemplate && <label className="platform-btn cursor-pointer">
+              {templateUploading ? <Loader2 size={14} className="animate-spin"/> : <Plus size={14}/>} {templateExists ? "Replace template" : "Upload template"}
+              <input className="hidden" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" disabled={templateUploading} onChange={(e) => { void uploadTemplate(e.target.files?.[0]); e.currentTarget.value = ""; }}/>
+            </label>}
+          </div>
+        </div>
+        {templateError && <p className="mt-3 text-xs text-red-600">{templateError}</p>}
+        {!templateExists && <p className="mt-2 text-xs text-[var(--muted-foreground)]">An Admin or Superadmin must upload the supplied PowerPoint once. It will then be available to download for all authenticated platform users.</p>}
+      </section>
       <section className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-bold">Report type</h2><span className="text-xs text-[var(--muted-foreground)]">5 report formats</span></div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{TYPES.map(t=><button key={t.id} onClick={()=>{setReportType(t.id);setSnapshot(null);setActiveId(null);setError("");setNotice("");}} className={"rounded-xl border p-3 text-left transition "+(reportType===t.id?"border-[var(--primary)] bg-[var(--accent)] ring-1 ring-[var(--primary)]":"border-[var(--line)] hover:bg-[var(--accent)]")}><div className="flex items-center justify-between gap-2"><b className="text-sm">{t.name}</b>{t.ready?<span className="monthly-ready">Available</span>:<span className="monthly-soon">Coming soon</span>}</div><p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">{t.description}</p></button>)}</div>
@@ -239,7 +312,7 @@ export default function ReportsPage() {
       </section>
       {error&&<div className="sample-error mt-4 rounded-xl p-3 text-sm">{error}</div>}{notice&&<div className="platform-notice-success mt-4 rounded-xl p-3 text-sm">{notice}</div>}
       {snapshot&&<section className="mt-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Monthly report editor</h2><p className="text-xs text-[var(--muted-foreground)]">{snapshot.brand.name} · {snapshot.period.start} to {snapshot.period.end} · {trackingLocationLabel(snapshot.location)}</p></div><div className="flex flex-wrap gap-2"><button className="platform-btn" onClick={()=>window.print()}><Download size={14}/> Print / PDF</button><button className="platform-btn platform-btn-primary" disabled={saving || !canEdit} title={!canEdit ? "Only project editors can save reports" : undefined} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button></div>{!canEdit&&<p className="mt-2 text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}</div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Monthly report editor</h2><p className="text-xs text-[var(--muted-foreground)]">{snapshot.brand.name} · {snapshot.period.start} to {snapshot.period.end} · {trackingLocationLabel(snapshot.location)}</p></div><div className="flex flex-wrap gap-2"><button className="platform-btn" title="Prints the browser preview. Use Export PowerPoint for the original template layout." onClick={()=>window.print()}><Download size={14}/> Print preview PDF</button><button className="platform-btn platform-btn-primary" disabled={exportingPptx || !templateExists} title={!templateExists ? "Upload the PowerPoint template first" : undefined} onClick={exportPowerPoint}>{exportingPptx?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>} Export PowerPoint</button><button className="platform-btn platform-btn-primary" disabled={saving || !canEdit} title={!canEdit ? "Only project editors can save reports" : undefined} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button></div>{!canEdit&&<p className="mt-2 text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}</div>
         <div className="mb-4 flex gap-2 overflow-x-auto pb-2">{slides.map((name,i)=><a key={name} href={"#monthly-slide-"+(i+1)} className="shrink-0 rounded-lg border border-[var(--line)] px-3 py-2 text-xs hover:bg-[var(--accent)]">{i+1}. {name}</a>)}</div>
         <div className="monthly-slides-list">{slides.map((name,i)=><section id={"monthly-slide-"+(i+1)} key={name} className="monthly-slide-editor">
           <div className="monthly-editor-toolbar"><div><span className="text-xs text-[var(--muted-foreground)]">Slide {i+1} of 10</span><h3 className="font-bold">{name}</h3></div><span className="text-[10px] text-[var(--muted-foreground)]">16:9 preview</span></div>

@@ -708,3 +708,85 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
 .monthly-slide-editor .monthly-form-panel{max-height:72vh;overflow:auto}
 .monthly-slide-editor .monthly-preview-panel{min-width:0}
 @media(max-width:760px){.monthly-slide-editor{padding:.75rem}.monthly-slide-editor .monthly-workspace{grid-template-columns:1fr}.monthly-slide-editor .monthly-preview-panel{order:1}.monthly-slide-editor .monthly-form-panel{order:2;max-height:none}}
+
+
+/* Monthly report template palette and typography */
+.monthly-slide {
+  background: #f5eedb;
+  color: #133020;
+  border-radius: 0;
+  box-shadow: none;
+  font-family: Calibri, Arial, sans-serif;
+}
+.monthly-slide-top,
+.monthly-slide-footer {
+  color: #666666;
+  font-family: Calibri, Arial, sans-serif;
+  letter-spacing: 0;
+}
+.monthly-slide-heading {
+  border-bottom: 2px solid #ffb347;
+  padding-bottom: 1.1%;
+  margin-bottom: 2%;
+}
+.monthly-slide-heading h3 {
+  color: #133020;
+  font-family: "Calibri Light", Calibri, sans-serif;
+  font-weight: 700;
+}
+.monthly-slide-heading span {
+  background: transparent;
+  color: #046241;
+}
+.monthly-slide-footer {
+  border-top: 0;
+}
+.monthly-kpi,
+.monthly-preview-two > div,
+.monthly-area-grid section,
+.monthly-initiative-grid section,
+.monthly-target-grid section {
+  background: #ffffff;
+  border-color: #ffffff;
+  border-radius: 10px;
+}
+.monthly-kpi > strong,
+.monthly-target-grid strong {
+  color: #046241;
+}
+.monthly-bars i,
+.monthly-citation-bars i {
+  background: #046241;
+}
+.monthly-cover,
+.monthly-thanks {
+  background: #f5eedb;
+  color: #133020;
+  border-left: 7px solid #ffb347;
+  margin: 0;
+  padding: 6%;
+}
+.monthly-cover > span {
+  color: #046241;
+}
+.monthly-cover p,
+.monthly-cover small,
+.monthly-thanks p {
+  color: #666666;
+}
+.monthly-thanks h2 {
+  color: #133020;
+}
+.monthly-table thead th {
+  background: #133020;
+  color: #ffffff;
+  padding: 2%;
+}
+.monthly-table tbody tr:nth-child(even) {
+  background: #ffffff;
+}
+.monthly-area-grid section:nth-child(1) { border-top-color: #4472c4; }
+.monthly-area-grid section:nth-child(2) { border-top-color: #ed7d31; }
+.monthly-area-grid section:nth-child(3) { border-top-color: #a5a5a5; }
+.monthly-area-grid section:nth-child(4) { border-top-color: #ffc000; }
+.monthly-area-grid section:nth-child(5) { border-top-color: #70ad47; }
