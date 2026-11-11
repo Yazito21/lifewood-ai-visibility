@@ -700,3 +700,11 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
 
 .monthly-category-stack{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(auto-fit,minmax(0,1fr));align-content:stretch}
 .monthly-category-stack .monthly-kpi{display:flex;min-height:0;flex-direction:column;justify-content:center}
+
+
+.monthly-slides-list{display:grid;gap:1.5rem}
+.monthly-slide-editor{scroll-margin-top:1rem;min-width:0;border:1px solid var(--line);border-radius:1.1rem;background:var(--card);padding:1rem;box-shadow:0 5px 20px rgba(19,48,32,.04)}
+.monthly-slide-editor .monthly-editor-toolbar{margin-bottom:.8rem}
+.monthly-slide-editor .monthly-form-panel{max-height:72vh;overflow:auto}
+.monthly-slide-editor .monthly-preview-panel{min-width:0}
+@media(max-width:760px){.monthly-slide-editor{padding:.75rem}.monthly-slide-editor .monthly-workspace{grid-template-columns:1fr}.monthly-slide-editor .monthly-preview-panel{order:1}.monthly-slide-editor .monthly-form-panel{order:2;max-height:none}}
