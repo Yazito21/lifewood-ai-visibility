@@ -73,13 +73,13 @@ function updateChartCache(xml: string, seriesIndex: number, values: number[], la
       .replace(/(<c:ptCount[^>]*\/>)/, "$1" + points);
   });
   if (labels?.length) {
-    result = result.replace(/<c:strCache>[\\s\\S]*?<\\/c:strCache>/g, (cache) => {
-      const count = Number(cache.match(/<c:ptCount val="(\\d+)"/)?.[1] ?? 0);
+    result = result.replace(/<c:strCache>[\s\S]*?<\/c:strCache>/g, (cache) => {
+      const count = Number(cache.match(/<c:ptCount val="(\d+)"/)?.[1] ?? 0);
       if (count <= 1) return cache;
       const points = labels.map((v, i) => '<c:pt idx="' + i + '"><c:v>' + xmlEscape(v) + '</c:v></c:pt>').join("");
-      return cache.replace(/<c:ptCount val="\\d+"\\s*\\/>/, '<c:ptCount val="' + labels.length + '"/>')
-        .replace(/<c:pt[\\s\\S]*?<\\/c:pt>/g, "")
-        .replace(/(<c:ptCount[^>]*\\/>)/, "$1" + points);
+      return cache.replace(/<c:ptCount val="\d+"\s*\/>/, '<c:ptCount val="' + labels.length + '"/>')
+        .replace(/<c:pt[\s\S]*?<\/c:pt>/g, "")
+        .replace(/(<c:ptCount[^>]*\/>)/, "$1" + points);
     });
   }
   return result;
