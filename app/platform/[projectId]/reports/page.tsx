@@ -129,7 +129,7 @@ export default function ReportsPage() {
       const { data: projectInfo, error: projectInfoError } = await supabase.from("projects").select("brand_domains").eq("id", projectId).single();
       if (projectInfoError) throw projectInfoError;
       const brandHosts = ((projectInfo?.brand_domains ?? []) as string[]).map((domain) => {
-        try { return new URL(domain.includes("://") ? domain : "https://" + domain).hostname.toLowerCase().replace(/^www\\./, ""); } catch { return ""; }
+        try { return new URL(domain.includes("://") ? domain : "https://" + domain).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; }
       }).filter(Boolean);
       const args = { p_project_id: projectId, p_start_date: start, p_end_date: end, p_engines: [], p_brand_related_only: false, p_tracking_location: data.location };
       const results = await Promise.all(data.brand.categories.map(async (category) => {
@@ -138,7 +138,7 @@ export default function ReportsPage() {
         const allPages = (rows ?? []) as { url: string; frequency: number }[];
         const pages = allPages.filter((page) => {
           try {
-            const host = new URL(page.url).hostname.toLowerCase().replace(/^www\\./, "");
+            const host = new URL(page.url).hostname.toLowerCase().replace(/^www\./, "");
             return brandHosts.some((brandHost) => host === brandHost || host.endsWith("." + brandHost));
           } catch { return false; }
         });
