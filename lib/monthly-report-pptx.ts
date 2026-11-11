@@ -39,6 +39,15 @@ function setShapeText(xml: string, name: string, value: string, occurrence = 0) 
   });
 }
 
+function setShapeTextAll(xml: string, name: string, value: string) {
+  for (let occurrence = 0; occurrence < 12; occurrence++) {
+    const next = setShapeText(xml, name, value, occurrence);
+    if (next === xml) break;
+    xml = next;
+  }
+  return xml;
+}
+
 function setTable(xml: string, rows: string[][]) {
   return xml.replace(/<p:graphicFrame>[\s\S]*?<\/p:graphicFrame>/g, (frame) => {
     if (!/<p:cNvPr[^>]*name="Table 0"/.test(frame)) return frame;
@@ -224,10 +233,10 @@ export async function generateMonthlyReportPptx(
       const latest = i === 0 ? snapshot.overall.visibilityScore : categoryScores[i - 1];
       const target = Number(content.targets[category]?.score || 0);
       const gap = target && latest != null ? (target - latest).toFixed(1) : "N/A";
-      xml = setShapeText(xml, "Card Title " + names[i], category);
-      xml = setShapeText(xml, "Latest Value " + names[i], pct(latest));
-      xml = setShapeText(xml, "Target Value " + names[i], target ? target.toFixed(1) + "%" : "Not set");
-      xml = setShapeText(xml, "Gap " + names[i], gap === "N/A" ? "Target not set" : (Number(gap) >= 0 ? "+" : "") + gap + " pts to target");
+      xml = setShapeTextAll(xml, "Card Title " + names[i], category);
+      xml = setShapeTextAll(xml, "Latest Value " + names[i], pct(latest));
+      xml = setShapeTextAll(xml, "Target Value " + names[i], target ? target.toFixed(1) + "%" : "Not set");
+      xml = setShapeTextAll(xml, "Gap " + names[i], gap === "N/A" ? "Target not set" : (Number(gap) >= 0 ? "+" : "") + gap + " pts to target");
     }
     return xml.replace(/\[next month\]/gi, "Next Month").replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location).replace(/\[date\]/g, dateLabel(snapshot.period.end));
   });
