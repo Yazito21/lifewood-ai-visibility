@@ -64,13 +64,13 @@ function updateChartCache(xml: string, seriesIndex: number, values: number[], la
       .replace(/(<c:ptCount[^>]*\/>)/, "$1" + points);
   });
   if (labels?.length) {
-    let strIndex = 0;
-    result = result.replace(/<c:strCache>[\s\S]*?<\/c:strCache>/g, (cache) => {
-      if (strIndex++ !== 1) return cache;
+    result = result.replace(/<c:strCache>[\\s\\S]*?<\\/c:strCache>/g, (cache) => {
+      const count = Number(cache.match(/<c:ptCount val="(\\d+)"/)?.[1] ?? 0);
+      if (count <= 1) return cache;
       const points = labels.map((v, i) => '<c:pt idx="' + i + '"><c:v>' + xmlEscape(v) + '</c:v></c:pt>').join("");
-      return cache.replace(/<c:ptCount val="\d+"\s*\/>/, '<c:ptCount val="' + labels.length + '"/>')
-        .replace(/<c:pt[\s\S]*?<\/c:pt>/g, "")
-        .replace(/(<c:ptCount[^>]*\/>)/, "$1" + points);
+      return cache.replace(/<c:ptCount val="\\d+"\\s*\\/>/, '<c:ptCount val="' + labels.length + '"/>')
+        .replace(/<c:pt[\\s\\S]*?<\\/c:pt>/g, "")
+        .replace(/(<c:ptCount[^>]*\\/>)/, "$1" + points);
     });
   }
   return result;
@@ -237,25 +237,15 @@ export async function generateMonthlyReportPptx(
     const xml = await chart2.async("string");
     const totalCitations = Object.values(content.citationByCategory).reduce((sum, item) => sum + item.citations, 0);
     const categoryShares = categories.map((category) => totalCitations ? (content.citationByCategory[category]?.citations ?? 0) / totalCitations * 100 : 0);
-    const updated = updateChartCache(xml, 0, categoryShares);
-    const labelsXml = updated.replace(/<c:strCache>[\\s\\S]*?<\\/c:strCache>/g, (cache, index) => cache);
-    let strIndex = 0;
-    const finalXml = labelsXml.replace(/<c:strCache>[\\s\\S]*?<\\/c:strCache>/g, (cache) => {
-      if (strIndex++ !== 1) return cache;
-      const points = categories.map((label, i) => '<c:pt idx="' + i + '"><c:v>' + xmlEscape(label) + '</c:v></c:pt>').join("");
-      return cache.replace(/<c:ptCount val="\\d+"\\s*\\/>/, '<c:ptCount val="' + categories.length + '"/>')
-        .replace(/<c:pt[\\s\\S]*?<\\/c:pt>/g, "")
-        .replace(/(<c:ptCount[^>]*\\/>)/, "$1" + points);
-    });
-    zip.file("ppt/charts/chart2.xml", finalXml);
+    zip.file("ppt/charts/chart2.xml", updateChartCache(xml, 0, categoryShares, categories));
   }
 
   const chart1 = zip.file("ppt/charts/chart1.xml");
   if (chart1) {
     let xml = await chart1.async("string");
-    xml = updateChartCache(xml, 0, values);
+    xml = updateChartCache(xml, 0, values, labels);
     xml = updateChartCache(xml, 1, values.map(() => targetValue));
-    xml = updateChartCache(xml, 2, [], labels);
+
     zip.file("ppt/charts/chart1.xml", xml);
   }
 
