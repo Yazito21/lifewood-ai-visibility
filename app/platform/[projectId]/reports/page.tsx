@@ -125,7 +125,7 @@ export default function ReportsPage() {
         if (active) setTemplateExists(!listError && Boolean(data?.some((item) => item.name === templatePath)));
       });
     return () => { active = false; };
-  }, []);
+  }, [templatePath]);
 
   async function exportPowerPoint() {
     if (!snapshot || !templateExists) return;
