@@ -9,6 +9,7 @@ import { gatherSnapshot, type ReportPeriod } from "@/lib/report-data";
 import { malaysiaDateString, shiftDateString, MIN_TRACKING_DATE } from "@/lib/reporting-date";
 import { trackingLocationLabel } from "@/lib/tracking-locations";
 import type { ReportSnapshot } from "@/lib/report-types";
+import { canEditProject } from "@/lib/report-view";
 
 type ReportType = "monthly" | "simple" | "introductory" | "technical_audit" | "competitor_comparison";
 type ReportRow = { id: string; report_type: ReportType; period_start: string; period_end: string; status: string; created_at: string; snapshot: ReportSnapshot; content: Content };
@@ -16,7 +17,7 @@ type Target = { score: string };
 type Initiative = { area: string; title: string; description: string };
 type Action = { week: string; website: string; knowledge: string; branding: string; community: string; monitoring: string };
 type Content = {
-  preparedBy: string; projectName: string; summaryDone: string; summaryFocus: string;
+  preparedBy: string; projectName: string; summaryDone: string; summaryFocus: string; knowledgeAssets: string;
   progress: Record<string, string[]>; initiatives: Initiative[]; actions: Action[];
   targets: Record<string, Target>; citationByCategory: Record<string, { citations: number; pages: { url: string; frequency: number }[] }>;
 };
@@ -31,7 +32,7 @@ const AREAS = ["Website Content and Structure", "Knowledge Assets and Resources"
 const BLANK_ACTION = (): Action => ({ week: "Week 1", website: "", knowledge: "", branding: "", community: "", monitoring: "" });
 function emptyContent(categories: string[]): Content {
   return {
-    preparedBy: "", projectName: "", summaryDone: "", summaryFocus: "",
+    preparedBy: "", projectName: "", summaryDone: "", summaryFocus: "", knowledgeAssets: "",
     progress: Object.fromEntries(AREAS.map((a) => [a, ["", "", "", ""]])),
     initiatives: [
       { area: "Website", title: "", description: "" }, { area: "Website", title: "", description: "" },
@@ -82,12 +83,15 @@ export default function ReportsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [canEdit, setCanEdit] = useState(false);
 
   const categories = useMemo(() => snapshot?.brand.categories ?? [], [snapshot]);
   const slides = ["Cover", "Executive Summary", "Overall Visibility Score Progression", "Comparison with Competitors", "Citation Summary", "What Have Been Done", "What Needs To Be Done", "Recommended Action Plans", "Targets", "Thank You"];
 
   const loadSaved = useCallback(async () => {
-    const { data, error: e } = await supabase.from("client_reports").select("id,report_type,period_start,period_end,status,created_at,snapshot,content").eq("project_id", projectId).order("created_at", { ascending: false }).limit(30);
+    const { data: { user } } = await supabase.auth.getUser();
+    const [dataResult, projectResult, profileResult, memberResult] = await Promise.all([
+      supabase.from("client_reports").select("id,report_type,period_start,period_end,status,created_at,snapshot,content").eq("project_id", projectId).order("created_at", { ascending: false }).limit(30);
     if (e) setError(e.message); else setSaved((data ?? []) as ReportRow[]);
   }, [projectId]);
 
@@ -171,7 +175,7 @@ export default function ReportsPage() {
     if (!snapshot) return <div className="monthly-preview-empty"><FileText size={32} /><p>Generate a monthly report to see the slide preview.</p></div>;
     const s = snapshot;
     if (slide === 1) return <div className="monthly-cover"><span>{s.brand.name}</span><h2>AI Visibility Progress Report</h2><p>{s.period.start} to {s.period.end}</p><small>Prepared by {content.preparedBy || "Team Name"} as part of {content.projectName || "Project Name"}.</small></div>;
-    if (slide === 2) return <><div className="monthly-kpis"><Kpi label="Overall visibility score" value={pct(s.overall.visibilityScore)} note="Latest score in period" /><Kpi label="Share of voice" value={pct(s.overall.shareOfVoice)} note="Average across available engines" /><Kpi label="Website citations in AI" value={fmt(s.overall.brandCitations)} note="Brand-related cited-page occurrences" /><Kpi label="Knowledge assets" value="—" note="Manual website audit required" /></div><div className="monthly-preview-two"><div><b>Improvements made</b><p>{content.summaryDone || "Add a summary of completed work."}</p></div><div><b>Where to focus next</b><p>{content.summaryFocus || "Add the next reporting period's priorities."}</p></div></div></>;
+    if (slide === 2) return <><div className="monthly-kpis"><Kpi label="Overall visibility score" value={pct(s.overall.visibilityScore)} note="Latest score in period" /><Kpi label="Share of voice" value={pct(s.overall.shareOfVoice)} note="Average across available engines" /><Kpi label="Website citations in AI" value={fmt(s.overall.brandCitations)} note="Brand-related cited-page occurrences" /><Kpi label="Knowledge assets" value={content.knowledgeAssets || "—"} note="Enter the latest website audit count" /></div><div className="monthly-preview-two"><div><b>Improvements made</b><p>{content.summaryDone || "Add a summary of completed work."}</p></div><div><b>Where to focus next</b><p>{content.summaryFocus || "Add the next reporting period's priorities."}</p></div></div></>;
     if (slide === 3) return <div className="monthly-chart-layout"><div><b>Daily visibility score</b><div className="monthly-bars">{s.trend.slice(-16).map((v, i) => <div key={i} title={v.date + ": " + pct(v.score)}><i style={{ height: Math.max(3, v.score ?? 0) + "%" }} /><small>{v.date.slice(8)}</small></div>)}</div></div><div className="monthly-category-stack"><Kpi label="Latest overall score" value={pct(s.overall.visibilityScore)} />{s.byCategory.map((c) => <Kpi key={c.category} label={"Latest " + c.category} value={pct(c.visibilityScore)} />)}</div></div>;
     if (slide === 4) return <div className="monthly-table-wrap"><table className="monthly-table"><thead><tr><th>Metric</th>{s.competitors.map((c) => <th key={c.name}>{c.name}</th>)}</tr></thead><tbody>{[["Visibility score", (c: typeof s.competitors[number]) => pct(c.visibilityScore)], ["Share of voice", (c: typeof s.competitors[number]) => pct(c.shareOfVoice)], ["Citations", (c: typeof s.competitors[number]) => fmt(c.citations)], ["External websites", (c: typeof s.competitors[number]) => fmt(c.presence.websites)], ["Directories", (c: typeof s.competitors[number]) => fmt(c.presence.directories)], ["Social", (c: typeof s.competitors[number]) => fmt(c.presence.social)]].map(([label, fn]) => <tr key={String(label)}><th>{String(label)}</th>{s.competitors.map((c) => <td key={c.name}>{(fn as (v: typeof c) => string)(c)}</td>)}</tr>)}</tbody></table></div>;
     if (slide === 5) {
@@ -190,7 +194,7 @@ export default function ReportsPage() {
   const editor = (slide: number) => {
     if (!snapshot) return <p className="text-sm text-[var(--muted-foreground)]">Generate or open a report before editing its slide content.</p>;
     if (slide === 1) return <div className="grid gap-4"><Field label="Prepared by" value={content.preparedBy} onChange={v=>update("preparedBy",v)} /><Field label="Project name" value={content.projectName} onChange={v=>update("projectName",v)} /></div>;
-    if (slide === 2) return <div className="grid gap-4"><p className="text-xs text-[var(--muted-foreground)]">KPI values are populated from the tracking database. Knowledge asset counts require a future website-audit integration.</p><Field label="Improvements made during this period" value={content.summaryDone} onChange={v=>update("summaryDone",v)} multiline /><Field label="Where to focus next period" value={content.summaryFocus} onChange={v=>update("summaryFocus",v)} multiline /></div>;
+    if (slide === 2) return <div className="grid gap-4"><p className="text-xs text-[var(--muted-foreground)]">KPI values are populated from the tracking database. Knowledge asset counts require a future website-audit integration.</p><Field label="Improvements made during this period" value={content.summaryDone} onChange={v=>update("summaryDone",v)} multiline /><Field label="Where to focus next period" value={content.summaryFocus} onChange={v=>update("summaryFocus",v)} multiline /><Field label="Knowledge assets (count)" value={content.knowledgeAssets} onChange={v=>update("knowledgeAssets",v)} placeholder="Enter audited count" /></div>;
     if (slide === 3) return <p className="text-sm text-[var(--muted-foreground)]">Visibility trend, latest overall score and category scores are populated from visibility_daily. Category cards adapt to this brand's configured categories ({categories.length}).</p>;
     if (slide === 4) return <p className="text-sm text-[var(--muted-foreground)]">Competitor metrics are populated from the leaderboard data for this reporting period. The number of columns adapts to available competitors.</p>;
     if (slide === 5) return <p className="text-sm text-[var(--muted-foreground)]">Citation counts and cited pages are loaded per category using the brand-related citation query. The preview displays up to seven of the most-cited brand pages.</p>;
@@ -211,7 +215,7 @@ export default function ReportsPage() {
       </section>
       {error&&<div className="sample-error mt-4 rounded-xl p-3 text-sm">{error}</div>}{notice&&<div className="platform-notice-success mt-4 rounded-xl p-3 text-sm">{notice}</div>}
       {snapshot&&<section className="mt-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Monthly report editor</h2><p className="text-xs text-[var(--muted-foreground)]">{snapshot.brand.name} · {snapshot.period.start} to {snapshot.period.end} · {trackingLocationLabel(snapshot.location)}</p></div><div className="flex flex-wrap gap-2"><button className="platform-btn" onClick={()=>window.print()}><Download size={14}/> Print / PDF</button><button className="platform-btn platform-btn-primary" disabled={saving} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button></div></div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Monthly report editor</h2><p className="text-xs text-[var(--muted-foreground)]">{snapshot.brand.name} · {snapshot.period.start} to {snapshot.period.end} · {trackingLocationLabel(snapshot.location)}</p></div><div className="flex flex-wrap gap-2"><button className="platform-btn" onClick={()=>window.print()}><Download size={14}/> Print / PDF</button><button className="platform-btn platform-btn-primary" disabled={saving || !canEdit} title={!canEdit ? "Only project editors can save reports" : undefined} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button></div>{!canEdit&&<p className="mt-2 text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}</div>
         <div className="monthly-editor-layout">
           <aside className="monthly-slide-nav"><p className="mb-2 text-xs font-bold uppercase tracking-wider text-[var(--muted-foreground)]">Report slides</p>{slides.map((name,i)=><button key={name} onClick={()=>setActiveSlide(i+1)} className={activeSlide===i+1?"is-active":""}><span>{String(i+1).padStart(2,"0")}</span>{name}</button>)}</aside>
           <div className="monthly-editor-main"><div className="monthly-editor-toolbar"><div><span className="text-xs text-[var(--muted-foreground)]">Slide {activeSlide} of 10</span><h3 className="font-bold">{slides[activeSlide-1]}</h3></div><div className="flex gap-2"><button className="platform-btn" disabled={activeSlide===1} onClick={()=>setActiveSlide(v=>v-1)}>Previous</button><button className="platform-btn" disabled={activeSlide===10} onClick={()=>setActiveSlide(v=>v+1)}>Next</button></div></div>
