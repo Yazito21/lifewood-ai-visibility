@@ -159,7 +159,7 @@ export async function generateMonthlyReportPptx(
       ["Latest Share of Voice Score", (c) => pct(c?.shareOfVoice)],
       ["Latest Number of Citations", (c) => fmt(c?.citations)],
       ["Number of Knowledge Assets", (c) => c ? (c.isTracked ? (content.knowledgeAssets || "N/A") : (content.competitorAssets[c.name] || "N/A")) : "N/A"],
-      ["Number of External Presence", (c) => c ? fmt(c.presence.websites + c.presence.directories + c.presence.social) + "\\n" + fmt(c.presence.websites) + " websites · " + fmt(c.presence.directories) + " directories · " + fmt(c.presence.social) + " social" : "N/A"],
+      ["Number of External Presence", (c) => c ? fmt(c.presence.websites + c.presence.directories + c.presence.social) + "\n" + fmt(c.presence.websites) + " websites · " + fmt(c.presence.directories) + " directories · " + fmt(c.presence.social) + " social" : "N/A"],
     ];
     for (const [label, fn] of metrics) {
       const row = [label, fn(brandRow, -1), ...competitors.map((c, i) => fn(c, i))];
@@ -178,8 +178,9 @@ export async function generateMonthlyReportPptx(
     xml = setShapeText(xml, "Text 6", fmt(total));
     xml = setShapeText(xml, "Text 7", "times AI platforms cited " + snapshot.brand.name + " website");
     xml = setShapeText(xml, "Text 8", dateLabel(snapshot.period.start) + " to " + dateLabel(snapshot.period.end));
-    xml = setShapeText(xml, "Text 10", total ? "100%" : "0%");
-    xml = setShapeText(xml, "Text 11", "of the brand website citations collected");
+    const shareOfTotal = snapshot.overall.brandCitations > 0 ? total / snapshot.overall.brandCitations * 100 : null;
+    xml = setShapeText(xml, "Text 10", pct(shareOfTotal));
+    xml = setShapeText(xml, "Text 11", "of all " + fmt(snapshot.overall.brandCitations) + " brand citations");
     xml = setShapeText(xml, "Text 12", "Citation totals by configured category");
     const topPageShare = total > 0 ? allPages.slice(0, 3).reduce((sum, page) => sum + page.frequency, 0) / total * 100 : null;
     xml = setShapeText(xml, "Text 14", pct(topPageShare));
