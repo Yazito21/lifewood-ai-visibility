@@ -84,6 +84,7 @@ export default function ReportsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [canEdit, setCanEdit] = useState(false);
+  const [canManageTemplate, setCanManageTemplate] = useState(false);
   const [templateExists, setTemplateExists] = useState(false);
   const [templateUploading, setTemplateUploading] = useState(false);
   const [exportingPptx, setExportingPptx] = useState(false);
@@ -107,6 +108,7 @@ export default function ReportsPage() {
     ]);
     if (dataResult.error) setError(dataResult.error.message);
     else setSaved((dataResult.data ?? []) as ReportRow[]);
+    setCanManageTemplate(Boolean(user && ["admin", "superadmin"].includes(String(profileResult.data?.role ?? "").toLowerCase())));
     setCanEdit(Boolean(user && canEditProject(
       profileResult.data?.role,
       memberResult.data?.role,
@@ -294,7 +296,7 @@ export default function ReportsPage() {
           <div><h2 className="font-bold">Monthly report PowerPoint template</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Original 10-slide Lifewood template, retained as the reference design.</p></div>
           <div className="flex flex-wrap items-center gap-2">
             {templateExists ? <a className="platform-btn platform-btn-primary" href={templateDownloadUrl} download="Client_Monthly_Report_Template.pptx"><Download size={14}/> Download template</a> : <span className="text-xs text-[var(--muted-foreground)]">Template file has not been uploaded to platform storage yet.</span>}
-            {canEdit && <label className="platform-btn cursor-pointer">
+            {canManageTemplate && <label className="platform-btn cursor-pointer">
               {templateUploading ? <Loader2 size={14} className="animate-spin"/> : <Plus size={14}/>} {templateExists ? "Replace template" : "Upload template"}
               <input className="hidden" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" disabled={templateUploading} onChange={(e) => { void uploadTemplate(e.target.files?.[0]); e.currentTarget.value = ""; }}/>
             </label>}
