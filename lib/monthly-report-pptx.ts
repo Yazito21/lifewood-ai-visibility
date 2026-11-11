@@ -134,7 +134,8 @@ export async function generateMonthlyReportPptx(
   });
 
   await editSlide(4, (xml) => {
-    const competitors = snapshot.competitors.slice(0, 4);
+    const brandRow = snapshot.competitors.find((c) => c.isTracked) ?? null;
+    const competitors = snapshot.competitors.filter((c) => !c.isTracked).slice(0, 3);
     const headers = ["Category", snapshot.brand.name, ...competitors.map((c) => c.name)];
     while (headers.length < 5) headers.push("Not tracked");
     const rows = [headers];
@@ -142,11 +143,11 @@ export async function generateMonthlyReportPptx(
       ["Latest Visibility Score", (c) => pct(c?.visibilityScore)],
       ["Latest Share of Voice Score", (c) => pct(c?.shareOfVoice)],
       ["Latest Number of Citations", (c) => fmt(c?.citations)],
-      ["Number of Knowledge Assets", (c, i) => c ? (c.isTracked ? (content.knowledgeAssets || "N/A") : (content.competitorAssets[c.name] || "N/A")) : "N/A"],
-      ["Number of External Presence", (c) => c ? fmt(c.presence.websites + c.presence.directories + c.presence.social) : "N/A"],
+      ["Number of Knowledge Assets", (c) => c ? (c.isTracked ? (content.knowledgeAssets || "N/A") : (content.competitorAssets[c.name] || "N/A")) : "N/A"],
+      ["Number of External Presence", (c) => c ? fmt(c.presence.websites + c.presence.directories + c.presence.social) + "\\n" + fmt(c.presence.websites) + " websites · " + fmt(c.presence.directories) + " directories · " + fmt(c.presence.social) + " social" : "N/A"],
     ];
     for (const [label, fn] of metrics) {
-      const row = [label, fn(null, -1), ...competitors.map((c, i) => fn(c, i))];
+      const row = [label, fn(brandRow, -1), ...competitors.map((c, i) => fn(c, i))];
       while (row.length < 5) row.push("N/A");
       rows.push(row);
     }
@@ -230,6 +231,24 @@ export async function generateMonthlyReportPptx(
     }
     return xml.replace(/\[next month\]/gi, "Next Month").replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location).replace(/\[date\]/g, dateLabel(snapshot.period.end));
   });
+
+  const chart2 = zip.file("ppt/charts/chart2.xml");
+  if (chart2) {
+    const xml = await chart2.async("string");
+    const totalCitations = Object.values(content.citationByCategory).reduce((sum, item) => sum + item.citations, 0);
+    const categoryShares = categories.map((category) => totalCitations ? (content.citationByCategory[category]?.citations ?? 0) / totalCitations * 100 : 0);
+    const updated = updateChartCache(xml, 0, categoryShares);
+    const labelsXml = updated.replace(/<c:strCache>[\\s\\S]*?<\\/c:strCache>/g, (cache, index) => cache);
+    let strIndex = 0;
+    const finalXml = labelsXml.replace(/<c:strCache>[\\s\\S]*?<\\/c:strCache>/g, (cache) => {
+      if (strIndex++ !== 1) return cache;
+      const points = categories.map((label, i) => '<c:pt idx="' + i + '"><c:v>' + xmlEscape(label) + '</c:v></c:pt>').join("");
+      return cache.replace(/<c:ptCount val="\\d+"\\s*\\/>/, '<c:ptCount val="' + categories.length + '"/>')
+        .replace(/<c:pt[\\s\\S]*?<\\/c:pt>/g, "")
+        .replace(/(<c:ptCount[^>]*\\/>)/, "$1" + points);
+    });
+    zip.file("ppt/charts/chart2.xml", finalXml);
+  }
 
   const chart1 = zip.file("ppt/charts/chart1.xml");
   if (chart1) {
