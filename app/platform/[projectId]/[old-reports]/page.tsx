@@ -143,7 +143,7 @@ export default function ReportsPage() {
                 ? <div className="flex flex-wrap gap-1.5"><ScoreChip label="AI visibility" score={report.ai_visibility_score} /><ScoreChip label="GEO" score={report.geo_score} /><ScoreChip label="SEO" score={report.seo_score} /></div>
                 : <span className="text-xs text-[var(--muted-foreground)]">—</span>}</td>
               <td className={status === "failed" ? "text-rose-700" : ""}>{statusText[status]}</td>
-              <td className="text-right"><Link href={`/platform/${projectId}/reports/${report.id}`} className="platform-btn">Open</Link></td>
+              <td className="text-right"><Link href={`/platform/${projectId}/old-reports/${report.id}`} className="platform-btn">Open</Link></td>
             </tr>;
           })}</tbody>
         </table></div>}
