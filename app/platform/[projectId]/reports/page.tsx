@@ -78,7 +78,6 @@ export default function ReportsPage() {
   const [content, setContent] = useState<Content>(emptyContent([]));
   const [saved, setSaved] = useState<ReportRow[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [activeSlide, setActiveSlide] = useState(1);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -135,7 +134,7 @@ export default function ReportsPage() {
       }));
       for (const [category, value] of results) citationByCategory[category] = value;
       next.citationByCategory = citationByCategory;
-      setSnapshot(data); setContent(next); setActiveSlide(1);
+      setSnapshot(data); setContent(next);
       setNotice("Monthly report data loaded. Complete the highlighted manual fields, then save your draft.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to generate the report.");
@@ -170,7 +169,7 @@ export default function ReportsPage() {
     setError(""); setNotice("");
     setReportType(row.report_type); setStart(row.period_start); setEnd(row.period_end);
     setSnapshot(row.snapshot); setContent({ ...emptyContent(row.snapshot.brand.categories), ...row.content });
-    setActiveId(row.id); setActiveSlide(1);
+    setActiveId(row.id);
   }
 
   function updateInitiative(index: number, key: keyof Initiative, value: string) {
