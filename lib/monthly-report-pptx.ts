@@ -124,13 +124,14 @@ export async function generateMonthlyReportPptx(
 
   await editSlide(2, (xml) => {
     xml = setShapeText(xml, "Text 6", pct(snapshot.overall.visibilityScore), 0);
-    xml = setShapeText(xml, "Text 8", (content.summaryDone || "Progress summary to be completed").split("\n").slice(0, 2).join("\n"), 0);
+    const scoreChange = snapshot.overall.scoreChange == null ? "Change vs previous period: N/A" : "Change vs previous period: " + (snapshot.overall.scoreChange > 0 ? "+" : "") + snapshot.overall.scoreChange.toFixed(1) + " pts";
+    xml = setShapeText(xml, "Text 8", scoreChange + "; " + snapshot.overall.rankText, 0);
     xml = setShapeText(xml, "Text 18", pct(snapshot.overall.shareOfVoice), 0);
-    xml = setShapeText(xml, "Text 20", "Competitor comparison; " + snapshot.competitors.length + " brands tracked", 0);
+    xml = setShapeText(xml, "Text 20", "Latest share of voice; " + snapshot.competitors.length + " benchmark brands", 0);
     xml = setShapeText(xml, "Text 6", fmt(Object.values(content.citationByCategory).reduce((n, item) => n + item.citations, 0)), 1);
-    xml = setShapeText(xml, "Text 8", "Brand website citations in the reporting period", 1);
+    xml = setShapeText(xml, "Text 8", "Website citations in the period; " + fmt(snapshot.overall.brandCitations) + " total brand citations", 1);
     xml = setShapeText(xml, "Text 18", content.knowledgeAssets || "N/A", 1);
-    xml = setShapeText(xml, "Text 20", "Audited knowledge assets; manually supplied", 1);
+    xml = setShapeText(xml, "Text 20", "Manual audit count; compare with competitor audits", 1);
     xml = setShapeText(xml, "Text 23", "Improvements made in " + periodLabel(snapshot));
     xml = setShapeText(xml, "Text 24", content.summaryDone || "Progress summary to be completed");
     xml = setShapeText(xml, "Text 27", "Where to focus next");
@@ -246,7 +247,7 @@ export async function generateMonthlyReportPptx(
       xml = setShapeTextAll(xml, "Target Value " + names[i], target ? target.toFixed(1) + "%" : "Not set");
       xml = setShapeTextAll(xml, "Gap " + names[i], gap === "N/A" ? "Target not set" : (Number(gap) >= 0 ? "+" : "") + gap + " pts to target");
     }
-    return xml.replace(/\[next month\]/gi, "Next Month").replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location).replace(/\[date\]/g, dateLabel(snapshot.period.end));
+    return xml.replace(/\[next month\]/gi, "Next Month").replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location).replace(/\[date\]/g, dateLabel(snapshot.period.end)).replace(/\[benchmark description\]/g, "configured benchmark prompts and tracked competitors");
   });
 
   const chart2 = zip.file("ppt/charts/chart2.xml");
