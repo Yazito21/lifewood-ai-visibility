@@ -696,3 +696,7 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
   .monthly-print .monthly-slide:last-child{break-after:auto!important;page-break-after:auto!important}
   @page{size:297mm 167mm;margin:0}
 }
+
+
+.monthly-category-stack{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(auto-fit,minmax(0,1fr));align-content:stretch}
+.monthly-category-stack .monthly-kpi{display:flex;min-height:0;flex-direction:column;justify-content:center}
