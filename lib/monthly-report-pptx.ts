@@ -52,11 +52,10 @@ function setShapeBulletList(xml: string, name: string, items: string[]) {
     if (!textParagraphs.length) return block;
     const template = textParagraphs[0];
     const nextParagraphs = (items.length ? items : [""]).map((item, index) => setTextInBlock(textParagraphs[index] ?? template, item));
-    let index = 0;
-    return block.replace(/<a:p>[\s\S]*?<\/a:p>/g, (paragraph) => {
-      if (!/<a:t(?:\s+[^>]*)?>/.test(paragraph)) return paragraph;
-      return nextParagraphs[index++] ?? "";
-    });
+    const first = block.indexOf(textParagraphs[0]);
+    const lastParagraph = textParagraphs[textParagraphs.length - 1];
+    const last = block.lastIndexOf(lastParagraph) + lastParagraph.length;
+    return block.slice(0, first) + nextParagraphs.join("") + block.slice(last);
   });
 }
 function setShapeTextAll(xml: string, name: string, value: string) {
