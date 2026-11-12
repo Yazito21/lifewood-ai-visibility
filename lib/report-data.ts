@@ -139,6 +139,20 @@ export async function gatherSnapshot(client: SupabaseClient, projectId: string, 
   const latestByEngine = engines.map((engine) => [...perEngine].reverse().find((row) => row.llm_provider === engine && row.category === "Overall" && num(row.visibility_score) !== null));
   const shares = latestByEngine.map((row) => num(row?.share_of_voice_score)).filter((v): v is number => v !== null);
 
+  // Daily share of voice is the average tracked-brand share across available LLM providers.
+  const sharesByDate = new Map<string, number[]>();
+  for (const row of perEngine) {
+    if (row.category !== "Overall") continue;
+    const value = num(row.share_of_voice_score);
+    if (value === null) continue;
+    const day = sharesByDate.get(row.metric_date) ?? [];
+    day.push(value);
+    sharesByDate.set(row.metric_date, day);
+  }
+  const shareOfVoiceTrend = [...sharesByDate.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, values]) => ({ date, score: round1(values.reduce((sum, value) => sum + value, 0) / values.length) }));
+
   // Citations (Citations page RPCs).
   const citationArgs = { p_project_id: projectId, p_start_date: period.start, p_end_date: period.end, p_category: null, p_engines: [], p_tracking_location: location };
   const [brandPages, allPages, thirdParty, gapsResult, promptCount, presence] = await Promise.all([
@@ -194,6 +208,7 @@ export async function gatherSnapshot(client: SupabaseClient, projectId: string, 
       brandCitations: brandPages.reduce((sum, row) => sum + (num(row.frequency) ?? 0), 0),
     },
     trend: metrics.filter((row) => row.category === "Overall").map((row) => ({ date: row.metric_date, score: num(row.visibility_score) })),
+    shareOfVoiceTrend,
     byEngine: engines.map((engine, i) => ({ engine, label: ENGINE_LABELS[engine] ?? engine, visibilityScore: num(latestByEngine[i]?.visibility_score) })),
     byCategory: categories.map((category) => {
       const snap = snapshots.get(category);
