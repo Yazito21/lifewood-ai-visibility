@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Download, ExternalLink, Loader2, Plus, Printer, RefreshCw, Save, Sparkles, ChevronDown, Trash2, X } from "lucide-react";
 import { ProjectShell } from "@/components/project-shell";
@@ -22,7 +22,7 @@ type Content = {
   progress: Record<string, string[]>; initiatives: Initiative[]; actions: Action[];
   targets: Record<string, Target>; competitorAssets: Record<string, string>;
   competitorDetails: Record<string, { knowledgeAssets: string; knowledgeDescription: string; externalTotal: string; news: string; directories: string; websites: string; social: string }>;
-  citationByCategory: Record<string, { citations: number; pages: { url: string; frequency: number }[] }>;
+  citationByCategory: Record<string, { citations: number; totalCitations: number; pages: { url: string; frequency: number }[] }>;
 };
 const TYPES: { id: ReportType; name: string; description: string; ready: boolean }[] = [
   { id: "monthly", name: "Monthly Report", description: "AI visibility progress, citations, competitor benchmarking and next-month plans.", ready: true },
@@ -47,11 +47,18 @@ function emptyContent(categories: string[]): Content {
     citationByCategory: {},
   };
 }
-function monthRange() {
+function defaultReportMonth() {
   const today = malaysiaDateString();
   const firstThisMonth = today.slice(0, 8) + "01";
-  const end = shiftDateString(firstThisMonth, -1);
-  return { start: end.slice(0, 8) + "01", end };
+  const previousMonth = shiftDateString(firstThisMonth, -1).slice(0, 7);
+  return previousMonth < MIN_TRACKING_DATE.slice(0, 7) ? MIN_TRACKING_DATE.slice(0, 7) : previousMonth;
+}
+function monthDates(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  if (!year || !monthNumber || monthNumber < 1 || monthNumber > 12) return { start: "", end: "" };
+  const start = month + "-01";
+  const end = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+  return { start, end };
 }
 function Field({ label, value, onChange, placeholder = "Enter information", multiline = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; multiline?: boolean }) {
   return <label className="block min-w-0"><span className="mb-1.5 block text-xs font-semibold text-[var(--muted-foreground)]">{label}</span>{multiline
@@ -61,8 +68,8 @@ function Field({ label, value, onChange, placeholder = "Enter information", mult
 export default function ReportsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [reportType, setReportType] = useState<ReportType>("monthly");
-  const [start, setStart] = useState(monthRange().start);
-  const [end, setEnd] = useState(monthRange().end);
+  const [selectedMonth, setSelectedMonth] = useState(defaultReportMonth());
+  const { start, end } = monthDates(selectedMonth);
   const [snapshot, setSnapshot] = useState<ReportSnapshot | null>(null);
   const [content, setContent] = useState<Content>(emptyContent([]));
   const [saved, setSaved] = useState<ReportRow[]>([]);
@@ -73,6 +80,9 @@ export default function ReportsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [canEdit, setCanEdit] = useState(false);
+  const [canManageTemplate, setCanManageTemplate] = useState(false);
+  const [uploadingTemplate, setUploadingTemplate] = useState(false);
+  const templateInputRef = useRef<HTMLInputElement>(null);
   const [templateExists, setTemplateExists] = useState(false);
   const [storedTemplatePath, setStoredTemplatePath] = useState<string | null>(null);
   const [templateNotice, setTemplateNotice] = useState("");
@@ -115,6 +125,7 @@ export default function ReportsPage() {
       memberResult.data?.role,
       projectResult.data?.created_by === user.id,
     )));
+    setCanManageTemplate(profileResult.data?.role === "admin" || profileResult.data?.role === "superadmin");
   }, [projectId]);
 
   useEffect(() => { void loadSaved(); }, [loadSaved]);
@@ -133,10 +144,10 @@ export default function ReportsPage() {
         const selected = names.has(preferredTemplatePath) ? preferredTemplatePath : names.has(legacyTemplatePath) ? legacyTemplatePath : null;
         setStoredTemplatePath(selected);
         setTemplateExists(Boolean(selected));
-        setTemplateNotice(selected === legacyTemplatePath ? "Using the template already stored under its original filename. The new dated filename will be used automatically once it is added to storage." : "");
+        setTemplateNotice(selected === legacyTemplatePath ? "Using the template currently stored under its original filename. Upload the revised template to replace it." : "");
       });
     return () => { active = false; };
-  }, []);
+  }, [preferredTemplatePath, legacyTemplatePath]);
 
   useEffect(() => {
     return () => {
@@ -236,10 +247,10 @@ export default function ReportsPage() {
 
   async function generate() {
     if (reportType !== "monthly") return;
-    if (!start || !end || start < MIN_TRACKING_DATE || end < start) { setError("Choose a valid reporting period."); return; }
+    if (!start || !end || start < MIN_TRACKING_DATE || end > malaysiaDateString()) { setError("Choose a valid reporting month."); return; }
     setLoading(true); setError(""); setNotice(""); setActiveId(null);
     try {
-      const period: ReportPeriod = { start, end, label: "Custom" };
+      const period: ReportPeriod = { start, end, label: new Date(start + "T00:00:00").toLocaleDateString("en-GB", { month: "long", year: "numeric" }) };
       const data = await gatherSnapshot(supabase, projectId, period);
       if (!data.hasData) throw new Error("No AI visibility tracking data was found for this period and tracking location.");
       const next = emptyContent(data.brand.categories);
@@ -259,13 +270,14 @@ export default function ReportsPage() {
         const { data: rows, error: rpcError } = await supabase.rpc("get_cumulative_citations", { ...args, p_category: category });
         if (rpcError) throw rpcError;
         const allPages = (rows ?? []) as { url: string; frequency: number }[];
+        const totalCitations = allPages.reduce((sum, page) => sum + Number(page.frequency || 0), 0);
         const pages = allPages.filter((page) => {
           try {
             const host = new URL(page.url).hostname.toLowerCase().replace(/^www\./, "");
             return brandHosts.some((brandHost) => host === brandHost || host.endsWith("." + brandHost));
           } catch { return false; }
         });
-        return [category, { citations: pages.reduce((sum, p) => sum + Number(p.frequency || 0), 0), pages }] as const;
+        return [category, { citations: pages.reduce((sum, p) => sum + Number(p.frequency || 0), 0), totalCitations, pages }] as const;
       }));
       for (const [category, value] of results) citationByCategory[category] = value;
       next.citationByCategory = citationByCategory;
@@ -350,7 +362,7 @@ export default function ReportsPage() {
 
   async function openSaved(row: ReportRow) {
     setError(""); setNotice("");
-    setReportType(row.report_type); setStart(row.period_start); setEnd(row.period_end);
+    setReportType(row.report_type); setSelectedMonth(row.period_start.slice(0, 7));
     const restoredContent = { ...emptyContent(row.snapshot.brand.categories), ...row.content };
     // Earlier drafts stored Community before Monitoring, while the original template
     // places Monitoring in card 5 and Community in card 6.
@@ -399,7 +411,7 @@ export default function ReportsPage() {
       <section className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-bold">Report type</h2><span className="text-xs text-[var(--muted-foreground)]">5 report formats</span></div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{TYPES.map(t=><button key={t.id} onClick={()=>{setReportType(t.id);setSnapshot(null);setActiveId(null);setError("");setNotice("");}} className={"rounded-xl border p-3 text-left transition "+(reportType===t.id?"border-[var(--primary)] bg-[var(--accent)] ring-1 ring-[var(--primary)]":"border-[var(--line)] hover:bg-[var(--accent)]")}><div className="flex items-center justify-between gap-2"><b className="text-sm">{t.name}</b>{t.ready?<span className="monthly-ready">Available</span>:<span className="monthly-soon">Coming soon</span>}</div><p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">{t.description}</p></button>)}</div>
-        {reportType==="monthly"?<div className="mt-5 flex flex-wrap items-end gap-3 border-t border-[var(--line)] pt-4"><label className="block"><span className="mb-1.5 block text-xs font-semibold text-[var(--muted-foreground)]">Start date</span><input className="platform-input text-sm" type="date" min={MIN_TRACKING_DATE} max={end} value={start} onChange={e=>setStart(e.target.value)} /></label><label className="block"><span className="mb-1.5 block text-xs font-semibold text-[var(--muted-foreground)]">End date</span><input className="platform-input text-sm" type="date" min={start} max={malaysiaDateString()} value={end} onChange={e=>setEnd(e.target.value)} /></label><button className="platform-btn platform-btn-primary ml-auto" disabled={loading} onClick={generate}>{loading?<Loader2 size={15} className="animate-spin"/>:<Sparkles size={15}/>} Generate monthly report</button></div>:<div className="mt-5 rounded-xl border border-dashed border-[var(--line)] p-5 text-center text-sm text-[var(--muted-foreground)]">This report format is planned for a future development stage.</div>}
+        {reportType==="monthly"?<div className="mt-5 flex flex-wrap items-end gap-3 border-t border-[var(--line)] pt-4"><label className="block"><span className="mb-1.5 block text-xs font-semibold text-[var(--muted-foreground)]">Reporting month</span><input className="platform-input text-sm" type="month" min={MIN_TRACKING_DATE.slice(0, 7)} max={malaysiaDateString().slice(0, 7)} value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} /></label><p className="pb-2 text-xs text-[var(--muted-foreground)]">{start && end ? "Reporting period: " + start + " to " + end : "Select a valid reporting month."}</p><button className="platform-btn platform-btn-primary ml-auto" disabled={loading || !start || !end} onClick={generate}>{loading?<Loader2 size={15} className="animate-spin"/>:<Sparkles size={15}/>} Generate monthly report</button></div>:<div className="mt-5 rounded-xl border border-dashed border-[var(--line)] p-5 text-center text-sm text-[var(--muted-foreground)]">This report format is planned for a future development stage.</div>}
       </section>
       {error&&<div className="sample-error mt-4 rounded-xl p-3 text-sm">{error}</div>}{notice&&<div className="platform-notice-success mt-4 rounded-xl p-3 text-sm">{notice}</div>}
       {snapshot&&<section className="mt-6">
