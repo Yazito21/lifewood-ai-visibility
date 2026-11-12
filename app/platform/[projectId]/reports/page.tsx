@@ -205,7 +205,10 @@ export default function ReportsPage() {
   function addProgress(area: string) { setContent((prev) => ({ ...prev, progress: { ...prev.progress, [area]: [...(prev.progress[area] ?? []), ""] } })); }
   function removeProgress(area: string, index: number) { setContent((prev) => ({ ...prev, progress: { ...prev.progress, [area]: (prev.progress[area] ?? []).filter((_, i) => i !== index) } })); }
   function updateCompetitorDetail(name: string, key: keyof Content["competitorDetails"][string], value: string) {
-    setContent((prev) => ({ ...prev, competitorDetails: { ...prev.competitorDetails, [name]: { knowledgeAssets: "", knowledgeDescription: "", externalTotal: "", news: "", directories: "", websites: "", social: "", ...prev.competitorDetails[name], [key]: value } } }));
+    setContent((prev) => {
+      const existing = prev.competitorDetails[name] ?? { knowledgeAssets: "", knowledgeDescription: "", externalTotal: "", news: "", directories: "", websites: "", social: "" };
+      return { ...prev, competitorDetails: { ...prev.competitorDetails, [name]: { ...existing, [key]: value } } };
+    });
   }
 
   async function generate() {
