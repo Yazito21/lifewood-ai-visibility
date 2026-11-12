@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useParams } from "next/navigation";
 import { Download, ExternalLink, Loader2, Plus, Printer, RefreshCw, Save, Sparkles, ChevronDown, Trash2, X } from "lucide-react";
 import { ProjectShell } from "@/components/project-shell";
@@ -155,6 +155,36 @@ export default function ReportsPage() {
     };
   }, [previewStoragePath]);
 
+  async function uploadTemplate(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!canManageTemplate) { setError("Only Admins and Superadmins can replace the report template."); return; }
+    if (!file.name.toLowerCase().endsWith(".pptx") || (file.type && file.type !== "application/vnd.openxmlformats-officedocument.presentationml.presentation")) {
+      setError("Choose a PowerPoint .pptx file.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) { setError("The PowerPoint template must be 10 MB or smaller."); return; }
+    setUploadingTemplate(true);
+    setError(""); setNotice("");
+    try {
+      const { error: uploadError } = await supabase.storage.from("client-report-templates").upload(preferredTemplatePath, file, {
+        contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        upsert: true,
+      });
+      if (uploadError) throw uploadError;
+      setStoredTemplatePath(preferredTemplatePath);
+      setTemplateExists(true);
+      setPreviewViewerUrl(""); setPreviewOpenUrl(""); setPreviewBlob(null); setPreviewSignature(""); setPreviewError("");
+      setNotice("The revised PowerPoint template was uploaded and is now the active template.");
+      if (snapshot) void refreshPowerPointPreview(snapshot, content);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to upload the PowerPoint template.");
+    } finally {
+      setUploadingTemplate(false);
+    }
+  }
+
   async function refreshPowerPointPreview(
     sourceSnapshot: ReportSnapshot | null = snapshot,
     sourceContent: Content = content,
@@ -205,7 +235,7 @@ export default function ReportsPage() {
     if (snapshot && templateExists && !previewViewerUrl && !previewLoading) {
       void refreshPowerPointPreview(snapshot, content);
     }
-  }, [snapshot, templateExists]);
+  }, [snapshot, templateExists, storedTemplatePath]);
 
   async function exportPowerPoint() {
     if (!snapshot || !templateExists) return;
@@ -407,7 +437,7 @@ export default function ReportsPage() {
   return <ProjectShell>
     <div className="ops-page">
       <header className="page-heading"><p className="page-eyebrow">Client Deliverables</p><h1 className="page-title mt-1">Reports</h1><p className="page-description mt-2">Create client-ready reports from tracking data. Export PowerPoint to retain the supplied 10-slide template design, artwork and formatting.</p></header>
-      <section className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5"><div><h2 className="font-bold">Monthly report PowerPoint template</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Canonical 10-slide template stored in platform storage.</p>{templateNotice && <p className="mt-2 text-xs text-amber-700">{templateNotice}</p>}</div>{templateExists ? <a className="platform-btn platform-btn-primary" href={templateDownloadUrl} download="Client_Monthly_Report_Template.pptx"><Download size={14}/> Download template</a> : <button type="button" className="platform-btn platform-btn-primary" disabled title="The monthly report template is not available in platform storage"><Download size={14}/> Download template</button>}</section>
+      <section className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5"><div><h2 className="font-bold">Monthly report PowerPoint template</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Canonical 10-slide template stored in platform storage.</p>{templateNotice && <p className="mt-2 text-xs text-amber-700">{templateNotice}</p>}</div><div className="flex flex-wrap items-center gap-2">{canManageTemplate && <><input ref={templateInputRef} type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" className="hidden" onChange={uploadTemplate}/><button type="button" className="platform-btn" disabled={uploadingTemplate} onClick={()=>templateInputRef.current?.click()}>{uploadingTemplate?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} Update template</button></>}{templateExists ? <a className="platform-btn platform-btn-primary" href={templateDownloadUrl} download="Client_Monthly_Report_Template.pptx"><Download size={14}/> Download template</a> : <button type="button" className="platform-btn platform-btn-primary" disabled title="The monthly report template is not available in platform storage"><Download size={14}/> Download template</button>}</div></section>
       <section className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-bold">Report type</h2><span className="text-xs text-[var(--muted-foreground)]">5 report formats</span></div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{TYPES.map(t=><button key={t.id} onClick={()=>{setReportType(t.id);setSnapshot(null);setActiveId(null);setError("");setNotice("");}} className={"rounded-xl border p-3 text-left transition "+(reportType===t.id?"border-[var(--primary)] bg-[var(--accent)] ring-1 ring-[var(--primary)]":"border-[var(--line)] hover:bg-[var(--accent)]")}><div className="flex items-center justify-between gap-2"><b className="text-sm">{t.name}</b>{t.ready?<span className="monthly-ready">Available</span>:<span className="monthly-soon">Coming soon</span>}</div><p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">{t.description}</p></button>)}</div>
