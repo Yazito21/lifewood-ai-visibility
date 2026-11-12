@@ -181,12 +181,20 @@ export default function ReportsPage() {
       if (oldPath && oldPath !== path) void supabase.storage.from("client-report-previews").remove([oldPath]);
       return blob;
     } catch (e) {
+      setPreviewViewerUrl("");
+      setPreviewOpenUrl("");
       setPreviewError(e instanceof Error ? e.message : "Unable to render the PowerPoint preview.");
       return null;
     } finally {
       setPreviewLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (snapshot && templateExists && !previewViewerUrl && !previewLoading) {
+      void refreshPowerPointPreview(snapshot, content);
+    }
+  }, [snapshot, templateExists]);
 
   async function exportPowerPoint() {
     if (!snapshot || !templateExists) return;
@@ -303,6 +311,7 @@ export default function ReportsPage() {
     setPreviewOpenUrl("");
     setPreviewBlob(null);
     setPreviewSignature("");
+    setPreviewStoragePath(null);
     setPreviewError("");
     setError("");
     setNotice("Draft editor closed. Saved drafts remain available below.");
@@ -327,6 +336,7 @@ export default function ReportsPage() {
         setPreviewOpenUrl("");
         setPreviewBlob(null);
         setPreviewSignature("");
+        setPreviewStoragePath(null);
         setPreviewError("");
       }
       await loadSaved();
