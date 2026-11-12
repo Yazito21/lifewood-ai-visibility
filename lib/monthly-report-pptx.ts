@@ -270,7 +270,8 @@ export async function generateMonthlyReportPptx(
   await editSlide(5, (xml) => {
     const citationEntries = categories.map(category => [category, content.citationByCategory?.[category] ?? { citations: 0, totalCitations: 0, pages: [] }] as const);
     const totalBrandCitations = citationEntries.reduce((sum, [, item]) => sum + Number(item.citations || 0), 0);
-    const totalAllCitations = citationEntries.reduce((sum, [, item]) => sum + Number(item.totalCitations || 0), 0);
+    const hasAllCitationTotals = citationEntries.every(([, item]) => typeof item.totalCitations === "number");
+    const totalAllCitations = hasAllCitationTotals ? citationEntries.reduce((sum, [, item]) => sum + Number(item.totalCitations || 0), 0) : null;
     const everyPage = citationEntries.flatMap(([category, item]) => item.pages.map((page) => ({ ...page, category })));
     const allPages = [...everyPage].sort((a, b) => b.frequency - a.frequency).slice(0, 5);
     const distinctPages = new Set(everyPage.map(page => page.url)).size;
@@ -278,7 +279,7 @@ export async function generateMonthlyReportPptx(
     xml = setShapeText(xml, "Text 6", fmt(totalBrandCitations));
     xml = setShapeText(xml, "Text 7", "times AI platforms cited " + brandWebsite);
     xml = setShapeText(xml, "Text 8", dateLabel(snapshot.period.start) + " to " + dateLabel(snapshot.period.end));
-    const brandShareOfAllCitations = totalAllCitations > 0 ? totalBrandCitations / totalAllCitations * 100 : null;
+    const brandShareOfAllCitations = totalAllCitations !== null && totalAllCitations > 0 ? totalBrandCitations / totalAllCitations * 100 : null;
     xml = setShapeText(xml, "Text 10", pct(brandShareOfAllCitations));
     xml = setShapeText(xml, "Text 11", "of all " + fmt(totalAllCitations) + " citations");
     xml = setShapeText(xml, "Text 12", citationComparison);
@@ -288,7 +289,7 @@ export async function generateMonthlyReportPptx(
     xml = setShapeText(xml, "Text 15", "of brand citations come from " + (topCategory?.[0] ?? "N/A") + " pages");
     xml = setShapeText(xml, "Text 16", fmt(distinctPages) + " of the brand’s pages were cited at least once");
     xml = setShapeText(xml, "Text 18", "Share of citations pointing to " + brandWebsite);
-    xml = setShapeText(xml, "Text 19", citationEntries.map(([name, item]) => name + " " + fmt(item.citations) + "/" + fmt(item.totalCitations || 0)).join(" · "));
+    xml = setShapeText(xml, "Text 19", citationEntries.map(([name, item]) => name + " " + fmt(item.citations) + "/" + fmt(item.totalCitations ?? null)).join(" · "));
     return setTable(xml, [["Page", "Category", "Citations"], ...Array.from({ length: 5 }, (_, i) => {
       const page = allPages[i];
       return page ? [page.url, page.category, fmt(page.frequency)] : ["—", "—", "—"];
