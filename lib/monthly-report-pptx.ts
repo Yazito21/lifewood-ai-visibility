@@ -189,7 +189,7 @@ export async function generateMonthlyReportPptx(
       ["Latest Visibility Score", (c) => pct(c?.visibilityScore)],
       ["Latest Share of Voice Score", (c) => pct(c?.shareOfVoice)],
       ["Latest Number of Citations", (c) => fmt(c?.citations)],
-      ["Number of Knowledge Assets", (c) => manual(c)?.knowledgeAssets || "—"],
+      ["Number of Knowledge Assets", (c) => { const d = manual(c); return d ? (d.knowledgeAssets || "—") + (d.knowledgeDescription ? "\\n" + d.knowledgeDescription : "") : "—"; }],
       ["Number of External Presence", (c) => {
         const d = manual(c);
         return d ? (d.externalTotal || "—") + "\n" + (d.news || "—") + " news · " + (d.directories || "—") + " directories / websites · " + (d.websites || "—") + " websites · " + (d.social || "—") + " social media" : "—";
@@ -213,7 +213,7 @@ export async function generateMonthlyReportPptx(
     const everyPage = citationEntries.flatMap(([category, item]) => item.pages.map((page) => ({ ...page, category })));
     const allPages = [...everyPage].sort((a, b) => b.frequency - a.frequency).slice(0, 7);
     const distinctPages = new Set(everyPage.map(page => page.url)).size;
-    const brandWebsite = snapshot.brand.domains?.[0] || snapshot.brand.domain || snapshot.brand.name;
+    const brandWebsite = snapshot.brand.website || snapshot.brand.name;
     xml = setShapeText(xml, "Text 6", fmt(total));
     xml = setShapeText(xml, "Text 7", "times AI platforms cited " + brandWebsite);
     xml = setShapeText(xml, "Text 8", dateLabel(snapshot.period.start) + " to " + dateLabel(snapshot.period.end));
