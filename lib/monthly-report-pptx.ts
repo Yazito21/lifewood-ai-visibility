@@ -17,7 +17,7 @@ export type MonthlyReportContent = {
   targets: Record<string, { score: string }>;
   competitorAssets: Record<string, string>;
   competitorDetails: Record<string, { knowledgeAssets: string; knowledgeDescription: string; externalTotal: string; news: string; directories: string; websites: string; social: string }>;
-  citationByCategory: Record<string, { citations: number; pages: { url: string; frequency: number }[] }>;
+  citationByCategory: Record<string, { citations: number; totalCitations?: number; pages: { url: string; frequency: number }[] }>;
 };
 
 const xmlEscape = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -118,8 +118,36 @@ const fmt = (value: number | null | undefined) => value == null ? "N/A" : value.
 const periodLabel = (snapshot: ReportSnapshot) => {
   const startMonth = snapshot.period.start.slice(0, 7);
   const endMonth = snapshot.period.end.slice(0, 7);
-  if (startMonth === endMonth) return new Date(snapshot.period.start + "T00:00:00").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  if (startMonth === endMonth) return new Date(snapshot.period.start + "T00:00:00").toLocaleDateString("en-GB", { month: "long" });
   return dateLabel(snapshot.period.start) + " to " + dateLabel(snapshot.period.end);
+};
+const nextMonthLabel = (snapshot: ReportSnapshot) => {
+  const [year, month] = snapshot.period.end.slice(0, 7).split("-").map(Number);
+  return new Date(Date.UTC(year, month, 1)).toLocaleDateString("en-GB", { month: "long" });
+};
+const compactNumber = (value: number) => value.toLocaleString("en-MY");
+const formatSignedPercent = (value: number) => {
+  const rounded = Number(value.toFixed(1));
+  return (rounded > 0 ? "+" : "") + String(rounded) + "%";
+};
+const changeAndPeak = (series: { date: string; score: number | null }[]) => {
+  const valid = series.filter((point): point is { date: string; score: number } => point.score !== null).sort((a, b) => a.date.localeCompare(b.date));
+  if (!valid.length) return "Change vs start of month: N/A; Peak Score: N/A";
+  const first = valid[0];
+  const last = valid[valid.length - 1];
+  const peak = valid.reduce((best, point) => point.score > best.score ? point : best, first);
+  const change = last.score - first.score;
+  return "Change vs start of month: " + formatSignedPercent(change) + "; Peak Score: " + pct(peak.score) + " on " + dateLabel(peak.date);
+};
+const numericCount = (value: string | undefined) => {
+  if (!value?.trim()) return null;
+  const parsed = Number(value.replace(/,/g, "").trim());
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const compareToCompetitor = (brandValue: number | null, competitorValue: number | null, competitorName: string) => {
+  if (brandValue === null || competitorValue === null) return "Comparison unavailable";
+  const delta = brandValue - competitorValue;
+  return (delta > 0 ? "+" : "") + compactNumber(delta) + " compared to the highest performing competitor (" + competitorName + ")";
 };
 
 export async function generateMonthlyReportPptx(
@@ -171,19 +199,30 @@ export async function generateMonthlyReportPptx(
     return setShapeText(xml, "Text 4", "Prepared by " + (content.preparedBy || "Platform User") + " on " + dateLabel(content.preparedOn || snapshot.period.end) + " as part of the SEO/GEO project operations for " + snapshot.brand.name + ".");
   });
 
+  const visibilityCompetitor = snapshot.competitors
+    .filter((row) => !row.isTracked && row.visibilityScore !== null)
+    .sort((a, b) => (b.visibilityScore ?? -Infinity) - (a.visibilityScore ?? -Infinity))[0] ?? null;
+  const trackedCitationCount = Object.values(content.citationByCategory ?? {}).reduce((sum, item) => sum + Number(item.citations || 0), 0);
+  const competitorCitationCount = visibilityCompetitor?.citations ?? null;
+  const citationComparison = compareToCompetitor(trackedCitationCount, competitorCitationCount, visibilityCompetitor?.name ?? "N/A");
+  const trackedKnowledgeCount = numericCount(content.knowledgeAssets);
+  const competitorKnowledgeCount = visibilityCompetitor ? numericCount(content.competitorDetails?.[visibilityCompetitor.name]?.knowledgeAssets) : null;
+  const knowledgeComparison = compareToCompetitor(trackedKnowledgeCount, competitorKnowledgeCount, visibilityCompetitor?.name ?? "N/A");
+  const visibilityChangeAndPeak = changeAndPeak(snapshot.trend ?? []);
+  const shareOfVoiceChangeAndPeak = changeAndPeak(snapshot.shareOfVoiceTrend ?? []);
+
   await editSlide(2, (xml) => {
     xml = setShapeText(xml, "Text 6", pct(snapshot.overall.visibilityScore), 0);
-    const scoreChange = snapshot.overall.scoreChange == null ? "Change vs previous period: N/A" : "Change vs previous period: " + (snapshot.overall.scoreChange > 0 ? "+" : "") + snapshot.overall.scoreChange.toFixed(1) + " pts";
-    xml = setShapeText(xml, "Text 8", scoreChange + "; " + snapshot.overall.rankText, 0);
+    xml = setShapeText(xml, "Text 8", visibilityChangeAndPeak, 0);
     xml = setShapeText(xml, "Text 18", pct(snapshot.overall.shareOfVoice), 0);
-    xml = setShapeText(xml, "Text 20", "Latest share of voice; " + snapshot.competitors.length + " benchmark brands", 0);
-    xml = setShapeText(xml, "Text 6", fmt(Object.values(content.citationByCategory).reduce((n, item) => n + item.citations, 0)), 1);
-    xml = setShapeText(xml, "Text 8", "Website citations in the period; " + fmt(snapshot.overall.brandCitations) + " total brand citations", 1);
+    xml = setShapeText(xml, "Text 20", shareOfVoiceChangeAndPeak, 0);
+    xml = setShapeText(xml, "Text 6", fmt(trackedCitationCount), 1);
+    xml = setShapeText(xml, "Text 8", citationComparison, 1);
     xml = setShapeText(xml, "Text 18", content.knowledgeAssets || "N/A", 1);
-    xml = setShapeText(xml, "Text 20", "Manual audit count; compare with competitor audits", 1);
+    xml = setShapeText(xml, "Text 20", knowledgeComparison, 1);
     xml = setShapeText(xml, "Text 23", "Improvements made in " + periodLabel(snapshot));
     xml = setShapeText(xml, "Text 24", content.summaryDone || "Progress summary to be completed");
-    xml = setShapeText(xml, "Text 27", "Where to focus next");
+    xml = setShapeText(xml, "Text 27", "Where to focus in " + nextMonthLabel(snapshot));
     return setShapeText(xml, "Text 28", content.summaryFocus || "Priorities to be completed");
   });
 
@@ -229,27 +268,28 @@ export async function generateMonthlyReportPptx(
   });
 
   await editSlide(5, (xml) => {
-    const citationEntries = categories.map(category => [category, content.citationByCategory[category] ?? { citations: 0, pages: [] }] as const);
-    const total = citationEntries.reduce((sum, [, item]) => sum + item.citations, 0);
+    const citationEntries = categories.map(category => [category, content.citationByCategory?.[category] ?? { citations: 0, totalCitations: 0, pages: [] }] as const);
+    const totalBrandCitations = citationEntries.reduce((sum, [, item]) => sum + Number(item.citations || 0), 0);
+    const totalAllCitations = citationEntries.reduce((sum, [, item]) => sum + Number(item.totalCitations || 0), 0);
     const everyPage = citationEntries.flatMap(([category, item]) => item.pages.map((page) => ({ ...page, category })));
-    const allPages = [...everyPage].sort((a, b) => b.frequency - a.frequency).slice(0, 7);
+    const allPages = [...everyPage].sort((a, b) => b.frequency - a.frequency).slice(0, 5);
     const distinctPages = new Set(everyPage.map(page => page.url)).size;
     const brandWebsite = (() => { try { const website = snapshot.brand.website || ""; return new URL(website.includes("://") ? website : "https://" + website).hostname.toLowerCase().replace(/^www\./, "") || snapshot.brand.name; } catch { return snapshot.brand.name; } })();
-    xml = setShapeText(xml, "Text 6", fmt(total));
+    xml = setShapeText(xml, "Text 6", fmt(totalBrandCitations));
     xml = setShapeText(xml, "Text 7", "times AI platforms cited " + brandWebsite);
     xml = setShapeText(xml, "Text 8", dateLabel(snapshot.period.start) + " to " + dateLabel(snapshot.period.end));
-    const shareOfTotal = snapshot.overall.brandCitations > 0 ? total / snapshot.overall.brandCitations * 100 : null;
-    xml = setShapeText(xml, "Text 10", pct(shareOfTotal));
-    xml = setShapeText(xml, "Text 11", "of all " + fmt(snapshot.overall.brandCitations) + " citations");
-    xml = setShapeText(xml, "Text 12", "");
-    const topPageShare = total > 0 ? allPages.slice(0, 3).reduce((sum, page) => sum + page.frequency, 0) / total * 100 : null;
-    const topCategory = [...citationEntries].sort((a,b)=>b[1].citations-a[1].citations)[0]?.[0] ?? "brand";
-    xml = setShapeText(xml, "Text 14", pct(topPageShare));
-    xml = setShapeText(xml, "Text 15", "of citations went to the top 3 " + topCategory + " pages");
+    const brandShareOfAllCitations = totalAllCitations > 0 ? totalBrandCitations / totalAllCitations * 100 : null;
+    xml = setShapeText(xml, "Text 10", pct(brandShareOfAllCitations));
+    xml = setShapeText(xml, "Text 11", "of all " + fmt(totalAllCitations) + " citations");
+    xml = setShapeText(xml, "Text 12", citationComparison);
+    const topCategory = [...citationEntries].sort((a,b)=>b[1].citations-a[1].citations)[0] ?? null;
+    const topCategoryShare = totalBrandCitations > 0 && topCategory ? topCategory[1].citations / totalBrandCitations * 100 : null;
+    xml = setShapeText(xml, "Text 14", pct(topCategoryShare));
+    xml = setShapeText(xml, "Text 15", "of brand citations come from " + (topCategory?.[0] ?? "N/A") + " pages");
     xml = setShapeText(xml, "Text 16", fmt(distinctPages) + " of the brand’s pages were cited at least once");
     xml = setShapeText(xml, "Text 18", "Share of citations pointing to " + brandWebsite);
-    xml = setShapeText(xml, "Text 19", citationEntries.map(([name, item]) => name + " " + fmt(item.citations) + "/" + fmt(new Set(item.pages.map(page => page.url)).size)).join(" · "));
-    return setTable(xml, [["Page", "Category", "Citations"], ...Array.from({ length: 7 }, (_, i) => {
+    xml = setShapeText(xml, "Text 19", citationEntries.map(([name, item]) => name + " " + fmt(item.citations) + "/" + fmt(item.totalCitations || 0)).join(" · "));
+    return setTable(xml, [["Page", "Category", "Citations"], ...Array.from({ length: 5 }, (_, i) => {
       const page = allPages[i];
       return page ? [page.url, page.category, fmt(page.frequency)] : ["—", "—", "—"];
     })]);
@@ -291,7 +331,7 @@ export async function generateMonthlyReportPptx(
       ].filter(Boolean);
       return [action.week, lines.join("\n") || "Action plan to be completed"];
     })];
-    return setTable(xml, rows).replace(/\[next month\]/gi, "Next Month");
+    return setTable(xml, rows).replace(/\[next month\]/gi, nextMonthLabel(snapshot));
   });
 
   await editSlide(9, (xml) => {
@@ -307,7 +347,7 @@ export async function generateMonthlyReportPptx(
       xml = setShapeTextAll(xml, "Target Value " + names[i], target ? target.toFixed(1) + "%" : "Not set");
       xml = setShapeTextAll(xml, "Gap " + names[i], gap === "N/A" ? "Target not set" : (Number(gap) >= 0 ? "+" : "") + gap + " pts to target");
     }
-    return xml.replace(/\[next month\]/gi, "Next Month").replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location).replace(/\[date\]/g, dateLabel(snapshot.period.end)).replace(/\[benchmark description\]/g, "configured benchmark prompts and tracked competitors");
+    return xml.replace(/\[next month\]/gi, nextMonthLabel(snapshot)).replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location).replace(/\[date\]/g, dateLabel(snapshot.period.end)).replace(/\[benchmark description\]/g, "configured benchmark prompts and tracked competitors");
   });
 
   // Update the embedded Excel workbooks as well as the chart caches. PowerPoint
