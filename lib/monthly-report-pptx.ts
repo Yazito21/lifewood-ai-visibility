@@ -104,7 +104,12 @@ function cloneShape(
   });
   if (text !== undefined) block = setTextInBlock(block, text);
   if (fontSize !== undefined) {
-    block = block.replace(/(<a:(?:rPr|defRPr|endParaRPr)\b[^>]*\bsz=")\d+(")/g, "$1" + fontSize + "$2");
+    block = block.replace(/<a:(rPr|defRPr|endParaRPr)\\b([^>]*?)(\\/?)>/g, (_match, tag, attrs, slash) => {
+      const nextAttrs = /\\bsz="\\d+"/.test(attrs)
+        ? attrs.replace(/\\bsz="\\d+"/, 'sz="' + fontSize + '"')
+        : attrs + ' sz="' + fontSize + '"';
+      return "<a:" + tag + nextAttrs + slash + ">";
+    });
   }
   return block;
 }
