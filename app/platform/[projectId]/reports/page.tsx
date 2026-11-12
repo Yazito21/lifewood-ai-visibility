@@ -69,6 +69,7 @@ export default function ReportsPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [canEdit, setCanEdit] = useState(false);
@@ -291,6 +292,50 @@ export default function ReportsPage() {
       setNotice("Draft saved successfully.");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save this report."); }
     finally { setSaving(false); }
+  }
+
+  function closeDraft() {
+    if (snapshot && !window.confirm("Close this draft editor? Any unsaved changes will be discarded. A previously saved draft will remain in Saved Reports.")) return;
+    setSnapshot(null);
+    setActiveId(null);
+    setContent(emptyContent([]));
+    setPreviewViewerUrl("");
+    setPreviewOpenUrl("");
+    setPreviewBlob(null);
+    setPreviewSignature("");
+    setPreviewError("");
+    setError("");
+    setNotice("Draft editor closed. Saved drafts remain available below.");
+    setCollapsedSlides({1:true,2:true,3:true,4:true,5:true,6:true,7:true,8:true,9:true,10:true});
+  }
+
+  async function deleteDraft(row: ReportRow) {
+    if (!canEdit || deletingId) return;
+    const label = TYPES.find((type) => type.id === row.report_type)?.name ?? row.report_type;
+    if (!window.confirm("Permanently delete this " + label + " draft for " + row.period_start + " to " + row.period_end + "? This cannot be undone.")) return;
+    setDeletingId(row.id);
+    setError("");
+    setNotice("");
+    try {
+      const { error: deleteError } = await supabase.from("client_reports").delete().eq("id", row.id).eq("project_id", projectId);
+      if (deleteError) throw deleteError;
+      if (activeId === row.id) {
+        setSnapshot(null);
+        setActiveId(null);
+        setContent(emptyContent([]));
+        setPreviewViewerUrl("");
+        setPreviewOpenUrl("");
+        setPreviewBlob(null);
+        setPreviewSignature("");
+        setPreviewError("");
+      }
+      await loadSaved();
+      setNotice("Draft deleted successfully.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to delete this draft.");
+    } finally {
+      setDeletingId(null);
+    }
   }
 
   async function openSaved(row: ReportRow) {
