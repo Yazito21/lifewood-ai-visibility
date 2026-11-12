@@ -15,6 +15,7 @@ export type MonthlyReportContent = {
   actions: { week: string; website: string; knowledge: string; branding: string; community: string; monitoring: string }[];
   targets: Record<string, { score: string }>;
   competitorAssets: Record<string, string>;
+  competitorDetails: Record<string, { knowledgeAssets: string; knowledgeDescription: string; externalTotal: string; news: string; directories: string; websites: string; social: string }>;
   citationByCategory: Record<string, { citations: number; pages: { url: string; frequency: number }[] }>;
 };
 
@@ -107,10 +108,29 @@ export async function generateMonthlyReportPptx(
   templateUrl: string,
   snapshot: ReportSnapshot,
   content: MonthlyReportContent,
+  brandLogoUrl?: string,
 ) {
   const response = await fetch(templateUrl);
   if (!response.ok) throw new Error("The PowerPoint template could not be downloaded from platform storage.");
   const zip = await JSZip.loadAsync(await response.arrayBuffer());
+  if (brandLogoUrl) {
+    try {
+      const logoResponse = await fetch(brandLogoUrl, { cache: "no-store" });
+      if (logoResponse.ok) {
+        const source = await logoResponse.blob();
+        const bitmap = await createImageBitmap(source);
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width; canvas.height = bitmap.height;
+        const context = canvas.getContext("2d");
+        if (context) {
+          context.drawImage(bitmap, 0, 0);
+          const png = await new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Logo conversion failed")), "image/png"));
+          zip.file("ppt/media/image2.png", await png.arrayBuffer());
+        }
+        bitmap.close();
+      }
+    } catch (error) { console.warn("Brand logo could not be embedded in the report:", error); }
+  }
   const categories = snapshot.brand.categories.slice(0, 3);
   const categoryScores = categories.map((name) => snapshot.byCategory.find((row) => row.category === name)?.visibilityScore ?? null);
   const trend = snapshot.trend;
@@ -127,7 +147,7 @@ export async function generateMonthlyReportPptx(
   await editSlide(1, (xml) => {
     xml = setShapeText(xml, "Text 1", snapshot.brand.name);
     xml = setShapeText(xml, "Text 3", periodLabel(snapshot) + " Report");
-    return setShapeText(xml, "Text 4", "Prepared by " + (content.preparedBy || "Lifewood") + " on " + dateLabel(snapshot.period.end) + " as part of the " + (content.projectName || "AI Visibility") + " for " + snapshot.brand.name + ".");
+    return setShapeText(xml, "Text 4", "Prepared by " + (content.preparedBy || "Platform User") + " on " + dateLabel(snapshot.period.end) + " as part of the SEO/GEO project operations for " + snapshot.brand.name + ".");
   });
 
   await editSlide(2, (xml) => {
@@ -148,6 +168,7 @@ export async function generateMonthlyReportPptx(
 
   await editSlide(3, (xml) => {
     xml = setShapeText(xml, "Text 6", "Daily Visibility Score, " + dateLabel(snapshot.period.start) + " to " + dateLabel(snapshot.period.end));
+    xml = setShapeText(xml, "Chart Caption", "Visibility Score: the percentage of benchmark questions that mentions " + snapshot.brand.name + " in its answer. A higher score means AI recommends the brand more often.");
     xml = setShapeText(xml, "Text 10", pct(snapshot.overall.visibilityScore));
     for (let i = 0; i < 3; i++) {
       xml = setShapeText(xml, "Text " + [13, 17, 21][i], "Latest Score for " + (categories[i] || "Category " + (i + 1)));
@@ -163,12 +184,16 @@ export async function generateMonthlyReportPptx(
     const headers = ["Category", snapshot.brand.name, ...competitors.map((c) => c.name)];
     while (headers.length < 5) headers.push("Not tracked");
     const rows = [headers];
+    const manual = (c: typeof competitors[number] | null) => c ? (content.competitorDetails?.[c.name] ?? { knowledgeAssets: "", knowledgeDescription: "", externalTotal: "", news: "", directories: "", websites: "", social: "" }) : null;
     const metrics: [string, (c: typeof competitors[number] | null, i: number) => string][] = [
       ["Latest Visibility Score", (c) => pct(c?.visibilityScore)],
       ["Latest Share of Voice Score", (c) => pct(c?.shareOfVoice)],
       ["Latest Number of Citations", (c) => fmt(c?.citations)],
-      ["Number of Knowledge Assets", (c) => c ? (c.isTracked ? (content.knowledgeAssets || "N/A") : (content.competitorAssets[c.name] || "N/A")) : "N/A"],
-      ["Number of External Presence", (c) => c ? fmt(c.presence.websites + c.presence.directories + c.presence.social) + "\n" + fmt(c.presence.websites) + " websites · " + fmt(c.presence.directories) + " directories · " + fmt(c.presence.social) + " social" : "N/A"],
+      ["Number of Knowledge Assets", (c) => manual(c)?.knowledgeAssets || "—"],
+      ["Number of External Presence", (c) => {
+        const d = manual(c);
+        return d ? (d.externalTotal || "—") + "\n" + (d.news || "—") + " news · " + (d.directories || "—") + " directories / websites · " + (d.websites || "—") + " websites · " + (d.social || "—") + " social media" : "—";
+      }],
     ];
     for (const [label, fn] of metrics) {
       const row = [label, fn(brandRow, -1), ...competitors.map((c, i) => fn(c, i))];
@@ -176,27 +201,33 @@ export async function generateMonthlyReportPptx(
       rows.push(row);
     }
     xml = setTable(xml, rows);
-    return xml.replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location).replace(/\[date\]/g, dateLabel(snapshot.period.end));
+    const auditDate = dateLabel(snapshot.period.end);
+    const caption = "Visibility, share of voice and citations: latest run on " + auditDate + ". Knowledge assets and external presence checked on each website and the open web on " + auditDate + "; external presence is a best-effort count.";
+    xml = setShapeText(xml, "Text 5", caption);
+    return xml.replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location).replace(/\[date\]/g, auditDate);
   });
 
   await editSlide(5, (xml) => {
-    const citationEntries = Object.entries(content.citationByCategory);
+    const citationEntries = categories.map(category => [category, content.citationByCategory[category] ?? { citations: 0, pages: [] }] as const);
     const total = citationEntries.reduce((sum, [, item]) => sum + item.citations, 0);
-    const allPages = citationEntries.flatMap(([category, item]) => item.pages.map((page) => ({ ...page, category })))
-      .sort((a, b) => b.frequency - a.frequency).slice(0, 7);
+    const everyPage = citationEntries.flatMap(([category, item]) => item.pages.map((page) => ({ ...page, category })));
+    const allPages = [...everyPage].sort((a, b) => b.frequency - a.frequency).slice(0, 7);
+    const distinctPages = new Set(everyPage.map(page => page.url)).size;
+    const brandWebsite = snapshot.brand.domains?.[0] || snapshot.brand.domain || snapshot.brand.name;
     xml = setShapeText(xml, "Text 6", fmt(total));
-    xml = setShapeText(xml, "Text 7", "times AI platforms cited " + snapshot.brand.name + " website");
+    xml = setShapeText(xml, "Text 7", "times AI platforms cited " + brandWebsite);
     xml = setShapeText(xml, "Text 8", dateLabel(snapshot.period.start) + " to " + dateLabel(snapshot.period.end));
     const shareOfTotal = snapshot.overall.brandCitations > 0 ? total / snapshot.overall.brandCitations * 100 : null;
     xml = setShapeText(xml, "Text 10", pct(shareOfTotal));
-    xml = setShapeText(xml, "Text 11", "of all " + fmt(snapshot.overall.brandCitations) + " brand citations");
-    xml = setShapeText(xml, "Text 12", "Citation totals by configured category");
+    xml = setShapeText(xml, "Text 11", "of all " + fmt(snapshot.overall.brandCitations) + " citations");
+    xml = setShapeText(xml, "Text 12", "");
     const topPageShare = total > 0 ? allPages.slice(0, 3).reduce((sum, page) => sum + page.frequency, 0) / total * 100 : null;
+    const topCategory = [...citationEntries].sort((a,b)=>b[1].citations-a[1].citations)[0]?.[0] ?? "brand";
     xml = setShapeText(xml, "Text 14", pct(topPageShare));
-    xml = setShapeText(xml, "Text 15", "of website citations went to the top three cited pages");
-    xml = setShapeText(xml, "Text 16", String(new Set(allPages.map((p) => p.url)).size) + " of the listed brand pages were cited");
-    xml = setShapeText(xml, "Text 18", "Share of citations pointing to " + snapshot.brand.name + " website");
-    xml = setShapeText(xml, "Text 19", citationEntries.map(([name, item]) => name + " " + fmt(item.citations)).join(" · "));
+    xml = setShapeText(xml, "Text 15", "of citations went to the top 3 " + topCategory + " pages");
+    xml = setShapeText(xml, "Text 16", fmt(distinctPages) + " of the brand’s pages were cited at least once");
+    xml = setShapeText(xml, "Text 18", "Share of citations pointing to " + brandWebsite);
+    xml = setShapeText(xml, "Text 19", citationEntries.map(([name, item]) => name + " " + fmt(item.citations) + "/" + fmt(new Set(item.pages.map(page => page.url)).size)).join(" · "));
     return setTable(xml, [["Page", "Category", "Citations"], ...Array.from({ length: 7 }, (_, i) => {
       const page = allPages[i];
       return page ? [page.url, page.category, fmt(page.frequency)] : ["—", "—", "—"];
@@ -209,7 +240,7 @@ export async function generateMonthlyReportPptx(
     const bodyNames = ["Text 8", "Text 12", "Text 16", "Text 20", "Text 24"];
     areaNames.forEach((area, i) => {
       xml = setShapeText(xml, headerNames[i], area);
-      xml = setShapeText(xml, bodyNames[i], (content.progress[area] || []).filter(Boolean).join("\n") || "No progress details entered");
+      xml = setShapeText(xml, bodyNames[i], (content.progress[area] || []).filter(Boolean).join("\n"));
     });
     return xml;
   });
@@ -221,7 +252,7 @@ export async function generateMonthlyReportPptx(
     content.initiatives.slice(0, 6).forEach((item, i) => {
       xml = setShapeText(xml, titleNames[i], item.title || "");
       xml = setShapeText(xml, descriptionNames[i], item.description || "");
-      xml = setShapeText(xml, areaNames[i], item.area || "General", i === 5 ? 1 : 0);
+      xml = setShapeText(xml, areaNames[i], item.area || ["Website","Website","Knowledge","Branding","Community","Monitoring"][i], i === 5 ? 1 : 0);
     });
     return xml;
   });
