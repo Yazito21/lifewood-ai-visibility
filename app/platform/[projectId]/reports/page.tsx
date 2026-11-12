@@ -38,7 +38,7 @@ function emptyContent(categories: string[]): Content {
     initiatives: [
       { area: "Website", title: "", description: "" }, { area: "Website", title: "", description: "" },
       { area: "Knowledge", title: "", description: "" }, { area: "Branding", title: "", description: "" },
-      { area: "Community", title: "", description: "" }, { area: "Monitoring", title: "", description: "" },
+      { area: "Monitoring", title: "", description: "" }, { area: "Community", title: "", description: "" },
     ],
     actions: [BLANK_ACTION(), { ...BLANK_ACTION(), week: "Week 2" }, { ...BLANK_ACTION(), week: "Week 3" }, { ...BLANK_ACTION(), week: "Week 4" }, { ...BLANK_ACTION(), week: "Ongoing" }],
     targets: Object.fromEntries(["Overall", ...categories].map((c) => [c, { score: "" }])), competitorAssets: {},
@@ -288,6 +288,11 @@ export default function ReportsPage() {
     setError(""); setNotice("");
     setReportType(row.report_type); setStart(row.period_start); setEnd(row.period_end);
     const restoredContent = { ...emptyContent(row.snapshot.brand.categories), ...row.content };
+    // Earlier drafts stored Community before Monitoring, while the original template
+    // places Monitoring in card 5 and Community in card 6.
+    if (restoredContent.initiatives[4]?.area === "Community" && restoredContent.initiatives[5]?.area === "Monitoring") {
+      [restoredContent.initiatives[4], restoredContent.initiatives[5]] = [restoredContent.initiatives[5], restoredContent.initiatives[4]];
+    }
     setSnapshot(row.snapshot); setContent(restoredContent);
     if (templateExists) void refreshPowerPointPreview(row.snapshot, restoredContent);
     setActiveId(row.id);
