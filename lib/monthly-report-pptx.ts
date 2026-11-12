@@ -132,12 +132,12 @@ const formatSignedPercent = (value: number) => {
 };
 const changeAndPeak = (series: { date: string; score: number | null }[]) => {
   const valid = series.filter((point): point is { date: string; score: number } => point.score !== null).sort((a, b) => a.date.localeCompare(b.date));
-  if (!valid.length) return "Change vs start of month: N/A; Peak Score: N/A";
+  if (!valid.length) return "Change vs start of month: N/A\nPeak Score: N/A";
   const first = valid[0];
   const last = valid[valid.length - 1];
   const peak = valid.reduce((best, point) => point.score > best.score ? point : best, first);
   const change = last.score - first.score;
-  return "Change vs start of month: " + formatSignedPercent(change) + "; Peak Score: " + pct(peak.score) + " on " + dateLabel(peak.date);
+  return "Change vs start of month: " + formatSignedPercent(change) + "\nPeak Score: " + pct(peak.score) + " on " + dateLabel(peak.date);
 };
 const numericCount = (value: string | undefined) => {
   if (!value?.trim()) return null;
