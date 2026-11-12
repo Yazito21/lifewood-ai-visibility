@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Download, ExternalLink, Loader2, Plus, Printer, RefreshCw, Save, Sparkles, ChevronDown } from "lucide-react";
+import { Download, ExternalLink, Loader2, Plus, Printer, RefreshCw, Save, Sparkles, ChevronDown, Trash2, X } from "lucide-react";
 import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 import { gatherSnapshot, type ReportPeriod } from "@/lib/report-data";
@@ -73,6 +73,8 @@ export default function ReportsPage() {
   const [notice, setNotice] = useState("");
   const [canEdit, setCanEdit] = useState(false);
   const [templateExists, setTemplateExists] = useState(false);
+  const [storedTemplatePath, setStoredTemplatePath] = useState<string | null>(null);
+  const [templateNotice, setTemplateNotice] = useState("");
   const [exportingPptx, setExportingPptx] = useState(false);
   const [previewViewerUrl, setPreviewViewerUrl] = useState("");
   const [previewOpenUrl, setPreviewOpenUrl] = useState("");
@@ -84,8 +86,9 @@ export default function ReportsPage() {
   const [brandLogoUrl, setBrandLogoUrl] = useState("");
   const [preparedByName, setPreparedByName] = useState("Platform User");
   const [collapsedSlides, setCollapsedSlides] = useState<Record<number, boolean>>({1:true,2:true,3:true,4:true,5:true,6:true,7:true,8:true,9:true,10:true});
-  const templatePath = "Client_Monthly_Report_Template_2026-11-12.pptx";
-  const templateDownloadUrl = supabase.storage.from("client-report-templates").getPublicUrl(templatePath).data.publicUrl;
+  const preferredTemplatePath = "Client_Monthly_Report_Template_2026-11-12.pptx";
+  const legacyTemplatePath = "Client_Monthly_Report_Template.pptx";
+  const templateDownloadUrl = storedTemplatePath ? supabase.storage.from("client-report-templates").getPublicUrl(storedTemplatePath).data.publicUrl : "";
   const reportSignature = useMemo(() => snapshot ? JSON.stringify({ snapshot, content }) : "", [snapshot, content]);
   const previewIsCurrent = Boolean(previewBlob && previewSignature === reportSignature);
 
@@ -117,12 +120,22 @@ export default function ReportsPage() {
 
   useEffect(() => {
     let active = true;
-    void supabase.storage.from("client-report-templates").list("", { search: templatePath })
+    void supabase.storage.from("client-report-templates").list("", { limit: 100 })
       .then(({ data, error: listError }) => {
-        if (active) setTemplateExists(!listError && Boolean(data?.some((item) => item.name === templatePath)));
+        if (!active) return;
+        if (listError) {
+          setStoredTemplatePath(null); setTemplateExists(false);
+          setTemplateNotice("Unable to check the stored PowerPoint template: " + listError.message);
+          return;
+        }
+        const names = new Set((data ?? []).map((item) => item.name));
+        const selected = names.has(preferredTemplatePath) ? preferredTemplatePath : names.has(legacyTemplatePath) ? legacyTemplatePath : null;
+        setStoredTemplatePath(selected);
+        setTemplateExists(Boolean(selected));
+        setTemplateNotice(selected === legacyTemplatePath ? "Using the template already stored under its original filename. The new dated filename will be used automatically once it is added to storage." : "");
       });
     return () => { active = false; };
-  }, [templatePath]);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -138,6 +151,7 @@ export default function ReportsPage() {
     setPreviewLoading(true);
     setPreviewError("");
     try {
+      if (!templateDownloadUrl) throw new Error("The monthly PowerPoint template is not available in Supabase Storage. Check the client-report-templates bucket.");
       const blob = await generateMonthlyReportPptx(templateDownloadUrl, sourceSnapshot, { ...sourceContent, preparedBy: preparedByName }, brandLogoUrl);
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) throw authError;
