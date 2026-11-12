@@ -68,6 +68,46 @@ function setShapeTextAll(xml: string, name: string, value: string) {
   return xml;
 }
 
+// Update only the KPI placeholders/value portions. Keeping the existing text runs
+// intact preserves the template's wording, paragraph breaks, and character styling.
+function updateMonthlyMetricText(
+  xml: string,
+  name: string,
+  values: { change: string; peak: string; date: string },
+  occurrence = 0,
+) {
+  const escapedName = name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\function setShapeTextAll(xml: string, name: string, value: string) {
+  for (let occurrence = 0; occurrence < 12; occurrence++) {
+    const next = setShapeText(xml, name, value, occurrence);
+    if (next === xml) break;
+    xml = next;
+  }
+  return xml;
+}");
+  const shapePattern = /<p:sp>[\\s\\S]*?<\\/p:sp>/g;
+  let seen = 0;
+  return xml.replace(shapePattern, (block) => {
+    if (!new RegExp('<p:cNvPr[^>]*name="' + escapedName + '"').test(block)) return block;
+    if (seen++ !== occurrence) return block;
+    return block.replace(/(<a:t(?:\\s+[^>]*)?>)([\\s\\S]*?)(<\\/a:t>)/g, (_match, open, rawText, close) => {
+      const decoded = String(rawText)
+        .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+      let next = decoded
+        .replace(/\\[Change\\]/gi, values.change)
+        .replace(/\\[Peak Score\\]/gi, values.peak)
+        .replace(/\\[date\\]/gi, values.date);
+      if (/Change vs start of month:/i.test(next)) {
+        next = next.replace(/(Change vs start of month:\\s*).*/i, "$1" + values.change);
+      }
+      if (/Peak Score:/i.test(next)) {
+        next = next.replace(/(Peak Score:\\s*).*/i, "$1" + values.peak + " on " + values.date);
+      }
+      return open + xmlEscape(next) + close;
+    });
+  });
+}
+
 function setTable(xml: string, rows: string[][]) {
   return xml.replace(/<p:graphicFrame>[\s\S]*?<\/p:graphicFrame>/g, (frame) => {
     if (!/<p:cNvPr[^>]*name="Table 0"/.test(frame)) return frame;
@@ -132,12 +172,15 @@ const formatSignedPercent = (value: number) => {
 };
 const changeAndPeak = (series: { date: string; score: number | null }[]) => {
   const valid = series.filter((point): point is { date: string; score: number } => point.score !== null).sort((a, b) => a.date.localeCompare(b.date));
-  if (!valid.length) return "Change vs start of month: N/A\nPeak Score: N/A";
+  if (!valid.length) return { change: "N/A", peak: "N/A", date: "N/A" };
   const first = valid[0];
   const last = valid[valid.length - 1];
   const peak = valid.reduce((best, point) => point.score > best.score ? point : best, first);
-  const change = last.score - first.score;
-  return "Change vs start of month: " + formatSignedPercent(change) + "\nPeak Score: " + pct(peak.score) + " on " + dateLabel(peak.date);
+  return {
+    change: formatSignedPercent(last.score - first.score),
+    peak: pct(peak.score),
+    date: dateLabel(peak.date),
+  };
 };
 const numericCount = (value: string | undefined) => {
   if (!value?.trim()) return null;
@@ -147,7 +190,7 @@ const numericCount = (value: string | undefined) => {
 const compareToCompetitor = (brandValue: number | null, competitorValue: number | null, competitorName: string) => {
   if (brandValue === null || competitorValue === null) return "Comparison unavailable";
   const delta = brandValue - competitorValue;
-  return (delta > 0 ? "+" : "") + compactNumber(delta) + " compared to the highest performing competitor (" + competitorName + ")";
+  return (delta > 0 ? "+" : "") + compactNumber(delta) + " vs " + competitorName + " (top competitor)";
 };
 
 export async function generateMonthlyReportPptx(
@@ -213,9 +256,9 @@ export async function generateMonthlyReportPptx(
 
   await editSlide(2, (xml) => {
     xml = setShapeText(xml, "Text 6", pct(snapshot.overall.visibilityScore), 0);
-    xml = setShapeText(xml, "Text 8", visibilityChangeAndPeak, 0);
+    xml = updateMonthlyMetricText(xml, "Text 8", visibilityChangeAndPeak, 0);
     xml = setShapeText(xml, "Text 18", pct(snapshot.overall.shareOfVoice), 0);
-    xml = setShapeText(xml, "Text 20", shareOfVoiceChangeAndPeak, 0);
+    xml = updateMonthlyMetricText(xml, "Text 20", shareOfVoiceChangeAndPeak, 0);
     xml = setShapeText(xml, "Text 6", fmt(trackedCitationCount), 1);
     xml = setShapeText(xml, "Text 8", citationComparison, 1);
     xml = setShapeText(xml, "Text 18", content.knowledgeAssets || "N/A", 1);
