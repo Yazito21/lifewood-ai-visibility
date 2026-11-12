@@ -219,8 +219,8 @@ export async function generateMonthlyReportPptx(
     const descriptionNames = ["Text 9", "Text 14", "Text 19", "Text 24", "Text 29", "Text 34"];
     const areaNames = ["Text 7", "Text 12", "Text 17", "Text 22", "Text 32", "Text 32"];
     content.initiatives.slice(0, 6).forEach((item, i) => {
-      xml = setShapeText(xml, titleNames[i], item.title || "Initiative " + (i + 1));
-      xml = setShapeText(xml, descriptionNames[i], item.description || "Description to be completed");
+      xml = setShapeText(xml, titleNames[i], item.title || "");
+      xml = setShapeText(xml, descriptionNames[i], item.description || "");
       xml = setShapeText(xml, areaNames[i], item.area || "General", i === 5 ? 1 : 0);
     });
     return xml;
@@ -285,7 +285,11 @@ export async function generateMonthlyReportPptx(
     const chartLabels = labels.slice(0, 59);
     xml = updateSeriesChartCache(xml, 0, values.slice(0, 59), chartLabels);
     xml = updateSeriesChartCache(xml, 1, values.slice(0, 59).map(() => targetValue), chartLabels);
+    const highestChartValue = Math.max(targetValue, ...values, 0);
+    const axisMax = highestChartValue <= 30 ? 30 : Math.ceil((highestChartValue + 1) / 10) * 10;
     xml = xml
+      .replace(/<c:max val="[^"]*"\/>/, '<c:max val="' + axisMax + '" />')
+      .replace(/<c:majorUnit val="[^"]*"\/>/, '<c:majorUnit val="' + (axisMax > 40 ? 10 : 5) + '" />')
       .replace(/Sheet1!\$A\$2:\$A\$60/g, "Sheet1!$A$2:$A$" + Math.max(2, chartLabels.length + 1))
       .replace(/Sheet1!\$B\$2:\$B\$60/g, "Sheet1!$B$2:$B$" + Math.max(2, chartLabels.length + 1))
       .replace(/Sheet1!\$C\$2:\$C\$60/g, "Sheet1!$C$2:$C$" + Math.max(2, chartLabels.length + 1))
