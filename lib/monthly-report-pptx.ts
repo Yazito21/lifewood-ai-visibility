@@ -76,38 +76,30 @@ function updateMonthlyMetricText(
   values: { change: string; peak: string; date: string },
   occurrence = 0,
 ) {
-  const escapedName = name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\function setShapeTextAll(xml: string, name: string, value: string) {
-  for (let occurrence = 0; occurrence < 12; occurrence++) {
-    const next = setShapeText(xml, name, value, occurrence);
-    if (next === xml) break;
-    xml = next;
-  }
-  return xml;
-}");
-  const shapePattern = /<p:sp>[\\s\\S]*?<\\/p:sp>/g;
+  const shapePattern = /<p:sp>[\s\S]*?<\/p:sp>/g;
   let seen = 0;
   return xml.replace(shapePattern, (block) => {
-    if (!new RegExp('<p:cNvPr[^>]*name="' + escapedName + '"').test(block)) return block;
+    if (!block.includes('name="' + name + '"')) return block;
     if (seen++ !== occurrence) return block;
-    return block.replace(/(<a:t(?:\\s+[^>]*)?>)([\\s\\S]*?)(<\\/a:t>)/g, (_match, open, rawText, close) => {
+    return block.replace(/(<a:t(?:\s+[^>]*)?>)([\s\S]*?)(<\/a:t>)/g, (_match, open, rawText, close) => {
       const decoded = String(rawText)
         .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
         .replace(/&quot;/g, '"').replace(/&apos;/g, "'");
       let next = decoded
-        .replace(/\\[Change\\]/gi, values.change)
-        .replace(/\\[Peak Score\\]/gi, values.peak)
-        .replace(/\\[date\\]/gi, values.date);
+        .replace(/\[Change\]/gi, values.change)
+        .replace(/\[Peak Score\]/gi, values.peak)
+        .replace(/\[date\]/gi, values.date);
+      // Backward compatibility: replace only the value after the literal label.
       if (/Change vs start of month:/i.test(next)) {
-        next = next.replace(/(Change vs start of month:\\s*).*/i, "$1" + values.change);
+        next = next.replace(/(Change vs start of month:\s*).*/i, "$1" + values.change);
       }
       if (/Peak Score:/i.test(next)) {
-        next = next.replace(/(Peak Score:\\s*).*/i, "$1" + values.peak + " on " + values.date);
+        next = next.replace(/(Peak Score:\s*).*/i, "$1" + values.peak + " on " + values.date);
       }
       return open + xmlEscape(next) + close;
     });
   });
 }
-
 function setTable(xml: string, rows: string[][]) {
   return xml.replace(/<p:graphicFrame>[\s\S]*?<\/p:graphicFrame>/g, (frame) => {
     if (!/<p:cNvPr[^>]*name="Table 0"/.test(frame)) return frame;
