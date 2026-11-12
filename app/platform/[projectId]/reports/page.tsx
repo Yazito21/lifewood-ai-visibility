@@ -18,7 +18,7 @@ type Target = { score: string };
 type Initiative = { area: string; title: string; description: string };
 type Action = { week: string; website: string; knowledge: string; branding: string; community: string; monitoring: string };
 type Content = {
-  preparedBy: string; projectName: string; summaryDone: string; summaryFocus: string; knowledgeAssets: string;
+  preparedBy: string; preparedOn: string; projectName: string; summaryDone: string; summaryFocus: string; knowledgeAssets: string;
   progress: Record<string, string[]>; initiatives: Initiative[]; actions: Action[];
   targets: Record<string, Target>; competitorAssets: Record<string, string>;
   competitorDetails: Record<string, { knowledgeAssets: string; knowledgeDescription: string; externalTotal: string; news: string; directories: string; websites: string; social: string }>;
@@ -35,7 +35,7 @@ const AREAS = ["Website Content and Structure", "Knowledge Assets and Resources"
 const BLANK_ACTION = (): Action => ({ week: "Week 1", website: "", knowledge: "", branding: "", community: "", monitoring: "" });
 function emptyContent(categories: string[]): Content {
   return {
-    preparedBy: "", projectName: "", summaryDone: "", summaryFocus: "", knowledgeAssets: "",
+    preparedBy: "", preparedOn: malaysiaDateString(), projectName: "", summaryDone: "", summaryFocus: "", knowledgeAssets: "",
     progress: Object.fromEntries(AREAS.map((a) => [a, ["", "", ""]])),
     initiatives: [
       { area: "Website", title: "", description: "" }, { area: "Website", title: "", description: "" },
@@ -218,6 +218,7 @@ export default function ReportsPage() {
       if (!data.hasData) throw new Error("No AI visibility tracking data was found for this period and tracking location.");
       const next = emptyContent(data.brand.categories);
       next.preparedBy = preparedByName;
+      next.preparedOn = malaysiaDateString();
       next.projectName = "SEO/GEO project operations";
       next.competitorDetails = Object.fromEntries(data.competitors.map((row) => [row.name, { knowledgeAssets: "", knowledgeDescription: "", externalTotal: "", news: "", directories: "", websites: "", social: "" }]));
       const citationByCategory: Content["citationByCategory"] = {};
