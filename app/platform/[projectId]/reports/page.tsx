@@ -288,6 +288,9 @@ export default function ReportsPage() {
     if (restoredContent.initiatives[4]?.area === "Monitoring" && restoredContent.initiatives[5]?.area === "Community") {
       [restoredContent.initiatives[4], restoredContent.initiatives[5]] = [restoredContent.initiatives[5], restoredContent.initiatives[4]];
     }
+    restoredContent.preparedBy = preparedByName;
+    restoredContent.preparedOn = malaysiaDateString();
+    restoredContent.projectName = "SEO/GEO project operations";
     restoredContent.initiatives = [...restoredContent.initiatives.slice(0, 6)];
     restoredContent.actions = ["Week 1", "Week 2", "Week 3", "Week 4", "Ongoing"].map((week, i) => ({ ...BLANK_ACTION(), ...(restoredContent.actions?.[i] ?? {}), week }));
     restoredContent.progress = Object.fromEntries(AREAS.map((area) => [area, (restoredContent.progress?.[area] ?? ["", "", ""]).slice(0, 30)]));
@@ -337,7 +340,7 @@ export default function ReportsPage() {
             <button className="platform-btn" disabled={previewLoading || !templateExists} onClick={() => void refreshPowerPointPreview()}>{previewLoading?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} Refresh PowerPoint preview</button>
             <button className="platform-btn" disabled={!previewOpenUrl} onClick={() => previewOpenUrl && window.open(previewOpenUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={14}/> Open preview</button>
             <button className="platform-btn" disabled={!previewOpenUrl} title="Open the actual PowerPoint in the Office viewer, then use its Print command and choose Save as PDF." onClick={() => previewOpenUrl && window.open(previewOpenUrl, "_blank", "noopener,noreferrer")}><Printer size={14}/> Print / Save PDF</button>
-            <button className="platform-btn platform-btn-primary" disabled={exportingPptx || !templateExists} title={!templateExists ? "Upload the PowerPoint template first" : undefined} onClick={exportPowerPoint}>{exportingPptx?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>} Export PowerPoint</button>
+            <button className="platform-btn platform-btn-primary" disabled={exportingPptx || !templateExists} title={!templateExists ? "The revised template is not yet available in platform storage" : undefined} onClick={exportPowerPoint}>{exportingPptx?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>} Export PowerPoint</button>
             <button className="platform-btn platform-btn-primary" disabled={saving || !canEdit} title={!canEdit ? "Only project editors can save reports" : undefined} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button>
           </div>
           {!canEdit&&<p className="w-full text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}
