@@ -32,6 +32,7 @@ export type ReportSnapshot = {
     brandCitations: number;
   };
   trend: { date: string; score: number | null }[];
+  shareOfVoiceTrend: { date: string; score: number | null }[];
   byEngine: { engine: string; label: string; visibilityScore: number | null }[];
   byCategory: { category: string; visibilityScore: number | null; rank: number | null; rankText: string }[];
   competitors: BenchmarkRow[];
