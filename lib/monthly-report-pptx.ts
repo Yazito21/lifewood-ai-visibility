@@ -1,6 +1,7 @@
 "use client";
 
 import JSZip from "jszip";
+import ExcelJS from "exceljs";
 import type { ReportSnapshot } from "@/lib/report-types";
 
 export type MonthlyReportContent = {
@@ -63,26 +64,33 @@ function setTable(xml: string, rows: string[][]) {
   });
 }
 
-function updateChartCache(xml: string, seriesIndex: number, values: number[], labels?: string[]) {
-  let numIndex = 0;
-  let result = xml.replace(/<c:numCache>[\s\S]*?<\/c:numCache>/g, (cache) => {
-    if (numIndex++ !== seriesIndex) return cache;
-    const points = values.map((v, i) => '<c:pt idx="' + i + '"><c:v>' + String(Number.isFinite(v) ? v : 0) + '</c:v></c:pt>').join("");
-    return cache.replace(/<c:ptCount val="\d+"\s*\/>/, '<c:ptCount val="' + values.length + '"/>')
-      .replace(/<c:pt[\s\S]*?<\/c:pt>/g, "")
-      .replace(/(<c:ptCount[^>]*\/>)/, "$1" + points);
-  });
-  if (labels?.length) {
-    result = result.replace(/<c:strCache>[\s\S]*?<\/c:strCache>/g, (cache) => {
-      const count = Number(cache.match(/<c:ptCount val="(\d+)"/)?.[1] ?? 0);
-      if (count <= 1) return cache;
-      const points = labels.map((v, i) => '<c:pt idx="' + i + '"><c:v>' + xmlEscape(v) + '</c:v></c:pt>').join("");
-      return cache.replace(/<c:ptCount val="\d+"\s*\/>/, '<c:ptCount val="' + labels.length + '"/>')
-        .replace(/<c:pt[\s\S]*?<\/c:pt>/g, "")
-        .replace(/(<c:ptCount[^>]*\/>)/, "$1" + points);
+function replaceCachePoints(cache: string, values: (string | number)[]) {
+  const tag = cache.match(/^<c:(numCache|strCache)>/)?.[1];
+  if (!tag) return cache;
+  const formatCode = cache.match(/<c:formatCode>[\s\S]*?<\/c:formatCode>/)?.[0] ?? "";
+  const points = values.map((value, index) =>
+    '<c:pt idx="' + index + '"><c:v>' + (typeof value === "number" ? String(Number.isFinite(value) ? value : 0) : xmlEscape(value)) + '</c:v></c:pt>',
+  ).join("");
+  return '<c:' + tag + '>' + formatCode + '<c:ptCount val="' + values.length + '"/>' + points + '</c:' + tag + '>';
+}
+
+function updateSeriesChartCache(xml: string, seriesIndex: number, values: number[], labels: string[]) {
+  let currentSeries = 0;
+  return xml.replace(/<c:ser>[\s\S]*?<\/c:ser>/g, (series) => {
+    if (currentSeries++ !== seriesIndex) return series;
+    let stringCacheIndex = 0;
+    series = series.replace(/<c:strCache>[\s\S]*?<\/c:strCache>/g, (cache) => {
+      const index = stringCacheIndex++;
+      return index === 1 ? replaceCachePoints(cache, labels) : cache;
     });
-  }
-  return result;
+    let numericCacheUpdated = false;
+    series = series.replace(/<c:numCache>[\s\S]*?<\/c:numCache>/g, (cache) => {
+      if (numericCacheUpdated) return cache;
+      numericCacheUpdated = true;
+      return replaceCachePoints(cache, values);
+    });
+    return series;
+  });
 }
 
 const dateLabel = (value: string) => new Date(value + "T00:00:00").toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
@@ -211,8 +219,8 @@ export async function generateMonthlyReportPptx(
     const descriptionNames = ["Text 9", "Text 14", "Text 19", "Text 24", "Text 29", "Text 34"];
     const areaNames = ["Text 7", "Text 12", "Text 17", "Text 22", "Text 32", "Text 32"];
     content.initiatives.slice(0, 6).forEach((item, i) => {
-      xml = setShapeText(xml, titleNames[i], item.title || "Initiative " + (i + 1));
-      xml = setShapeText(xml, descriptionNames[i], item.description || "Description to be completed");
+      xml = setShapeText(xml, titleNames[i], item.title || "");
+      xml = setShapeText(xml, descriptionNames[i], item.description || "");
       xml = setShapeText(xml, areaNames[i], item.area || "General", i === 5 ? 1 : 0);
     });
     return xml;
@@ -250,21 +258,72 @@ export async function generateMonthlyReportPptx(
     return xml.replace(/\[next month\]/gi, "Next Month").replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location).replace(/\[date\]/g, dateLabel(snapshot.period.end)).replace(/\[benchmark description\]/g, "configured benchmark prompts and tracked competitors");
   });
 
-  const chart2 = zip.file("ppt/charts/chart2.xml");
-  if (chart2) {
-    const xml = await chart2.async("string");
-    const totalCitations = Object.values(content.citationByCategory).reduce((sum, item) => sum + item.citations, 0);
-    const categoryShares = categories.map((category) => totalCitations ? (content.citationByCategory[category]?.citations ?? 0) / totalCitations * 100 : 0);
-    zip.file("ppt/charts/chart2.xml", updateChartCache(xml, 0, categoryShares, categories));
+  // Update the embedded Excel workbooks as well as the chart caches. PowerPoint
+  // uses both sources; changing only cached XML values can leave charts blank.
+  const chart1WorkbookFile = zip.file("ppt/embeddings/Microsoft_Excel_Worksheet.xlsx");
+  if (chart1WorkbookFile) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await chart1WorkbookFile.async("arraybuffer"));
+    const sheet = workbook.getWorksheet("Sheet1");
+    if (sheet) {
+      sheet.getCell("B1").value = "Visibility score (%)";
+      sheet.getCell("C1").value = "Next Target (" + targetValue + "%)";
+      for (let i = 0; i < 59; i++) {
+        const row = i + 2;
+        const point = trend[i];
+        sheet.getCell("A" + row).value = point ? dateLabel(point.date) : null;
+        sheet.getCell("B" + row).value = point?.score ?? null;
+        sheet.getCell("C" + row).value = point ? targetValue : null;
+      }
+    }
+    zip.file("ppt/embeddings/Microsoft_Excel_Worksheet.xlsx", await workbook.xlsx.writeBuffer());
   }
 
   const chart1 = zip.file("ppt/charts/chart1.xml");
   if (chart1) {
     let xml = await chart1.async("string");
-    xml = updateChartCache(xml, 0, values, labels);
-    xml = updateChartCache(xml, 1, values.map(() => targetValue));
-
+    const chartLabels = labels.slice(0, 59);
+    xml = updateSeriesChartCache(xml, 0, values.slice(0, 59), chartLabels);
+    xml = updateSeriesChartCache(xml, 1, values.slice(0, 59).map(() => targetValue), chartLabels);
+    const highestChartValue = Math.max(targetValue, ...values, 0);
+    const axisMax = highestChartValue <= 30 ? 30 : Math.ceil((highestChartValue + 1) / 10) * 10;
+    xml = xml
+      .replace(/<c:max val="[^"]*"\/>/, '<c:max val="' + axisMax + '" />')
+      .replace(/<c:majorUnit val="[^"]*"\/>/, '<c:majorUnit val="' + (axisMax > 40 ? 10 : 5) + '" />')
+      .replace(/Sheet1!\$A\$2:\$A\$60/g, "Sheet1!$A$2:$A$" + Math.max(2, chartLabels.length + 1))
+      .replace(/Sheet1!\$B\$2:\$B\$60/g, "Sheet1!$B$2:$B$" + Math.max(2, chartLabels.length + 1))
+      .replace(/Sheet1!\$C\$2:\$C\$60/g, "Sheet1!$C$2:$C$" + Math.max(2, chartLabels.length + 1))
+      .replace(/\[XX\]/g, String(targetValue));
     zip.file("ppt/charts/chart1.xml", xml);
+  }
+
+  const chart2WorkbookFile = zip.file("ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx");
+  const citationEntries = Object.entries(content.citationByCategory).slice(0, 3);
+  const citationTotal = citationEntries.reduce((sum, [, item]) => sum + item.citations, 0);
+  const categoryShares = citationEntries.map(([, item]) => citationTotal ? item.citations / citationTotal * 100 : 0);
+  const citationLabels = citationEntries.map(([category]) => category);
+  if (chart2WorkbookFile) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(await chart2WorkbookFile.async("arraybuffer"));
+    const sheet = workbook.getWorksheet("Sheet1");
+    if (sheet) {
+      sheet.getCell("B1").value = "Brand share";
+      for (let i = 0; i < 3; i++) {
+        const row = i + 2;
+        sheet.getCell("A" + row).value = citationLabels[i] ?? null;
+        sheet.getCell("B" + row).value = categoryShares[i] ?? null;
+      }
+    }
+    zip.file("ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx", await workbook.xlsx.writeBuffer());
+  }
+
+  const chart2 = zip.file("ppt/charts/chart2.xml");
+  if (chart2) {
+    let xml = await chart2.async("string");
+    xml = updateSeriesChartCache(xml, 0, categoryShares, citationLabels)
+      .replace(/Sheet1!\$A\$2:\$A\$4/g, "Sheet1!$A$2:$A$" + Math.max(2, citationLabels.length + 1))
+      .replace(/Sheet1!\$B\$2:\$B\$4/g, "Sheet1!$B$2:$B$" + Math.max(2, citationLabels.length + 1));
+    zip.file("ppt/charts/chart2.xml", xml);
   }
 
   return zip.generateAsync({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
