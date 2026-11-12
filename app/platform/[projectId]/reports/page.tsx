@@ -360,7 +360,7 @@ export default function ReportsPage() {
         </section>
         <div className="monthly-slides-list">{slides.map((name,i)=><section id={"monthly-slide-"+(i+1)} key={name} className="monthly-slide-editor">
           <div className="monthly-editor-toolbar"><div><span className="text-xs text-[var(--muted-foreground)]">Slide {i+1} of 10</span><h3 className="font-bold">{name}</h3></div></div>
-          <div className="monthly-workspace"><div className="monthly-form-panel"><h4 className="mb-3 text-sm font-bold">Slide information</h4>{editor(i+1)}</div></div>
+          <div className="monthly-form-panel w-full"><h4 className="mb-3 text-sm font-bold">Slide information</h4>{editor(i+1)}</div>
         </section>)}</div>
         
       </section>}
