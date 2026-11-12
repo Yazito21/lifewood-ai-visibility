@@ -81,6 +81,9 @@ function updateMonthlyMetricText(
   return xml.replace(shapePattern, (block) => {
     if (!block.includes('name="' + name + '"')) return block;
     if (seen++ !== occurrence) return block;
+    const hasChangePlaceholder = /\[Change\]/i.test(block);
+    const hasPeakPlaceholder = /\[Peak Score\]/i.test(block);
+    const hasDatePlaceholder = /\[date\]/i.test(block);
     return block.replace(/(<a:t(?:\s+[^>]*)?>)([\s\S]*?)(<\/a:t>)/g, (_match, open, rawText, close) => {
       const decoded = String(rawText)
         .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
@@ -89,11 +92,12 @@ function updateMonthlyMetricText(
         .replace(/\[Change\]/gi, values.change)
         .replace(/\[Peak Score\]/gi, values.peak)
         .replace(/\[date\]/gi, values.date);
-      // Backward compatibility: replace only the value after the literal label.
-      if (/Change vs start of month:/i.test(next)) {
+      // Backward compatibility for older templates with complete literal value runs.
+      // If a placeholder is split into its own run, leave the adjacent label run alone.
+      if (!hasChangePlaceholder && /Change vs start of month:/i.test(next)) {
         next = next.replace(/(Change vs start of month:\s*).*/i, "$1" + values.change);
       }
-      if (/Peak Score:/i.test(next)) {
+      if (!hasPeakPlaceholder && !hasDatePlaceholder && /Peak Score:/i.test(next)) {
         next = next.replace(/(Peak Score:\s*).*/i, "$1" + values.peak + " on " + values.date);
       }
       return open + xmlEscape(next) + close;
