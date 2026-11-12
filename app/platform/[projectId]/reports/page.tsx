@@ -84,7 +84,7 @@ export default function ReportsPage() {
   const [brandLogoUrl, setBrandLogoUrl] = useState("");
   const [preparedByName, setPreparedByName] = useState("Platform User");
   const [collapsedSlides, setCollapsedSlides] = useState<Record<number, boolean>>({1:true,2:true,3:true,4:true,5:true,6:true,7:true,8:true,9:true,10:true});
-  const templatePath = "Client_Monthly_Report_Template.pptx";
+  const templatePath = "Client_Monthly_Report_Template_2026-11-12.pptx";
   const templateDownloadUrl = supabase.storage.from("client-report-templates").getPublicUrl(templatePath).data.publicUrl;
   const reportSignature = useMemo(() => snapshot ? JSON.stringify({ snapshot, content }) : "", [snapshot, content]);
   const previewIsCurrent = Boolean(previewBlob && previewSignature === reportSignature);
