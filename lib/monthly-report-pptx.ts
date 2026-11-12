@@ -6,6 +6,7 @@ import type { ReportSnapshot } from "@/lib/report-types";
 
 export type MonthlyReportContent = {
   preparedBy: string;
+  preparedOn: string;
   projectName: string;
   summaryDone: string;
   summaryFocus: string;
@@ -164,7 +165,7 @@ export async function generateMonthlyReportPptx(
   await editSlide(1, (xml) => {
     xml = setShapeText(xml, "Text 1", snapshot.brand.name);
     xml = setShapeText(xml, "Text 3", periodLabel(snapshot) + " Report");
-    return setShapeText(xml, "Text 4", "Prepared by " + (content.preparedBy || "Platform User") + " on " + dateLabel(snapshot.period.end) + " as part of the SEO/GEO project operations for " + snapshot.brand.name + ".");
+    return setShapeText(xml, "Text 4", "Prepared by " + (content.preparedBy || "Platform User") + " on " + dateLabel(content.preparedOn || snapshot.period.end) + " as part of the SEO/GEO project operations for " + snapshot.brand.name + ".");
   });
 
   await editSlide(2, (xml) => {
@@ -230,7 +231,7 @@ export async function generateMonthlyReportPptx(
     const everyPage = citationEntries.flatMap(([category, item]) => item.pages.map((page) => ({ ...page, category })));
     const allPages = [...everyPage].sort((a, b) => b.frequency - a.frequency).slice(0, 7);
     const distinctPages = new Set(everyPage.map(page => page.url)).size;
-    const brandWebsite = snapshot.brand.website || snapshot.brand.name;
+    const brandWebsite = (() => { try { return new URL(snapshot.brand.website || "").hostname.toLowerCase().replace(/^www\\./, "") || snapshot.brand.name; } catch { return snapshot.brand.name; } })();
     xml = setShapeText(xml, "Text 6", fmt(total));
     xml = setShapeText(xml, "Text 7", "times AI platforms cited " + brandWebsite);
     xml = setShapeText(xml, "Text 8", dateLabel(snapshot.period.start) + " to " + dateLabel(snapshot.period.end));
