@@ -177,7 +177,6 @@ export default function ReportsPage() {
       setTemplateExists(true);
       setPreviewViewerUrl(""); setPreviewOpenUrl(""); setPreviewBlob(null); setPreviewSignature(""); setPreviewError("");
       setNotice("The revised PowerPoint template was uploaded and is now the active template.");
-      if (snapshot) void refreshPowerPointPreview(snapshot, content);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to upload the PowerPoint template.");
     } finally {
@@ -277,7 +276,7 @@ export default function ReportsPage() {
 
   async function generate() {
     if (reportType !== "monthly") return;
-    if (!start || !end || start < MIN_TRACKING_DATE || end > malaysiaDateString()) { setError("Choose a valid reporting month."); return; }
+    if (!start || !end || start < MIN_TRACKING_DATE) { setError("Choose a valid reporting month."); return; }
     setLoading(true); setError(""); setNotice(""); setActiveId(null);
     try {
       const period: ReportPeriod = { start, end, label: new Date(start + "T00:00:00").toLocaleDateString("en-GB", { month: "long", year: "numeric" }) };
