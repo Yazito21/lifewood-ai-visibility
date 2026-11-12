@@ -342,7 +342,7 @@ export default function ReportsPage() {
           </div>
           {!canEdit&&<p className="w-full text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}
         </div>
-        <div className="mb-4 flex gap-2 overflow-x-auto pb-2">{slides.map((name,i)=><a key={name} href={"#monthly-slide-"+(i+1)} className="shrink-0 rounded-lg border border-[var(--line)] px-3 py-2 text-xs hover:bg-[var(--accent)]">{i+1}. {name}</a>)}</div>
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-2">{slides.map((name,i)=><a key={name} href={"#monthly-slide-"+(i+1)} onClick={()=>setCollapsedSlides(prev=>({...prev,[i+1]:false}))} className="shrink-0 rounded-lg border border-[var(--line)] px-3 py-2 text-xs hover:bg-[var(--accent)]">{i+1}. {name}</a>)}</div>
         <section className="mb-6 overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--card)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] p-4"><div><h3 className="font-bold">PowerPoint preview</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">Rendered from the same generated .pptx file used for export.</p></div><span className={previewIsCurrent?"monthly-ready":"monthly-soon"}>{previewIsCurrent?"Preview up to date":"Preview needs refreshing"}</span></div>
           {previewError && <p className="px-4 pt-3 text-sm text-red-600">{previewError}</p>}
