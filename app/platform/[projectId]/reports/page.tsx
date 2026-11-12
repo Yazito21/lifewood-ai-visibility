@@ -57,9 +57,13 @@ function defaultReportMonth() {
 }
 function monthDates(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
-  if (!year || !monthNumber || monthNumber < 1 || monthNumber > 12) return { start: "", end: "" };
+  const today = malaysiaDateString();
+  const currentMonth = today.slice(0, 7);
+  if (!year || !monthNumber || monthNumber < 1 || monthNumber > 12 || month > currentMonth) return { start: "", end: "" };
   const start = month + "-01";
-  const end = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+  const calendarEnd = new Date(Date.UTC(year, monthNumber, 0)).toISOString().slice(0, 10);
+  // For an in-progress month, report only through today's Malaysia-local date.
+  const end = month === currentMonth ? today : calendarEnd;
   return { start, end };
 }
 function Field({ label, value, onChange, placeholder = "Enter information", multiline = false }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string; multiline?: boolean }) {
@@ -281,7 +285,35 @@ export default function ReportsPage() {
     if (!start || !end || start < MIN_TRACKING_DATE) { setError("Choose a valid reporting month."); return; }
     setLoading(true); setError(""); setNotice(""); setActiveId(null);
     try {
-      const period: ReportPeriod = { start, end, label: new Date(start + "T00:00:00").toLocaleDateString("en-GB", { month: "long", year: "numeric" }) };
+      // Resolve the effective start date from the first day this tracked brand
+      // has an Overall visibility observation in the selected calendar month.
+      const { data: projectTracking, error: trackingProjectError } = await supabase
+        .from("projects").select("tracking_market").eq("id", projectId).single();
+      if (trackingProjectError) throw trackingProjectError;
+      const trackingLocation = projectTracking?.tracking_market ?? "MY";
+      const { data: firstVisibility, error: firstVisibilityError } = await supabase
+        .from("visibility_daily")
+        .select("metric_date")
+        .eq("project_id", projectId)
+        .eq("llm_provider", "Overall")
+        .eq("category", "Overall")
+        .eq("tracking_location", trackingLocation)
+        .gte("metric_date", start)
+        .lte("metric_date", end)
+        .not("visibility_score", "is", null)
+        .order("metric_date", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (firstVisibilityError) throw firstVisibilityError;
+      if (!firstVisibility?.metric_date) {
+        throw new Error("No overall visibility data was found for the selected month and tracking location.");
+      }
+      const effectiveStart = firstVisibility.metric_date;
+      const period: ReportPeriod = {
+        start: effectiveStart,
+        end,
+        label: new Date(start + "T00:00:00").toLocaleDateString("en-GB", { month: "long", year: "numeric" }),
+      };
       const data = await gatherSnapshot(supabase, projectId, period);
       if (!data.hasData) throw new Error("No AI visibility tracking data was found for this period and tracking location.");
       const next = emptyContent(data.brand.categories);
@@ -296,7 +328,7 @@ export default function ReportsPage() {
       const brandHosts = ((projectInfo?.brand_domains ?? []) as string[]).map((domain) => {
         try { return new URL(domain.includes("://") ? domain : "https://" + domain).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; }
       }).filter(Boolean);
-      const args = { p_project_id: projectId, p_start_date: start, p_end_date: end, p_engines: [], p_brand_related_only: false, p_tracking_location: data.location };
+      const args = { p_project_id: projectId, p_start_date: period.start, p_end_date: period.end, p_engines: [], p_brand_related_only: false, p_tracking_location: data.location };
       const results = await Promise.all(data.brand.categories.map(async (category) => {
         const { data: rows, error: rpcError } = await supabase.rpc("get_cumulative_citations", { ...args, p_category: category });
         if (rpcError) throw rpcError;
@@ -442,7 +474,7 @@ export default function ReportsPage() {
       <section className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-bold">Report type</h2><span className="text-xs text-[var(--muted-foreground)]">5 report formats</span></div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{TYPES.map(t=><button key={t.id} onClick={()=>{setReportType(t.id);setSnapshot(null);setActiveId(null);setError("");setNotice("");}} className={"rounded-xl border p-3 text-left transition "+(reportType===t.id?"border-[var(--primary)] bg-[var(--accent)] ring-1 ring-[var(--primary)]":"border-[var(--line)] hover:bg-[var(--accent)]")}><div className="flex items-center justify-between gap-2"><b className="text-sm">{t.name}</b>{t.ready?<span className="monthly-ready">Available</span>:<span className="monthly-soon">Coming soon</span>}</div><p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">{t.description}</p></button>)}</div>
-        {reportType==="monthly"?<div className="mt-5 flex flex-wrap items-end gap-3 border-t border-[var(--line)] pt-4"><label className="block"><span className="mb-1.5 block text-xs font-semibold text-[var(--muted-foreground)]">Reporting month</span><input className="platform-input text-sm" type="month" min={MIN_TRACKING_DATE.slice(0, 7)} max={latestCompletedReportMonth()} value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} /></label><p className="pb-2 text-xs text-[var(--muted-foreground)]">{start && end ? "Reporting period: " + start + " to " + end : "Select a valid reporting month."}</p><button className="platform-btn platform-btn-primary ml-auto" disabled={loading || !start || !end} onClick={generate}>{loading?<Loader2 size={15} className="animate-spin"/>:<Sparkles size={15}/>} Generate monthly report</button></div>:<div className="mt-5 rounded-xl border border-dashed border-[var(--line)] p-5 text-center text-sm text-[var(--muted-foreground)]">This report format is planned for a future development stage.</div>}
+        {reportType==="monthly"?<div className="mt-5 flex flex-wrap items-end gap-3 border-t border-[var(--line)] pt-4"><label className="block"><span className="mb-1.5 block text-xs font-semibold text-[var(--muted-foreground)]">Reporting month</span><input className="platform-input text-sm" type="month" min={MIN_TRACKING_DATE.slice(0, 7)} max={malaysiaDateString().slice(0, 7)} value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)} /></label><p className="pb-2 text-xs text-[var(--muted-foreground)]">{start && end ? "Reporting period: " + start + " to " + end : "Select a valid reporting month."}</p><button className="platform-btn platform-btn-primary ml-auto" disabled={loading || !start || !end} onClick={generate}>{loading?<Loader2 size={15} className="animate-spin"/>:<Sparkles size={15}/>} Generate monthly report</button></div>:<div className="mt-5 rounded-xl border border-dashed border-[var(--line)] p-5 text-center text-sm text-[var(--muted-foreground)]">This report format is planned for a future development stage.</div>}
       </section>
       {error&&<div className="sample-error mt-4 rounded-xl p-3 text-sm">{error}</div>}{notice&&<div className="platform-notice-success mt-4 rounded-xl p-3 text-sm">{notice}</div>}
       {snapshot&&<section className="mt-6">
