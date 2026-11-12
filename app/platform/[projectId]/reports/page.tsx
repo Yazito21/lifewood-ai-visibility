@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Download, FileText, Loader2, Plus, Save, Sparkles } from "lucide-react";
+import { Download, ExternalLink, Loader2, Plus, Printer, RefreshCw, Save, Sparkles } from "lucide-react";
 import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 import { gatherSnapshot, type ReportPeriod } from "@/lib/report-data";
@@ -87,15 +87,15 @@ export default function ReportsPage() {
   const [canManageTemplate, setCanManageTemplate] = useState(false);
   const [templateExists, setTemplateExists] = useState(false);
   const [templateUploading, setTemplateUploading] = useState(false);
-  const [exportingPptx, setExportingPptx] = useState(false);
+  const [exportingPptx, setExportingPptx] = useState(false);\n  const [previewViewerUrl, setPreviewViewerUrl] = useState("");\n  const [previewStoragePath, setPreviewStoragePath] = useState<string | null>(null);\n  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);\n  const [previewSignature, setPreviewSignature] = useState("");\n  const [previewLoading, setPreviewLoading] = useState(false);\n  const [previewError, setPreviewError] = useState("");
   const [templateError, setTemplateError] = useState("");
   const templatePath = "Client_Monthly_Report_Template.pptx";
-  const templateDownloadUrl = supabase.storage.from("client-report-templates").getPublicUrl(templatePath).data.publicUrl;
+  const templateDownloadUrl = supabase.storage.from("client-report-templates").getPublicUrl(templatePath).data.publicUrl;\n  const reportSignature = useMemo(() => snapshot ? JSON.stringify({ snapshot, content }) : "", [snapshot, content]);\n  const previewIsCurrent = Boolean(previewBlob && previewSignature === reportSignature);
 
   const categories = useMemo(() => snapshot?.brand.categories ?? [], [snapshot]);
   const websiteCitationTotal = useMemo(() => Object.values(content.citationByCategory).reduce((sum, item) => sum + item.citations, 0), [content.citationByCategory]);
   const slides = ["Cover", "Executive Summary", "Overall Visibility Score Progression", "Comparison with Competitors", "Citation Summary", "What Have Been Done", "What Needs To Be Done", "Recommended Action Plans", "Targets", "Thank You"];
-  const sectionNumbers = ["", "1.0", "2.0", "3.0", "4.0", "5.0", "6.0", "7.0", "8.0", ""];
+
 
   const loadSaved = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -127,12 +127,53 @@ export default function ReportsPage() {
     return () => { active = false; };
   }, [templatePath]);
 
+  async function refreshPowerPointPreview(
+    sourceSnapshot: ReportSnapshot | null = snapshot,
+    sourceContent: Content = content,
+  ): Promise<Blob | null> {
+    if (!sourceSnapshot || !templateExists) return null;
+    setPreviewLoading(true);
+    setPreviewError("");
+    try {
+      const blob = await generateMonthlyReportPptx(templateDownloadUrl, sourceSnapshot, sourceContent);
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError) throw authError;
+      if (!authData.user) throw new Error("Sign in again to generate a private PowerPoint preview.");
+
+      const path = authData.user.id + "/" + projectId + "/" + Date.now() + ".pptx";
+      const { error: uploadError } = await supabase.storage.from("client-report-previews").upload(path, blob, {
+        contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        upsert: false,
+      });
+      if (uploadError) throw uploadError;
+
+      const { data: signed, error: signedError } = await supabase.storage.from("client-report-previews").createSignedUrl(path, 3600);
+      if (signedError || !signed?.signedUrl) {
+        await supabase.storage.from("client-report-previews").remove([path]);
+        throw signedError ?? new Error("Could not create a secure preview link.");
+      }
+
+      const oldPath = previewStoragePath;
+      setPreviewStoragePath(path);
+      setPreviewViewerUrl("https://view.officeapps.live.com/op/embed.aspx?src=" + encodeURIComponent(signed.signedUrl));
+      setPreviewBlob(blob);
+      setPreviewSignature(JSON.stringify({ snapshot: sourceSnapshot, content: sourceContent }));
+      if (oldPath && oldPath !== path) void supabase.storage.from("client-report-previews").remove([oldPath]);
+      return blob;
+    } catch (e) {
+      setPreviewError(e instanceof Error ? e.message : "Unable to render the PowerPoint preview.");
+      return null;
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
   async function exportPowerPoint() {
     if (!snapshot || !templateExists) return;
     setExportingPptx(true);
     setError("");
     try {
-      const blob = await generateMonthlyReportPptx(templateDownloadUrl, snapshot, content);
+      const blob = previewIsCurrent && previewBlob ? previewBlob : await generateMonthlyReportPptx(templateDownloadUrl, snapshot, content);
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
@@ -140,10 +181,12 @@ export default function ReportsPage() {
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      URL.revokeObjectURL(objectUrl);
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to generate the PowerPoint report.");
-    } finally { setExportingPptx(false); }
+    } finally {
+      setExportingPptx(false);
+    }
   }
 
   async function uploadTemplate(file?: File) {
@@ -254,26 +297,6 @@ export default function ReportsPage() {
     setContent((prev) => ({ ...prev, targets: { ...prev.targets, [category]: { score: value } } }));
   }
 
-  const preview = (slide: number) => {
-    if (!snapshot) return <div className="monthly-preview-empty"><FileText size={32} /><p>Generate a monthly report to see the slide preview.</p></div>;
-    const s = snapshot;
-    if (slide === 1) return <div className="monthly-cover"><span>{s.brand.name}</span><h2>AI Visibility Progress Report</h2><p>{s.period.start} to {s.period.end}</p><small>Prepared by {content.preparedBy || "Team Name"} as part of {content.projectName || "Project Name"}.</small></div>;
-    if (slide === 2) return <><div className="monthly-kpis"><Kpi label="Overall visibility score" value={pct(s.overall.visibilityScore)} note="Latest score in period" /><Kpi label="Share of voice" value={pct(s.overall.shareOfVoice)} note="Average across available engines" /><Kpi label="Website citations in AI" value={fmt(websiteCitationTotal)} note="Citations to the brand website" /><Kpi label="Knowledge assets" value={content.knowledgeAssets || "—"} note="Enter the latest website audit count" /></div><div className="monthly-preview-two"><div><b>Improvements made</b><p>{content.summaryDone || "Add a summary of completed work."}</p></div><div><b>Where to focus next</b><p>{content.summaryFocus || "Add the next reporting period's priorities."}</p></div></div></>;
-    if (slide === 3) return <div className="monthly-chart-layout"><div><b>Daily visibility score</b><div className="monthly-bars">{s.trend.slice(-16).map((v, i) => <div key={i} title={v.date + ": " + pct(v.score)}><i style={{ height: Math.max(3, v.score ?? 0) + "%" }} /><small>{v.date.slice(8)}</small></div>)}</div></div><div className="monthly-category-stack"><Kpi label="Latest overall score" value={pct(s.overall.visibilityScore)} />{s.byCategory.map((c) => <Kpi key={c.category} label={"Latest " + c.category} value={pct(c.visibilityScore)} />)}</div></div>;
-    if (slide === 4) return <div className="monthly-table-wrap"><table className="monthly-table"><thead><tr><th>Metric</th>{s.competitors.map((c) => <th key={c.name}>{c.name}</th>)}</tr></thead><tbody>{[["Visibility score", (c: typeof s.competitors[number]) => pct(c.visibilityScore)], ["Share of voice", (c: typeof s.competitors[number]) => pct(c.shareOfVoice)], ["Citations", (c: typeof s.competitors[number]) => fmt(c.citations)], ["Knowledge assets", (c: typeof s.competitors[number]) => c.isTracked ? (content.knowledgeAssets || "Not entered") : (content.competitorAssets[c.name] || "Not entered")], ["External websites", (c: typeof s.competitors[number]) => fmt(c.presence.websites)], ["Directories", (c: typeof s.competitors[number]) => fmt(c.presence.directories)], ["Social", (c: typeof s.competitors[number]) => fmt(c.presence.social)]].map(([label, fn]) => <tr key={String(label)}><th>{String(label)}</th>{s.competitors.map((c) => <td key={c.name}>{(fn as (v: typeof c) => string)(c)}</td>)}</tr>)}</tbody></table></div>;
-    if (slide === 5) {
-      const all = Object.values(content.citationByCategory);
-      const total = all.reduce((sum, x) => sum + x.citations, 0);
-      const pages = all.flatMap((x) => x.pages).sort((a,b) => b.frequency-a.frequency).slice(0,7);
-      return <><div className="monthly-kpis"><Kpi label="Brand website citations" value={fmt(total)} /><Kpi label="Categories covered" value={String(categories.length)} /><Kpi label="Pages cited" value={fmt(new Set(all.flatMap(x=>x.pages.map(p=>p.url))).size)} /><Kpi label="Third-party domains" value={fmt(s.thirdPartyHosts)} /></div><div className="monthly-preview-two"><div><b>Share of citations by category</b><div className="monthly-citation-bars">{categories.map(c=>{const value=content.citationByCategory[c]?.citations ?? 0;return <div key={c}><span>{c}</span><i style={{width:(Math.max(0,value)/Math.max(1,...categories.map(k=>content.citationByCategory[k]?.citations ?? 0))*100)+"%"}}/><b>{fmt(value)}</b></div>})}</div></div><div><b>Most-cited brand pages</b>{pages.map(p=><p key={p.url}>{p.url} · {p.frequency}</p>)}</div></div></>;
-    }
-    if (slide === 6) return <div className="monthly-area-grid">{AREAS.map(a=><section key={a}><b>{a}</b><ul>{(content.progress[a] ?? []).filter(Boolean).map((v,i)=><li key={i}>{v}</li>)}</ul></section>)}</div>;
-    if (slide === 7) return <div className="monthly-initiative-grid">{content.initiatives.map((v,i)=><section key={i}><small>{v.area}</small><b>{v.title || "Initiative " + (i+1)}</b><p>{v.description || "Description to be completed."}</p></section>)}</div>;
-    if (slide === 8) return <div className="monthly-action-list">{content.actions.map((a,i)=><section key={i}><b>{a.week}</b><div>{(["website","knowledge","branding","community","monitoring"] as const).filter(k=>a[k]).map(k=><p key={k}><strong>{k}</strong>: {a[k]}</p>)}</div></section>)}</div>;
-    if (slide === 9) return <div className="monthly-target-grid">{["Overall", ...categories].map(c=><section key={c}><b>{c}</b><div>Latest score <strong>{pct(c==="Overall"?s.overall.visibilityScore:s.byCategory.find(x=>x.category===c)?.visibilityScore ?? null)}</strong></div><div>Target score <strong>{content.targets[c]?.score ? content.targets[c].score+"%" : "Not set"}</strong></div></section>)}</div>;
-    return <div className="monthly-thanks"><h2>Thank You</h2><p>{s.brand.name} · {s.period.start} to {s.period.end}</p></div>;
-  };
-
   const editor = (slide: number) => {
     if (!snapshot) return <p className="text-sm text-[var(--muted-foreground)]">Generate or open a report before editing its slide content.</p>;
     if (slide === 1) return <div className="grid gap-4"><Field label="Prepared by" value={content.preparedBy} onChange={v=>update("preparedBy",v)} /><Field label="Project name" value={content.projectName} onChange={v=>update("projectName",v)} /></div>;
@@ -312,13 +335,18 @@ export default function ReportsPage() {
       </section>
       {error&&<div className="sample-error mt-4 rounded-xl p-3 text-sm">{error}</div>}{notice&&<div className="platform-notice-success mt-4 rounded-xl p-3 text-sm">{notice}</div>}
       {snapshot&&<section className="mt-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Monthly report editor</h2><p className="text-xs text-[var(--muted-foreground)]">{snapshot.brand.name} · {snapshot.period.start} to {snapshot.period.end} · {trackingLocationLabel(snapshot.location)}</p></div><div className="flex flex-wrap gap-2"><button className="platform-btn" title="Prints the browser preview. Use Export PowerPoint for the original template layout." onClick={()=>window.print()}><Download size={14}/> Print preview PDF</button><button className="platform-btn platform-btn-primary" disabled={exportingPptx || !templateExists} title={!templateExists ? "Upload the PowerPoint template first" : undefined} onClick={exportPowerPoint}>{exportingPptx?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>} Export PowerPoint</button><button className="platform-btn platform-btn-primary" disabled={saving || !canEdit} title={!canEdit ? "Only project editors can save reports" : undefined} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button></div>{!canEdit&&<p className="mt-2 text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}</div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Monthly report editor</h2><p className="text-xs text-[var(--muted-foreground)]">{snapshot.brand.name} · {snapshot.period.start} to {snapshot.period.end} · {trackingLocationLabel(snapshot.location)}</p></div><div className="flex flex-wrap gap-2"><button className="platform-btn" disabled={previewLoading || !templateExists} onClick={() => void refreshPowerPointPreview()}>{previewLoading?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} Refresh PowerPoint preview</button><button className="platform-btn" disabled={!previewViewerUrl} onClick={() => previewViewerUrl && window.open(previewViewerUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={14}/> Open preview</button><button className="platform-btn" disabled={!previewViewerUrl} title="Open the actual PowerPoint in the Office viewer, then use its Print command and choose Save as PDF." onClick={() => previewViewerUrl && window.open(previewViewerUrl, "_blank", "noopener,noreferrer")}><Printer size={14}/> Print / Save PDF</button><button className="platform-btn platform-btn-primary" disabled={exportingPptx || !templateExists} title={!templateExists ? "Upload the PowerPoint template first" : undefined} onClick={exportPowerPoint}>{exportingPptx?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>} Export PowerPoint</button><button className="platform-btn platform-btn-primary" disabled={saving || !canEdit} title={!canEdit ? "Only project editors can save reports" : undefined} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button></div>{!canEdit&&<p className="mt-2 text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}</div>{!canEdit&&<p className="mt-2 text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}</div>
         <div className="mb-4 flex gap-2 overflow-x-auto pb-2">{slides.map((name,i)=><a key={name} href={"#monthly-slide-"+(i+1)} className="shrink-0 rounded-lg border border-[var(--line)] px-3 py-2 text-xs hover:bg-[var(--accent)]">{i+1}. {name}</a>)}</div>
+        <section className="mb-6 overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--card)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] p-4"><div><h3 className="font-bold">PowerPoint preview</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">Rendered from the same generated .pptx file used for export.</p></div><span className={previewIsCurrent?"monthly-ready":"monthly-soon"}>{previewIsCurrent?"Preview up to date":"Preview needs refreshing"}</span></div>
+          {previewError && <p className="px-4 pt-3 text-sm text-red-600">{previewError}</p>}
+          {previewViewerUrl ? <iframe key={previewViewerUrl} title="Generated PowerPoint report preview" src={previewViewerUrl} className="h-[760px] w-full bg-white" allowFullScreen /> : <div className="flex min-h-64 flex-col items-center justify-center gap-2 p-6 text-center text-sm text-[var(--muted-foreground)]"><p>{previewLoading ? "Preparing the PowerPoint preview…" : "Refresh PowerPoint preview to render the original template with this report's data."}</p></div>}
+          <p className="border-t border-[var(--line)] p-3 text-xs text-[var(--muted-foreground)]">The preview opens in Microsoft Office for the web. To create a PDF, open the preview and use its Print command, then select Save as PDF. The HTML slide mock-up is no longer used.</p>
+        </section>
         <div className="monthly-slides-list">{slides.map((name,i)=><section id={"monthly-slide-"+(i+1)} key={name} className="monthly-slide-editor">
-          <div className="monthly-editor-toolbar"><div><span className="text-xs text-[var(--muted-foreground)]">Slide {i+1} of 10</span><h3 className="font-bold">{name}</h3></div><span className="text-[10px] text-[var(--muted-foreground)]">16:9 preview</span></div>
-          <div className="monthly-workspace"><div className="monthly-form-panel"><h4 className="mb-3 text-sm font-bold">Slide information</h4>{editor(i+1)}</div><div className="monthly-preview-panel"><h4 className="mb-2 text-sm font-bold">Slide preview</h4><SlideFrame number={sectionNumbers[i]} pageNumber={String(i+1).padStart(2,"0")} title={name} preview>{preview(i+1)}</SlideFrame></div></div>
+          <div className="monthly-editor-toolbar"><div><span className="text-xs text-[var(--muted-foreground)]">Slide {i+1} of 10</span><h3 className="font-bold">{name}</h3></div></div>
+          <div className="monthly-workspace"><div className="monthly-form-panel"><h4 className="mb-3 text-sm font-bold">Slide information</h4>{editor(i+1)}</div></div>
         </section>)}</div>
-        <div className="monthly-print hidden">{slides.map((name,i)=><SlideFrame key={name} number={sectionNumbers[i]} pageNumber={String(i+1).padStart(2,"0")} title={name}>{preview(i+1)}</SlideFrame>)}</div>
         
       </section>}
       <section className="mt-8 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5"><div className="mb-4 flex items-center justify-between"><h2 className="font-bold">Saved Reports</h2><span className="text-xs text-[var(--muted-foreground)]">{saved.length} saved</span></div>{saved.length===0?<p className="text-sm text-[var(--muted-foreground)]">No saved client reports yet.</p>:<div className="overflow-x-auto"><table className="platform-table"><thead><tr><th>Created</th><th>Type</th><th>Period</th><th>Status</th><th /></tr></thead><tbody>{saved.map(r=><tr key={r.id}><td>{new Date(r.created_at).toLocaleDateString("en-MY")}</td><td>{TYPES.find(t=>t.id===r.report_type)?.name ?? r.report_type}</td><td>{r.period_start} – {r.period_end}</td><td><span className="monthly-ready">Draft</span></td><td className="text-right"><button className="platform-btn" onClick={()=>openSaved(r)}>Open</button></td></tr>)}</tbody></table></div>}</section>
