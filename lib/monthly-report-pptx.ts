@@ -67,7 +67,7 @@ function setTable(xml: string, rows: string[][]) {
 function replaceCachePoints(cache: string, values: (string | number)[]) {
   const tag = cache.match(/^<c:(numCache|strCache)>/)?.[1];
   if (!tag) return cache;
-  const formatCode = cache.match(/<c:formatCode>[\\s\\S]*?<\\/c:formatCode>/)?.[0] ?? "";
+  const formatCode = cache.match(/<c:formatCode>[\s\S]*?<\/c:formatCode>/)?.[0] ?? "";
   const points = values.map((value, index) =>
     '<c:pt idx="' + index + '"><c:v>' + (typeof value === "number" ? String(Number.isFinite(value) ? value : 0) : xmlEscape(value)) + '</c:v></c:pt>',
   ).join("");
@@ -76,15 +76,15 @@ function replaceCachePoints(cache: string, values: (string | number)[]) {
 
 function updateSeriesChartCache(xml: string, seriesIndex: number, values: number[], labels: string[]) {
   let currentSeries = 0;
-  return xml.replace(/<c:ser>[\\s\\S]*?<\\/c:ser>/g, (series) => {
+  return xml.replace(/<c:ser>[\s\S]*?<\/c:ser>/g, (series) => {
     if (currentSeries++ !== seriesIndex) return series;
     let stringCacheIndex = 0;
-    series = series.replace(/<c:strCache>[\\s\\S]*?<\\/c:strCache>/g, (cache) => {
+    series = series.replace(/<c:strCache>[\s\S]*?<\/c:strCache>/g, (cache) => {
       const index = stringCacheIndex++;
       return index === 1 ? replaceCachePoints(cache, labels) : cache;
     });
     let numericCacheUpdated = false;
-    series = series.replace(/<c:numCache>[\\s\\S]*?<\\/c:numCache>/g, (cache) => {
+    series = series.replace(/<c:numCache>[\s\S]*?<\/c:numCache>/g, (cache) => {
       if (numericCacheUpdated) return cache;
       numericCacheUpdated = true;
       return replaceCachePoints(cache, values);
@@ -263,7 +263,7 @@ export async function generateMonthlyReportPptx(
   const chart1WorkbookFile = zip.file("ppt/embeddings/Microsoft_Excel_Worksheet.xlsx");
   if (chart1WorkbookFile) {
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(await chart1WorkbookFile.async("nodebuffer"));
+    await workbook.xlsx.load(await chart1WorkbookFile.async("arraybuffer"));
     const sheet = workbook.getWorksheet("Sheet1");
     if (sheet) {
       sheet.getCell("B1").value = "Visibility score (%)";
@@ -286,10 +286,10 @@ export async function generateMonthlyReportPptx(
     xml = updateSeriesChartCache(xml, 0, values.slice(0, 59), chartLabels);
     xml = updateSeriesChartCache(xml, 1, values.slice(0, 59).map(() => targetValue), chartLabels);
     xml = xml
-      .replace(/Sheet1!\\$A\\$2:\\$A\\$60/g, "Sheet1!$A$2:$A$" + Math.max(2, chartLabels.length + 1))
-      .replace(/Sheet1!\\$B\\$2:\\$B\\$60/g, "Sheet1!$B$2:$B$" + Math.max(2, chartLabels.length + 1))
-      .replace(/Sheet1!\\$C\\$2:\\$C\\$60/g, "Sheet1!$C$2:$C$" + Math.max(2, chartLabels.length + 1))
-      .replace(/\\[XX\\]/g, String(targetValue));
+      .replace(/Sheet1!\$A\$2:\$A\$60/g, "Sheet1!$A$2:$A$" + Math.max(2, chartLabels.length + 1))
+      .replace(/Sheet1!\$B\$2:\$B\$60/g, "Sheet1!$B$2:$B$" + Math.max(2, chartLabels.length + 1))
+      .replace(/Sheet1!\$C\$2:\$C\$60/g, "Sheet1!$C$2:$C$" + Math.max(2, chartLabels.length + 1))
+      .replace(/\[XX\]/g, String(targetValue));
     zip.file("ppt/charts/chart1.xml", xml);
   }
 
@@ -300,7 +300,7 @@ export async function generateMonthlyReportPptx(
   const citationLabels = citationEntries.map(([category]) => category);
   if (chart2WorkbookFile) {
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(await chart2WorkbookFile.async("nodebuffer"));
+    await workbook.xlsx.load(await chart2WorkbookFile.async("arraybuffer"));
     const sheet = workbook.getWorksheet("Sheet1");
     if (sheet) {
       sheet.getCell("B1").value = "Brand share";
@@ -317,8 +317,8 @@ export async function generateMonthlyReportPptx(
   if (chart2) {
     let xml = await chart2.async("string");
     xml = updateSeriesChartCache(xml, 0, categoryShares, citationLabels)
-      .replace(/Sheet1!\\$A\\$2:\\$A\\$4/g, "Sheet1!$A$2:$A$" + Math.max(2, citationLabels.length + 1))
-      .replace(/Sheet1!\\$B\\$2:\\$B\\$4/g, "Sheet1!$B$2:$B$" + Math.max(2, citationLabels.length + 1));
+      .replace(/Sheet1!\$A\$2:\$A\$4/g, "Sheet1!$A$2:$A$" + Math.max(2, citationLabels.length + 1))
+      .replace(/Sheet1!\$B\$2:\$B\$4/g, "Sheet1!$B$2:$B$" + Math.max(2, citationLabels.length + 1));
     zip.file("ppt/charts/chart2.xml", xml);
   }
 
