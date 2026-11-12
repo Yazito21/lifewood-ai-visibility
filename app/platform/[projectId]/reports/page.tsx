@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Download, ExternalLink, Loader2, Plus, Printer, RefreshCw, Save, Sparkles } from "lucide-react";
+import { Download, ExternalLink, Loader2, Plus, Printer, RefreshCw, Save, Sparkles, ChevronDown } from "lucide-react";
 import { ProjectShell } from "@/components/project-shell";
 import { supabase } from "@/lib/supabase";
 import { gatherSnapshot, type ReportPeriod } from "@/lib/report-data";
@@ -20,7 +20,9 @@ type Action = { week: string; website: string; knowledge: string; branding: stri
 type Content = {
   preparedBy: string; projectName: string; summaryDone: string; summaryFocus: string; knowledgeAssets: string;
   progress: Record<string, string[]>; initiatives: Initiative[]; actions: Action[];
-  targets: Record<string, Target>; competitorAssets: Record<string, string>; citationByCategory: Record<string, { citations: number; pages: { url: string; frequency: number }[] }>;
+  targets: Record<string, Target>; competitorAssets: Record<string, string>;
+  competitorDetails: Record<string, { knowledgeAssets: string; knowledgeDescription: string; externalTotal: string; news: string; directories: string; websites: string; social: string }>;
+  citationByCategory: Record<string, { citations: number; pages: { url: string; frequency: number }[] }>;
 };
 const TYPES: { id: ReportType; name: string; description: string; ready: boolean }[] = [
   { id: "monthly", name: "Monthly Report", description: "AI visibility progress, citations, competitor benchmarking and next-month plans.", ready: true },
@@ -34,14 +36,14 @@ const BLANK_ACTION = (): Action => ({ week: "Week 1", website: "", knowledge: ""
 function emptyContent(categories: string[]): Content {
   return {
     preparedBy: "", projectName: "", summaryDone: "", summaryFocus: "", knowledgeAssets: "",
-    progress: Object.fromEntries(AREAS.map((a) => [a, ["", "", "", ""]])),
+    progress: Object.fromEntries(AREAS.map((a) => [a, ["", "", ""]])),
     initiatives: [
       { area: "Website", title: "", description: "" }, { area: "Website", title: "", description: "" },
       { area: "Knowledge", title: "", description: "" }, { area: "Branding", title: "", description: "" },
-      { area: "Monitoring", title: "", description: "" }, { area: "Community", title: "", description: "" },
+      { area: "Community", title: "", description: "" }, { area: "Monitoring", title: "", description: "" },
     ],
     actions: [BLANK_ACTION(), { ...BLANK_ACTION(), week: "Week 2" }, { ...BLANK_ACTION(), week: "Week 3" }, { ...BLANK_ACTION(), week: "Week 4" }, { ...BLANK_ACTION(), week: "Ongoing" }],
-    targets: Object.fromEntries(["Overall", ...categories].map((c) => [c, { score: "" }])), competitorAssets: {},
+    targets: Object.fromEntries(["Overall", ...categories].map((c) => [c, { score: "" }])), competitorAssets: {}, competitorDetails: {},
     citationByCategory: {},
   };
 }
@@ -70,9 +72,7 @@ export default function ReportsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [canEdit, setCanEdit] = useState(false);
-  const [canManageTemplate, setCanManageTemplate] = useState(false);
   const [templateExists, setTemplateExists] = useState(false);
-  const [templateUploading, setTemplateUploading] = useState(false);
   const [exportingPptx, setExportingPptx] = useState(false);
   const [previewViewerUrl, setPreviewViewerUrl] = useState("");
   const [previewOpenUrl, setPreviewOpenUrl] = useState("");
@@ -81,7 +81,9 @@ export default function ReportsPage() {
   const [previewSignature, setPreviewSignature] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
-  const [templateError, setTemplateError] = useState("");
+  const [brandLogoUrl, setBrandLogoUrl] = useState("");
+  const [preparedByName, setPreparedByName] = useState("Platform User");
+  const [collapsedSlides, setCollapsedSlides] = useState<Record<number, boolean>>({1:true,2:true,3:true,4:true,5:true,6:true,7:true,8:true,9:true,10:true});
   const templatePath = "Client_Monthly_Report_Template.pptx";
   const templateDownloadUrl = supabase.storage.from("client-report-templates").getPublicUrl(templatePath).data.publicUrl;
   const reportSignature = useMemo(() => snapshot ? JSON.stringify({ snapshot, content }) : "", [snapshot, content]);
@@ -96,13 +98,14 @@ export default function ReportsPage() {
     const [dataResult, projectResult, profileResult, memberResult] = await Promise.all([
       supabase.from("client_reports").select("id,report_type,period_start,period_end,status,created_at,snapshot,content")
         .eq("project_id", projectId).order("created_at", { ascending: false }).limit(30),
-      supabase.from("projects").select("created_by").eq("id", projectId).maybeSingle(),
-      user ? supabase.from("profiles").select("role").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
+      supabase.from("projects").select("created_by,brand_logo_url").eq("id", projectId).maybeSingle(),
+      user ? supabase.from("profiles").select("role,display_name,full_name").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
       user ? supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
     ]);
     if (dataResult.error) setError(dataResult.error.message);
     else setSaved((dataResult.data ?? []) as ReportRow[]);
-    setCanManageTemplate(Boolean(user && ["admin", "superadmin"].includes(String(profileResult.data?.role ?? "").toLowerCase())));
+    setBrandLogoUrl(projectResult.data?.brand_logo_url ?? "");
+    setPreparedByName(profileResult.data?.display_name || profileResult.data?.full_name || user?.user_metadata?.display_name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Platform User");
     setCanEdit(Boolean(user && canEditProject(
       profileResult.data?.role,
       memberResult.data?.role,
@@ -135,7 +138,7 @@ export default function ReportsPage() {
     setPreviewLoading(true);
     setPreviewError("");
     try {
-      const blob = await generateMonthlyReportPptx(templateDownloadUrl, sourceSnapshot, sourceContent);
+      const blob = await generateMonthlyReportPptx(templateDownloadUrl, sourceSnapshot, { ...sourceContent, preparedBy: preparedByName }, brandLogoUrl);
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) throw authError;
       if (!authData.user) throw new Error("Sign in again to generate a private PowerPoint preview.");
@@ -218,7 +221,12 @@ export default function ReportsPage() {
     setContent((prev) => ({ ...prev, [key]: value }));
   }
   function updateProgress(area: string, index: number, value: string) {
-    setContent((prev) => ({ ...prev, progress: { ...prev.progress, [area]: (prev.progress[area] ?? ["", "", "", ""]).map((v, i) => i === index ? value : v) } }));
+    setContent((prev) => ({ ...prev, progress: { ...prev.progress, [area]: (prev.progress[area] ?? ["", "", ""]).map((v, i) => i === index ? value : v) } }));
+  }
+  function addProgress(area: string) { setContent((prev) => ({ ...prev, progress: { ...prev.progress, [area]: [...(prev.progress[area] ?? []), ""] } })); }
+  function removeProgress(area: string, index: number) { setContent((prev) => ({ ...prev, progress: { ...prev.progress, [area]: (prev.progress[area] ?? []).filter((_, i) => i !== index) } })); }
+  function updateCompetitorDetail(name: string, key: keyof Content["competitorDetails"][string], value: string) {
+    setContent((prev) => ({ ...prev, competitorDetails: { ...prev.competitorDetails, [name]: { knowledgeAssets: "", knowledgeDescription: "", externalTotal: "", news: "", directories: "", websites: "", social: "", ...prev.competitorDetails[name], [key]: value } } }));
   }
 
   async function generate() {
@@ -230,8 +238,12 @@ export default function ReportsPage() {
       const data = await gatherSnapshot(supabase, projectId, period);
       if (!data.hasData) throw new Error("No AI visibility tracking data was found for this period and tracking location.");
       const next = emptyContent(data.brand.categories);
+      next.preparedBy = preparedByName;
+      next.projectName = "SEO/GEO project operations";
+      next.competitorDetails = Object.fromEntries(data.competitors.map((row) => [row.name, { knowledgeAssets: "", knowledgeDescription: "", externalTotal: "", news: "", directories: "", websites: "", social: "" }]));
       const citationByCategory: Content["citationByCategory"] = {};
-      const { data: projectInfo, error: projectInfoError } = await supabase.from("projects").select("brand_domains").eq("id", projectId).single();
+      const { data: projectInfo, error: projectInfoError } = await supabase.from("projects").select("brand_domains,brand_logo_url").eq("id", projectId).single();
+      if (projectInfo?.brand_logo_url) setBrandLogoUrl(projectInfo.brand_logo_url);
       if (projectInfoError) throw projectInfoError;
       const brandHosts = ((projectInfo?.brand_domains ?? []) as string[]).map((domain) => {
         try { return new URL(domain.includes("://") ? domain : "https://" + domain).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; }
@@ -247,7 +259,7 @@ export default function ReportsPage() {
             return brandHosts.some((brandHost) => host === brandHost || host.endsWith("." + brandHost));
           } catch { return false; }
         });
-        return [category, { citations: pages.reduce((sum, p) => sum + Number(p.frequency || 0), 0), pages: pages.slice(0, 10) }] as const;
+        return [category, { citations: pages.reduce((sum, p) => sum + Number(p.frequency || 0), 0), pages }] as const;
       }));
       for (const [category, value] of results) citationByCategory[category] = value;
       next.citationByCategory = citationByCategory;
@@ -290,9 +302,12 @@ export default function ReportsPage() {
     const restoredContent = { ...emptyContent(row.snapshot.brand.categories), ...row.content };
     // Earlier drafts stored Community before Monitoring, while the original template
     // places Monitoring in card 5 and Community in card 6.
-    if (restoredContent.initiatives[4]?.area === "Community" && restoredContent.initiatives[5]?.area === "Monitoring") {
+    if (restoredContent.initiatives[4]?.area === "Monitoring" && restoredContent.initiatives[5]?.area === "Community") {
       [restoredContent.initiatives[4], restoredContent.initiatives[5]] = [restoredContent.initiatives[5], restoredContent.initiatives[4]];
     }
+    restoredContent.initiatives = [...restoredContent.initiatives.slice(0, 6)];
+    restoredContent.actions = ["Week 1", "Week 2", "Week 3", "Week 4", "Ongoing"].map((week, i) => ({ ...BLANK_ACTION(), ...(restoredContent.actions?.[i] ?? {}), week }));
+    restoredContent.progress = Object.fromEntries(AREAS.map((area) => [area, (restoredContent.progress?.[area] ?? ["", "", ""]).slice(0, 30)]));
     setSnapshot(row.snapshot); setContent(restoredContent);
     if (templateExists) void refreshPowerPointPreview(row.snapshot, restoredContent);
     setActiveId(row.id);
@@ -310,14 +325,14 @@ export default function ReportsPage() {
 
   const editor = (slide: number) => {
     if (!snapshot) return <p className="text-sm text-[var(--muted-foreground)]">Generate or open a report before editing its slide content.</p>;
-    if (slide === 1) return <div className="grid gap-4"><Field label="Prepared by" value={content.preparedBy} onChange={v=>update("preparedBy",v)} /><Field label="Project name" value={content.projectName} onChange={v=>update("projectName",v)} /></div>;
+    if (slide === 1) return <p className="text-sm text-[var(--muted-foreground)]">The cover slide is populated automatically using the logged-in editor’s name, the report date, the SEO/GEO project operations label and the tracked brand name.</p>;
     if (slide === 2) return <div className="grid gap-4"><p className="text-xs text-[var(--muted-foreground)]">KPI values are populated from the tracking database. Knowledge asset counts require a future website-audit integration.</p><Field label="Improvements made during this period" value={content.summaryDone} onChange={v=>update("summaryDone",v)} multiline /><Field label="Where to focus next period" value={content.summaryFocus} onChange={v=>update("summaryFocus",v)} multiline /><Field label="Knowledge assets (count)" value={content.knowledgeAssets} onChange={v=>update("knowledgeAssets",v)} placeholder="Enter audited count" /></div>;
     if (slide === 3) return <p className="text-sm text-[var(--muted-foreground)]">Visibility trend, latest overall score and category scores are populated from visibility_daily. Category cards adapt to this brand's configured categories ({categories.length}).</p>;
-    if (slide === 4) return <div className="grid gap-3">{snapshot.competitors.filter(row=>!row.isTracked).map(row=><Field key={row.name} label={row.name+" knowledge assets"} value={content.competitorAssets[row.name] ?? ""} onChange={value=>update("competitorAssets",{...content.competitorAssets,[row.name]:value})} placeholder="Enter audited asset count" />)}<p className="text-xs text-[var(--muted-foreground)]">Visibility, share of voice, citations and external presence come from tracking data. Knowledge asset counts are manual because the tracking database does not currently store this audit measure.</p></div>;
+    if (slide === 4) return <div className="grid gap-4">{snapshot.competitors.map(row => { const detail = content.competitorDetails[row.name] ?? { knowledgeAssets: "", knowledgeDescription: "", externalTotal: "", news: "", directories: "", websites: "", social: "" }; return <section key={row.name} className="rounded-xl border border-[var(--line)] p-3"><h4 className="mb-3 text-sm font-bold">{row.name}{row.isTracked ? " (tracked brand)" : ""}</h4><div className="grid gap-3 sm:grid-cols-2"><Field label="Knowledge assets (count)" value={detail.knowledgeAssets} onChange={v=>updateCompetitorDetail(row.name,"knowledgeAssets",v)} /><Field label="Knowledge assets description" value={detail.knowledgeDescription} onChange={v=>updateCompetitorDetail(row.name,"knowledgeDescription",v)} /><Field label="External presence total" value={detail.externalTotal} onChange={v=>updateCompetitorDetail(row.name,"externalTotal",v)} /><Field label="News" value={detail.news} onChange={v=>updateCompetitorDetail(row.name,"news",v)} /><Field label="Directories" value={detail.directories} onChange={v=>updateCompetitorDetail(row.name,"directories",v)} /><Field label="Websites" value={detail.websites} onChange={v=>updateCompetitorDetail(row.name,"websites",v)} /><Field label="Social media" value={detail.social} onChange={v=>updateCompetitorDetail(row.name,"social",v)} /></div></section>; })}<p className="text-xs text-[var(--muted-foreground)]">Only visibility, share of voice and citation totals are filled automatically. Knowledge assets and external presence, including their descriptions and breakdowns, are manual audit fields.</p></div>;
     if (slide === 5) return <p className="text-sm text-[var(--muted-foreground)]">Citation counts and cited pages are loaded per category and filtered to the tracked brand domains. The preview displays up to seven of the most-cited brand pages.</p>;
-    if (slide === 6) return <div className="grid gap-4">{AREAS.map(a=><section key={a} className="rounded-xl border border-[var(--line)] p-3"><h4 className="mb-3 text-sm font-bold">{a}</h4>{(content.progress[a] ?? ["","","",""]).map((v,i)=><Field key={i} label={"Progress " + (i+1)} value={v} onChange={value=>updateProgress(a,i,value)} placeholder="Describe work completed" />)}</section>)}</div>;
-    if (slide === 7) return <div className="grid gap-3">{content.initiatives.map((v,i)=><section key={i} className="grid gap-3 rounded-xl border border-[var(--line)] p-3 sm:grid-cols-2"><Field label="Area" value={v.area} onChange={value=>updateInitiative(i,"area",value)} /><Field label="Initiative" value={v.title} onChange={value=>updateInitiative(i,"title",value)} /><div className="sm:col-span-2"><Field label="Description" value={v.description} onChange={value=>updateInitiative(i,"description",value)} multiline /></div></section>)}<button className="platform-btn self-start" onClick={()=>update("initiatives",[...content.initiatives,{area:"Website",title:"",description:""}])}><Plus size={14}/> Add initiative</button></div>;
-    if (slide === 8) return <div className="grid gap-3">{content.actions.map((v,i)=><section key={i} className="rounded-xl border border-[var(--line)] p-3"><div className="mb-3 flex items-center justify-between gap-2"><b className="text-sm">{v.week}</b><button className="platform-btn" onClick={()=>updateAction(i,"week",v.week==="Ongoing"?"Week 4":"Ongoing")}>Change timing</button></div><div className="grid gap-3 sm:grid-cols-2">{(["website","knowledge","branding","community","monitoring"] as const).map(k=><Field key={k} label={k[0].toUpperCase()+k.slice(1)} value={v[k]} onChange={value=>updateAction(i,k,value)} />)}</div></section>)}<button className="platform-btn self-start" onClick={()=>update("actions",[...content.actions,{...BLANK_ACTION(),week:"Additional"}])}><Plus size={14}/> Add action period</button></div>;
+    if (slide === 6) return <div className="grid gap-4">{AREAS.map(a=><section key={a} className="rounded-xl border border-[var(--line)] p-3"><h4 className="mb-3 text-sm font-bold">{a}</h4>{(content.progress[a] ?? ["","",""]).map((v,i)=><div key={i} className="flex items-end gap-2"><div className="min-w-0 flex-1"><Field label={"Progress " + (i+1)} value={v} onChange={value=>updateProgress(a,i,value)} placeholder="Describe work completed" /></div><button type="button" className="platform-btn mb-0.5" disabled={(content.progress[a] ?? []).length<=1} onClick={()=>removeProgress(a,i)} aria-label={"Remove progress item "+(i+1)}>Remove</button></div>)}<button type="button" className="platform-btn mt-3" onClick={()=>addProgress(a)}><Plus size={14}/> Add item</button></section>)}</div>;
+    if (slide === 7) return <div className="grid gap-3">{content.initiatives.map((v,i)=><section key={i} className="grid gap-3 rounded-xl border border-[var(--line)] p-3 sm:grid-cols-2"><Field label="Area" value={v.area} onChange={value=>updateInitiative(i,"area",value)} /><Field label="Initiative" value={v.title} onChange={value=>updateInitiative(i,"title",value)} /><div className="sm:col-span-2"><Field label="Description" value={v.description} onChange={value=>updateInitiative(i,"description",value)} multiline /></div></section>)}</div>;
+    if (slide === 8) return <div className="grid gap-3">{content.actions.map((v,i)=><section key={i} className="rounded-xl border border-[var(--line)] p-3"><div className="mb-3 flex items-center justify-between gap-2"><b className="text-sm">{["Week 1","Week 2","Week 3","Week 4","Ongoing"][i]}</b></div><div className="grid gap-3 sm:grid-cols-2">{(["website","knowledge","branding","community","monitoring"] as const).map(k=><Field key={k} label={k[0].toUpperCase()+k.slice(1)} value={v[k]} onChange={value=>updateAction(i,k,value)} />)}</div></section>)}</div>;
     if (slide === 9) return <div className="grid gap-3 sm:grid-cols-2">{["Overall",...categories].map(c=><section key={c} className="rounded-xl border border-[var(--line)] p-3"><b className="mb-2 block text-sm">{c}</b><Field label="Target visibility score (%)" value={content.targets[c]?.score ?? ""} onChange={v=>updateTarget(c,v)} placeholder="e.g. 25" /></section>)}</div>;
     return <p className="text-sm text-[var(--muted-foreground)]">No additional information is required for this slide.</p>;
   };
@@ -325,20 +340,7 @@ export default function ReportsPage() {
   return <ProjectShell>
     <div className="ops-page">
       <header className="page-heading"><p className="page-eyebrow">Client Deliverables</p><h1 className="page-title mt-1">Reports</h1><p className="page-description mt-2">Create client-ready reports from tracking data. Export PowerPoint to retain the supplied 10-slide template design, artwork and formatting.</p></header>
-      <section className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="font-bold">Monthly report PowerPoint template</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Original 10-slide Lifewood template, retained as the reference design.</p></div>
-          <div className="flex flex-wrap items-center gap-2">
-            {templateExists ? <a className="platform-btn platform-btn-primary" href={templateDownloadUrl} download="Client_Monthly_Report_Template.pptx"><Download size={14}/> Download template</a> : <span className="text-xs text-[var(--muted-foreground)]">Template file has not been uploaded to platform storage yet.</span>}
-            {canManageTemplate && <label className="platform-btn cursor-pointer">
-              {templateUploading ? <Loader2 size={14} className="animate-spin"/> : <Plus size={14}/>} {templateExists ? "Replace template" : "Upload template"}
-              <input className="hidden" type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" disabled={templateUploading} onChange={(e) => { void uploadTemplate(e.target.files?.[0]); e.currentTarget.value = ""; }}/>
-            </label>}
-          </div>
-        </div>
-        {templateError && <p className="mt-3 text-xs text-red-600">{templateError}</p>}
-        {!templateExists && <p className="mt-2 text-xs text-[var(--muted-foreground)]">An Admin or Superadmin must upload the supplied PowerPoint once. It will then be available to download for all authenticated platform users.</p>}
-      </section>
+      <section className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5"><div><h2 className="font-bold">Monthly report PowerPoint template</h2><p className="mt-1 text-xs text-[var(--muted-foreground)]">Canonical 10-slide template stored in platform storage.</p></div>{templateExists ? <a className="platform-btn platform-btn-primary" href={templateDownloadUrl} download="Client_Monthly_Report_Template.pptx"><Download size={14}/> Download template</a> : <span className="text-xs text-[var(--muted-foreground)]">The new template is being provisioned in platform storage.</span>}</section>
       <section className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--card)] p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-base font-bold">Report type</h2><span className="text-xs text-[var(--muted-foreground)]">5 report formats</span></div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">{TYPES.map(t=><button key={t.id} onClick={()=>{setReportType(t.id);setSnapshot(null);setActiveId(null);setError("");setNotice("");}} className={"rounded-xl border p-3 text-left transition "+(reportType===t.id?"border-[var(--primary)] bg-[var(--accent)] ring-1 ring-[var(--primary)]":"border-[var(--line)] hover:bg-[var(--accent)]")}><div className="flex items-center justify-between gap-2"><b className="text-sm">{t.name}</b>{t.ready?<span className="monthly-ready">Available</span>:<span className="monthly-soon">Coming soon</span>}</div><p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">{t.description}</p></button>)}</div>
@@ -365,8 +367,8 @@ export default function ReportsPage() {
           <p className="border-t border-[var(--line)] p-3 text-xs text-[var(--muted-foreground)]">The preview opens in Microsoft Office for the web. To create a PDF, open the preview and use its Print command, then select Save as PDF. The HTML slide mock-up is no longer used.</p>
         </section>
         <div className="monthly-slides-list">{slides.map((name,i)=><section id={"monthly-slide-"+(i+1)} key={name} className="monthly-slide-editor">
-          <div className="monthly-editor-toolbar"><div><span className="text-xs text-[var(--muted-foreground)]">Slide {i+1} of 10</span><h3 className="font-bold">{name}</h3></div></div>
-          <div className="monthly-form-panel w-full"><h4 className="mb-3 text-sm font-bold">Slide information</h4>{editor(i+1)}</div>
+          <button type="button" className="monthly-editor-toolbar flex w-full items-center justify-between gap-3 text-left" aria-expanded={!collapsedSlides[i+1]} onClick={()=>setCollapsedSlides(prev=>({...prev,[i+1]:!prev[i+1]}))}><div><span className="text-xs text-[var(--muted-foreground)]">Slide {i+1} of 10</span><h3 className="font-bold">{name}</h3></div><ChevronDown size={18} className={"shrink-0 transition-transform "+(collapsedSlides[i+1]?"":"rotate-180")}/></button>
+          {!collapsedSlides[i+1] && <div className="monthly-form-panel w-full"><h4 className="mb-3 text-sm font-bold">Slide information</h4>{editor(i+1)}</div>}
         </section>)}</div>
         
       </section>}
