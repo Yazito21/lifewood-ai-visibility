@@ -175,7 +175,8 @@ export default function ReportsPage() {
     setExportingPptx(true);
     setError("");
     try {
-      const blob = previewIsCurrent && previewBlob ? previewBlob : await generateMonthlyReportPptx(templateDownloadUrl, snapshot, content);
+      const blob = previewIsCurrent && previewBlob ? previewBlob : await refreshPowerPointPreview(snapshot, content);
+      if (!blob) throw new Error("Refresh the PowerPoint preview before exporting. The preview file could not be prepared.");
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
