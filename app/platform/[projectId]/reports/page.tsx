@@ -115,13 +115,13 @@ export default function ReportsPage() {
       supabase.from("client_reports").select("id,report_type,period_start,period_end,status,created_at,snapshot,content")
         .eq("project_id", projectId).order("created_at", { ascending: false }).limit(30),
       supabase.from("projects").select("created_by,brand_logo_url").eq("id", projectId).maybeSingle(),
-      user ? supabase.from("profiles").select("role,display_name,full_name").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
+      user ? supabase.from("profiles").select("role,full_name").eq("id", user.id).maybeSingle() : Promise.resolve({ data: null }),
       user ? supabase.from("project_members").select("role").eq("project_id", projectId).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null }),
     ]);
     if (dataResult.error) setError(dataResult.error.message);
     else setSaved((dataResult.data ?? []) as ReportRow[]);
     setBrandLogoUrl(projectResult.data?.brand_logo_url ?? "");
-    setPreparedByName(profileResult.data?.display_name || profileResult.data?.full_name || user?.user_metadata?.display_name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Platform User");
+    setPreparedByName(profileResult.data?.full_name || user?.user_metadata?.display_name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "Platform User");
     setCanEdit(Boolean(user && canEditProject(
       profileResult.data?.role,
       memberResult.data?.role,
