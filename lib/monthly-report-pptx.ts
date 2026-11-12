@@ -43,7 +43,7 @@ function setShapeText(xml: string, name: string, value: string, occurrence = 0) 
 
 
 function setShapeBulletList(xml: string, name: string, items: string[]) {
-  const escapedName = name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+  const escapedName = name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&");
   const shapePattern = /<p:sp>[\\s\\S]*?<\\/p:sp>/g;
   return xml.replace(shapePattern, (block) => {
     if (!new RegExp('<p:cNvPr[^>]*name="' + escapedName + '"').test(block)) return block;
@@ -62,7 +62,6 @@ function setShapeBulletList(xml: string, name: string, items: string[]) {
     });
   });
 }
-
 function setShapeTextAll(xml: string, name: string, value: string) {
   for (let occurrence = 0; occurrence < 12; occurrence++) {
     const next = setShapeText(xml, name, value, occurrence);
