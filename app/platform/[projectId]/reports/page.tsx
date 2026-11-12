@@ -45,8 +45,6 @@ function emptyContent(categories: string[]): Content {
     citationByCategory: {},
   };
 }
-const pct = (v: number | null | undefined) => v === null || v === undefined ? "N/A" : v.toFixed(1) + "%";
-const fmt = (n: number | null | undefined) => n === null || n === undefined ? "N/A" : n.toLocaleString("en-MY");
 function monthRange() {
   const today = malaysiaDateString();
   const firstThisMonth = today.slice(0, 8) + "01";
@@ -58,18 +56,6 @@ function Field({ label, value, onChange, placeholder = "Enter information", mult
     ? <textarea className="platform-input min-h-20 resize-y text-sm" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
     : <input className="platform-input text-sm" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />}</label>;
 }
-function SlideFrame({ number, title, children, preview = false, pageNumber = number }: { number: string; title: string; children: React.ReactNode; preview?: boolean; pageNumber?: string }) {
-  return <article className={preview ? "monthly-slide monthly-slide-preview" : "monthly-slide"}>
-    <div className="monthly-slide-top"><span>DR. D SIGNATURE CLINIC</span><span>AI VISIBILITY PROGRESS REPORT</span></div>
-    <div className="monthly-slide-heading">{number && <span>{number}</span>}<h3>{title}</h3></div>
-    <div className="monthly-slide-content">{children}</div>
-    <div className="monthly-slide-footer"><span>LIFEWOOD · AI VISIBILITY INTELLIGENCE</span><span>{pageNumber}</span></div>
-  </article>;
-}
-function Kpi({ label, value, note }: { label: string; value: string; note?: string }) {
-  return <div className="monthly-kpi"><span>{label}</span><strong>{value}</strong>{note && <small>{note}</small>}</div>;
-}
-
 export default function ReportsPage() {
   const { projectId } = useParams<{ projectId: string }>();
   const [reportType, setReportType] = useState<ReportType>("monthly");
@@ -93,7 +79,6 @@ export default function ReportsPage() {
   const templateDownloadUrl = supabase.storage.from("client-report-templates").getPublicUrl(templatePath).data.publicUrl;\n  const reportSignature = useMemo(() => snapshot ? JSON.stringify({ snapshot, content }) : "", [snapshot, content]);\n  const previewIsCurrent = Boolean(previewBlob && previewSignature === reportSignature);
 
   const categories = useMemo(() => snapshot?.brand.categories ?? [], [snapshot]);
-  const websiteCitationTotal = useMemo(() => Object.values(content.citationByCategory).reduce((sum, item) => sum + item.citations, 0), [content.citationByCategory]);
   const slides = ["Cover", "Executive Summary", "Overall Visibility Score Progression", "Comparison with Competitors", "Citation Summary", "What Have Been Done", "What Needs To Be Done", "Recommended Action Plans", "Targets", "Thank You"];
 
 
@@ -127,6 +112,12 @@ export default function ReportsPage() {
     return () => { active = false; };
   }, [templatePath]);
 
+  useEffect(() => {
+    return () => {
+      if (previewStoragePath) void supabase.storage.from("client-report-previews").remove([previewStoragePath]);
+    };
+  }, [previewStoragePath]);
+
   async function refreshPowerPointPreview(
     sourceSnapshot: ReportSnapshot | null = snapshot,
     sourceContent: Content = content,
@@ -140,7 +131,7 @@ export default function ReportsPage() {
       if (authError) throw authError;
       if (!authData.user) throw new Error("Sign in again to generate a private PowerPoint preview.");
 
-      const path = authData.user.id + "/" + projectId + "/" + Date.now() + ".pptx";
+      const path = authData.user.id + "/" + projectId + "/" + Date.now() + "-" + crypto.randomUUID() + ".pptx";
       const { error: uploadError } = await supabase.storage.from("client-report-previews").upload(path, blob, {
         contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         upsert: false,
@@ -250,6 +241,7 @@ export default function ReportsPage() {
       next.citationByCategory = citationByCategory;
       next.competitorAssets = Object.fromEntries(data.competitors.filter((row) => !row.isTracked).map((row) => [row.name, ""]));
       setSnapshot(data); setContent(next);
+      if (templateExists) void refreshPowerPointPreview(data, next);
       setNotice("Monthly report data loaded. Complete the highlighted manual fields, then save your draft.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to generate the report.");
@@ -283,7 +275,9 @@ export default function ReportsPage() {
   async function openSaved(row: ReportRow) {
     setError(""); setNotice("");
     setReportType(row.report_type); setStart(row.period_start); setEnd(row.period_end);
-    setSnapshot(row.snapshot); setContent({ ...emptyContent(row.snapshot.brand.categories), ...row.content });
+    const restoredContent = { ...emptyContent(row.snapshot.brand.categories), ...row.content };
+    setSnapshot(row.snapshot); setContent(restoredContent);
+    if (templateExists) void refreshPowerPointPreview(row.snapshot, restoredContent);
     setActiveId(row.id);
   }
 
