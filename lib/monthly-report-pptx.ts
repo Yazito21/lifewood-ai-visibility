@@ -68,6 +68,67 @@ function setShapeTextAll(xml: string, name: string, value: string) {
   return xml;
 }
 
+
+type ShapeGeometry = { x: number; y: number; width: number; height: number };
+
+function findShapeBlock(xml: string, name: string, occurrence = 0) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let seen = 0;
+  for (const match of xml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)) {
+    const block = match[0];
+    if (!new RegExp('<p:cNvPr[^>]*name="' + escaped + '"').test(block)) continue;
+    if (seen++ === occurrence) return block;
+  }
+  throw new Error("PowerPoint template shape not found: " + name);
+}
+
+function nextShapeId(xml: string) {
+  return Math.max(0, ...Array.from(xml.matchAll(/<p:cNvPr id="(\d+)"/g), (match) => Number(match[1]))) + 1;
+}
+
+function cloneShape(
+  prototype: string,
+  name: string,
+  id: number,
+  geometry: ShapeGeometry,
+  text?: string,
+  fontSize?: number,
+) {
+  const emu = (value: number) => String(Math.round(value * 914400));
+  let block = prototype.replace(/<p:cNvPr id="\d+" name="[^"]*"/, '<p:cNvPr id="' + id + '" name="' + name.replace(/&/g, "&amp;").replace(/"/g, "&quot;") + '"');
+  block = block.replace(/<a:xfrm([^>]*)>([\s\S]*?)<\/a:xfrm>/, (_match, attrs, inner) => {
+    const positioned = inner
+      .replace(/<a:off x="[^"]+" y="[^"]+"\s*\/>/, '<a:off x="' + emu(geometry.x) + '" y="' + emu(geometry.y) + '"/>')
+      .replace(/<a:ext cx="[^"]+" cy="[^"]+"\s*\/>/, '<a:ext cx="' + emu(geometry.width) + '" cy="' + emu(geometry.height) + '"/>');
+    return '<a:xfrm' + attrs + '>' + positioned + '</a:xfrm>';
+  });
+  if (text !== undefined) block = setTextInBlock(block, text);
+  if (fontSize !== undefined) {
+    block = block.replace(/(<a:(?:rPr|defRPr|endParaRPr)\b[^>]*\bsz=")\d+(")/g, "$1" + fontSize + "$2");
+  }
+  return block;
+}
+
+function removeNamedShapes(xml: string, names: string[]) {
+  const nameSet = new Set(names);
+  return xml.replace(/<p:sp>[\s\S]*?<\/p:sp>/g, (block) => {
+    const name = block.match(/<p:cNvPr[^>]*name="([^"]*)"/)?.[1];
+    return name && nameSet.has(name) ? "" : block;
+  });
+}
+
+function appendShapes(xml: string, blocks: string[]) {
+  return xml.replace("</p:spTree>", blocks.join("") + "</p:spTree>");
+}
+
+function categoryShapeNames() {
+  return ["Overall", "Skin", "Mind", "Longevity"].flatMap((key) => [
+    "Card " + key, "Card Header " + key, "Card Title " + key,
+    "Latest Label " + key, "Latest Value " + key, "Divider " + key,
+    "Target Label " + key, "Target Value " + key, "Gap " + key,
+  ]);
+}
+
 // Update only the KPI placeholders/value portions. Keeping the existing text runs
 // intact preserves the template's wording, paragraph breaks, and character styling.
 function updateMonthlyMetricText(
@@ -219,7 +280,7 @@ export async function generateMonthlyReportPptx(
       }
     } catch (error) { console.warn("Brand logo could not be embedded in the report:", error); }
   }
-  const categories = snapshot.brand.categories.slice(0, 3);
+  const categories = snapshot.brand.categories;
   const categoryScores = categories.map((name) => snapshot.byCategory.find((row) => row.category === name)?.visibilityScore ?? null);
   const trend = snapshot.trend;
   const labels = trend.map((row) => dateLabel(row.date));
@@ -268,13 +329,54 @@ export async function generateMonthlyReportPptx(
   await editSlide(3, (xml) => {
     xml = setShapeText(xml, "Text 6", "Daily Visibility Score, " + dateLabel(snapshot.period.start) + " to " + dateLabel(snapshot.period.end));
     xml = setShapeText(xml, "Chart Caption", "Visibility Score: the percentage of benchmark questions that mentions " + snapshot.brand.name + " in its answer. A higher score means AI recommends the brand more often.");
-    xml = setShapeText(xml, "Text 10", pct(snapshot.overall.visibilityScore));
-    for (let i = 0; i < 3; i++) {
-      xml = setShapeText(xml, "Text " + [13, 17, 21][i], "Latest Score for " + (categories[i] || "Category " + (i + 1)));
-      xml = setShapeText(xml, "Text " + [14, 18, 22][i], pct(categoryScores[i]));
-    }
-    xml = xml.replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location);
-    return xml;
+
+    // Rebuild the right-hand score-card rail from the template's own card shapes.
+    // This keeps the original fills, borders, typography and rounded-card styling,
+    // while making the number and vertical spacing of cards data-driven.
+    const overallBg = findShapeBlock(xml, "Shape 8");
+    const categoryBg = findShapeBlock(xml, "Shape 12");
+    const overallLabel = findShapeBlock(xml, "Text 9");
+    const categoryLabel = findShapeBlock(xml, "Text 13");
+    const overallValue = findShapeBlock(xml, "Text 10");
+    const categoryValue = findShapeBlock(xml, "Text 14");
+    const oldNames = ["Shape 8", "Shape 12", "Shape 16", "Shape 20", "Text 9", "Text 13", "Text 17", "Text 21", "Text 10", "Text 14", "Text 18", "Text 22"];
+    xml = removeNamedShapes(xml, oldNames);
+
+    const cardCount = categories.length + 1;
+    const railX = 9.3;
+    const railY = 1.35;
+    const railWidth = 3.43;
+    const railHeight = 5.4;
+    const gap = cardCount > 1 ? Math.min(0.1, 0.5 / (cardCount - 1)) : 0;
+    const cardHeight = (railHeight - gap * (cardCount - 1)) / cardCount;
+    let id = nextShapeId(xml);
+    const backgrounds: string[] = [];
+    const foregrounds: string[] = [];
+
+    const cards = [
+      { title: "Latest Overall Score", score: pct(snapshot.overall.visibilityScore), overall: true },
+      ...categories.map((category, index) => ({
+        title: "Latest Score for " + category,
+        score: pct(categoryScores[index]),
+        overall: false,
+      })),
+    ];
+
+    cards.forEach((card, index) => {
+      const y = railY + index * (cardHeight + gap);
+      const bgPrototype = card.overall ? overallBg : categoryBg;
+      const labelPrototype = card.overall ? overallLabel : categoryLabel;
+      const valuePrototype = card.overall ? overallValue : categoryValue;
+      const key = card.overall ? "Overall" : "Category " + index;
+      backgrounds.push(cloneShape(bgPrototype, "Dynamic Score Card " + key, id++, { x: railX, y, width: railWidth, height: cardHeight }));
+      const labelFont = cardCount >= 6 ? 1050 : cardCount >= 5 ? 1150 : 1350;
+      const valueFont = cardCount >= 6 ? 1900 : cardCount >= 5 ? 2200 : 2600;
+      foregrounds.push(cloneShape(labelPrototype, "Dynamic Score Label " + key, id++, { x: railX + 0.25, y: y + 0.07, width: 2.93, height: cardHeight * 0.49 }, card.title, labelFont));
+      foregrounds.push(cloneShape(valuePrototype, "Dynamic Score Value " + key, id++, { x: railX + 0.25, y: y + cardHeight * 0.59, width: 2.93, height: cardHeight * 0.34 }, card.score, valueFont));
+    });
+
+    xml = appendShapes(xml, [...backgrounds, ...foregrounds]);
+    return xml.replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location);
   });
 
   await editSlide(4, (xml) => {
@@ -375,18 +477,70 @@ export async function generateMonthlyReportPptx(
   });
 
   await editSlide(9, (xml) => {
-    const slots = ["Overall", ...categories];
-    const names = ["Overall", "Skin", "Mind", "Longevity"];
-    for (let i = 0; i < 4; i++) {
-      const category = slots[i] || "Not configured";
-      const latest = i === 0 ? snapshot.overall.visibilityScore : categoryScores[i - 1];
-      const target = Number(content.targets[category]?.score || 0);
-      const gap = target && latest != null ? (target - latest).toFixed(1) : "N/A";
-      xml = setShapeTextAll(xml, "Card Title " + names[i], category);
-      xml = setShapeTextAll(xml, "Latest Value " + names[i], pct(latest));
-      xml = setShapeTextAll(xml, "Target Value " + names[i], target ? target.toFixed(1) + "%" : "Not set");
-      xml = setShapeTextAll(xml, "Gap " + names[i], gap === "N/A" ? "Target not set" : (Number(gap) >= 0 ? "+" : "") + gap + " pts to target");
-    }
+    const prototypes = {
+      card: findShapeBlock(xml, "Card Overall"),
+      header: findShapeBlock(xml, "Card Header Overall"),
+      title: findShapeBlock(xml, "Card Title Overall"),
+      latestLabel: findShapeBlock(xml, "Latest Label Overall"),
+      latestValue: findShapeBlock(xml, "Latest Value Overall"),
+      divider: findShapeBlock(xml, "Divider Overall"),
+      targetLabel: findShapeBlock(xml, "Target Label Overall"),
+      targetValue: findShapeBlock(xml, "Target Value Overall"),
+      gap: findShapeBlock(xml, "Gap Overall"),
+    };
+    xml = removeNamedShapes(xml, categoryShapeNames());
+
+    // Keep exactly two rows. The number of columns grows with the number of
+    // cards, so 5 cards become 3 on row one and 2 on row two, for example.
+    const cards = [
+      { category: "Overall", latest: snapshot.overall.visibilityScore },
+      ...categories.map((category, index) => ({ category, latest: categoryScores[index] })),
+    ];
+    const columns = Math.ceil(cards.length / 2);
+    const slideLeft = 0.6;
+    const slideWidth = 12.13;
+    const columnGap = 0.25;
+    const cardWidth = (slideWidth - columnGap * (columns - 1)) / columns;
+    const cardHeight = 2.38;
+    const rowGap = 0.25;
+    const firstY = 1.35;
+    let id = nextShapeId(xml);
+    const blocks: string[] = [];
+
+    cards.forEach((card, index) => {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const x = slideLeft + column * (cardWidth + columnGap);
+      const y = firstY + row * (cardHeight + rowGap);
+      const innerPad = Math.min(0.22, cardWidth * 0.055);
+      const innerWidth = cardWidth - innerPad * 2;
+      const halfWidth = innerWidth / 2 - 0.12;
+      const dividerX = x + cardWidth / 2;
+      const targetX = dividerX + 0.2;
+      const targetWidth = Math.max(0.8, x + cardWidth - innerPad - targetX);
+      const target = Number(content.targets[card.category]?.score || 0);
+      const gap = target && card.latest != null ? (target - card.latest).toFixed(1) : "N/A";
+      const key = card.category === "Overall" ? "Overall" : "Category " + (index);
+      const titleSize = columns >= 4 ? 1300 : columns === 3 ? 1550 : 1900;
+      const valueSize = columns >= 4 ? 1700 : columns === 3 ? 2050 : 2700;
+
+      blocks.push(cloneShape(prototypes.card, "Card " + key, id++, { x, y, width: cardWidth, height: cardHeight }));
+      blocks.push(cloneShape(prototypes.header, "Card Header " + key, id++, { x, y, width: cardWidth, height: 0.6 }));
+      blocks.push(cloneShape(prototypes.title, "Card Title " + key, id++, { x: x + innerPad, y, width: innerWidth, height: 0.6 }, card.category, titleSize));
+      blocks.push(cloneShape(prototypes.latestLabel, "Latest Label " + key, id++, { x: x + innerPad, y: y + 0.82, width: halfWidth, height: 0.3 }, "Latest score", 1150));
+      blocks.push(cloneShape(prototypes.latestValue, "Latest Value " + key, id++, { x: x + innerPad, y: y + 1.15, width: halfWidth, height: 0.7 }, pct(card.latest), valueSize));
+      blocks.push(cloneShape(prototypes.divider, "Divider " + key, id++, { x: dividerX, y: y + 0.83, width: 0.01, height: 1.04 }));
+      blocks.push(cloneShape(prototypes.targetLabel, "Target Label " + key, id++, { x: targetX, y: y + 0.82, width: targetWidth, height: 0.3 }, "Target score", 1150));
+      blocks.push(cloneShape(prototypes.targetValue, "Target Value " + key, id++, { x: targetX, y: y + 1.11, width: targetWidth, height: 0.81 }, target ? target.toFixed(1) + "%" : "Not set", valueSize));
+      blocks.push(cloneShape(prototypes.gap, "Gap " + key, id++, { x: x + innerPad, y: y + 1.95, width: innerWidth, height: 0.3 }, gap === "N/A" ? "Target not set" : (Number(gap) >= 0 ? "+" : "") + gap + " pts to target", 1000));
+    });
+
+    // Put the generated cards before the slide's final caption, above the footer.
+    xml = xml.replace(/<p:sp>[\s\S]*?<\/p:sp>/g, (block) => {
+      const name = block.match(/<p:cNvPr[^>]*name="([^"]*)"/)?.[1];
+      if (name === "Text 45") return blocks.join("") + block;
+      return block;
+    });
     return xml.replace(/\[next month\]/gi, nextMonthLabel(snapshot)).replace(/\[AI platform\]/g, "AI platforms").replace(/\[region\]/g, snapshot.location).replace(/\[date\]/g, dateLabel(snapshot.period.end)).replace(/\[benchmark description\]/g, "configured benchmark prompts and tracked competitors");
   });
 
@@ -430,7 +584,7 @@ export async function generateMonthlyReportPptx(
   }
 
   const chart2WorkbookFile = zip.file("ppt/embeddings/Microsoft_Excel_Worksheet1.xlsx");
-  const citationEntries = Object.entries(content.citationByCategory).slice(0, 3);
+  const citationEntries = categories.map((category) => [category, content.citationByCategory?.[category] ?? { citations: 0, totalCitations: 0, pages: [] }] as const);
   const citationTotal = citationEntries.reduce((sum, [, item]) => sum + item.citations, 0);
   const categoryShares = citationEntries.map(([, item]) => citationTotal ? item.citations / citationTotal * 100 : 0);
   const citationLabels = citationEntries.map(([category]) => category);
@@ -440,7 +594,7 @@ export async function generateMonthlyReportPptx(
     const sheet = workbook.getWorksheet("Sheet1");
     if (sheet) {
       sheet.getCell("B1").value = "Brand share";
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < Math.max(3, citationLabels.length); i++) {
         const row = i + 2;
         sheet.getCell("A" + row).value = citationLabels[i] ?? null;
         sheet.getCell("B" + row).value = categoryShares[i] ?? null;
