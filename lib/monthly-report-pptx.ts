@@ -41,6 +41,28 @@ function setShapeText(xml: string, name: string, value: string, occurrence = 0) 
   });
 }
 
+
+function setShapeBulletList(xml: string, name: string, items: string[]) {
+  const escapedName = name.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&");
+  const shapePattern = /<p:sp>[\\s\\S]*?<\\/p:sp>/g;
+  return xml.replace(shapePattern, (block) => {
+    if (!new RegExp('<p:cNvPr[^>]*name="' + escapedName + '"').test(block)) return block;
+    const paragraphs = block.match(/<a:p>[\\s\\S]*?<\\/a:p>/g) ?? [];
+    const textParagraphs = paragraphs.filter((paragraph) => /<a:t(?:\\s+[^>]*)?>/.test(paragraph));
+    if (!textParagraphs.length) return block;
+    const template = textParagraphs[0];
+    const nextParagraphs = (items.length ? items : [""]).map((item, index) => {
+      const source = textParagraphs[index] ?? template;
+      return setTextInBlock(source, item);
+    });
+    let index = 0;
+    return block.replace(/<a:p>[\\s\\S]*?<\\/a:p>/g, (paragraph) => {
+      if (!/<a:t(?:\\s+[^>]*)?>/.test(paragraph)) return paragraph;
+      return nextParagraphs[index++] ?? "";
+    });
+  });
+}
+
 function setShapeTextAll(xml: string, name: string, value: string) {
   for (let occurrence = 0; occurrence < 12; occurrence++) {
     const next = setShapeText(xml, name, value, occurrence);
@@ -125,7 +147,7 @@ export async function generateMonthlyReportPptx(
         if (context) {
           context.drawImage(bitmap, 0, 0);
           const png = await new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Logo conversion failed")), "image/png"));
-          zip.file("ppt/media/image2.png", await png.arrayBuffer());
+          zip.file("ppt/media/image3.png", await png.arrayBuffer());
         }
         bitmap.close();
       }
