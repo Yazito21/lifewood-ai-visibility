@@ -195,27 +195,6 @@ export default function ReportsPage() {
     }
   }
 
-  async function uploadTemplate(file?: File) {
-    if (!file) return;
-    setTemplateError("");
-    if (file.type !== "application/vnd.openxmlformats-officedocument.presentationml.presentation" && !file.name.toLowerCase().endsWith(".pptx")) {
-      setTemplateError("Please select a PowerPoint .pptx file.");
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      setTemplateError("The template must be 10 MB or smaller.");
-      return;
-    }
-    setTemplateUploading(true);
-    try {
-      const { error: uploadError } = await supabase.storage.from("client-report-templates")
-        .upload(templatePath, file, { upsert: true, contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
-      if (uploadError) throw uploadError;
-      setTemplateExists(true);
-    } catch (e) {
-      setTemplateError(e instanceof Error ? e.message : "Unable to upload the PowerPoint template.");
-    } finally { setTemplateUploading(false); }
-  }
 
   function update<K extends keyof Content>(key: K, value: Content[K]) {
     setContent((prev) => ({ ...prev, [key]: value }));
