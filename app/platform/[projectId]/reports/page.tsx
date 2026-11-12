@@ -75,6 +75,7 @@ export default function ReportsPage() {
   const [templateUploading, setTemplateUploading] = useState(false);
   const [exportingPptx, setExportingPptx] = useState(false);
   const [previewViewerUrl, setPreviewViewerUrl] = useState("");
+  const [previewOpenUrl, setPreviewOpenUrl] = useState("");
   const [previewStoragePath, setPreviewStoragePath] = useState<string | null>(null);
   const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
   const [previewSignature, setPreviewSignature] = useState("");
@@ -154,7 +155,9 @@ export default function ReportsPage() {
 
       const oldPath = previewStoragePath;
       setPreviewStoragePath(path);
-      setPreviewViewerUrl("https://view.officeapps.live.com/op/embed.aspx?src=" + encodeURIComponent(signed.signedUrl));
+      const signedSource = encodeURIComponent(signed.signedUrl);
+      setPreviewViewerUrl("https://view.officeapps.live.com/op/embed.aspx?src=" + signedSource);
+      setPreviewOpenUrl("https://view.officeapps.live.com/op/view.aspx?src=" + signedSource);
       setPreviewBlob(blob);
       setPreviewSignature(JSON.stringify({ snapshot: sourceSnapshot, content: sourceContent }));
       if (oldPath && oldPath !== path) void supabase.storage.from("client-report-previews").remove([oldPath]);
@@ -341,8 +344,8 @@ export default function ReportsPage() {
           <div><h2 className="text-lg font-bold">Monthly report editor</h2><p className="text-xs text-[var(--muted-foreground)]">{snapshot.brand.name} · {snapshot.period.start} to {snapshot.period.end} · {trackingLocationLabel(snapshot.location)}</p></div>
           <div className="flex flex-wrap gap-2">
             <button className="platform-btn" disabled={previewLoading || !templateExists} onClick={() => void refreshPowerPointPreview()}>{previewLoading?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} Refresh PowerPoint preview</button>
-            <button className="platform-btn" disabled={!previewViewerUrl} onClick={() => previewViewerUrl && window.open(previewViewerUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={14}/> Open preview</button>
-            <button className="platform-btn" disabled={!previewViewerUrl} title="Open the actual PowerPoint in the Office viewer, then use its Print command and choose Save as PDF." onClick={() => previewViewerUrl && window.open(previewViewerUrl, "_blank", "noopener,noreferrer")}><Printer size={14}/> Print / Save PDF</button>
+            <button className="platform-btn" disabled={!previewOpenUrl} onClick={() => previewOpenUrl && window.open(previewOpenUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={14}/> Open preview</button>
+            <button className="platform-btn" disabled={!previewOpenUrl} title="Open the actual PowerPoint in the Office viewer, then use its Print command and choose Save as PDF." onClick={() => previewOpenUrl && window.open(previewOpenUrl, "_blank", "noopener,noreferrer")}><Printer size={14}/> Print / Save PDF</button>
             <button className="platform-btn platform-btn-primary" disabled={exportingPptx || !templateExists} title={!templateExists ? "Upload the PowerPoint template first" : undefined} onClick={exportPowerPoint}>{exportingPptx?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>} Export PowerPoint</button>
             <button className="platform-btn platform-btn-primary" disabled={saving || !canEdit} title={!canEdit ? "Only project editors can save reports" : undefined} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button>
           </div>
