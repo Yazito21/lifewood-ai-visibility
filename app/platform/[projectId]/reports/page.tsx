@@ -73,10 +73,18 @@ export default function ReportsPage() {
   const [canManageTemplate, setCanManageTemplate] = useState(false);
   const [templateExists, setTemplateExists] = useState(false);
   const [templateUploading, setTemplateUploading] = useState(false);
-  const [exportingPptx, setExportingPptx] = useState(false);\n  const [previewViewerUrl, setPreviewViewerUrl] = useState("");\n  const [previewStoragePath, setPreviewStoragePath] = useState<string | null>(null);\n  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);\n  const [previewSignature, setPreviewSignature] = useState("");\n  const [previewLoading, setPreviewLoading] = useState(false);\n  const [previewError, setPreviewError] = useState("");
+  const [exportingPptx, setExportingPptx] = useState(false);
+  const [previewViewerUrl, setPreviewViewerUrl] = useState("");
+  const [previewStoragePath, setPreviewStoragePath] = useState<string | null>(null);
+  const [previewBlob, setPreviewBlob] = useState<Blob | null>(null);
+  const [previewSignature, setPreviewSignature] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
   const [templateError, setTemplateError] = useState("");
   const templatePath = "Client_Monthly_Report_Template.pptx";
-  const templateDownloadUrl = supabase.storage.from("client-report-templates").getPublicUrl(templatePath).data.publicUrl;\n  const reportSignature = useMemo(() => snapshot ? JSON.stringify({ snapshot, content }) : "", [snapshot, content]);\n  const previewIsCurrent = Boolean(previewBlob && previewSignature === reportSignature);
+  const templateDownloadUrl = supabase.storage.from("client-report-templates").getPublicUrl(templatePath).data.publicUrl;
+  const reportSignature = useMemo(() => snapshot ? JSON.stringify({ snapshot, content }) : "", [snapshot, content]);
+  const previewIsCurrent = Boolean(previewBlob && previewSignature === reportSignature);
 
   const categories = useMemo(() => snapshot?.brand.categories ?? [], [snapshot]);
   const slides = ["Cover", "Executive Summary", "Overall Visibility Score Progression", "Comparison with Competitors", "Citation Summary", "What Have Been Done", "What Needs To Be Done", "Recommended Action Plans", "Targets", "Thank You"];
@@ -329,7 +337,17 @@ export default function ReportsPage() {
       </section>
       {error&&<div className="sample-error mt-4 rounded-xl p-3 text-sm">{error}</div>}{notice&&<div className="platform-notice-success mt-4 rounded-xl p-3 text-sm">{notice}</div>}
       {snapshot&&<section className="mt-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-bold">Monthly report editor</h2><p className="text-xs text-[var(--muted-foreground)]">{snapshot.brand.name} · {snapshot.period.start} to {snapshot.period.end} · {trackingLocationLabel(snapshot.location)}</p></div><div className="flex flex-wrap gap-2"><button className="platform-btn" disabled={previewLoading || !templateExists} onClick={() => void refreshPowerPointPreview()}>{previewLoading?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} Refresh PowerPoint preview</button><button className="platform-btn" disabled={!previewViewerUrl} onClick={() => previewViewerUrl && window.open(previewViewerUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={14}/> Open preview</button><button className="platform-btn" disabled={!previewViewerUrl} title="Open the actual PowerPoint in the Office viewer, then use its Print command and choose Save as PDF." onClick={() => previewViewerUrl && window.open(previewViewerUrl, "_blank", "noopener,noreferrer")}><Printer size={14}/> Print / Save PDF</button><button className="platform-btn platform-btn-primary" disabled={exportingPptx || !templateExists} title={!templateExists ? "Upload the PowerPoint template first" : undefined} onClick={exportPowerPoint}>{exportingPptx?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>} Export PowerPoint</button><button className="platform-btn platform-btn-primary" disabled={saving || !canEdit} title={!canEdit ? "Only project editors can save reports" : undefined} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button></div>{!canEdit&&<p className="mt-2 text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}</div>{!canEdit&&<p className="mt-2 text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}</div>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div><h2 className="text-lg font-bold">Monthly report editor</h2><p className="text-xs text-[var(--muted-foreground)]">{snapshot.brand.name} · {snapshot.period.start} to {snapshot.period.end} · {trackingLocationLabel(snapshot.location)}</p></div>
+          <div className="flex flex-wrap gap-2">
+            <button className="platform-btn" disabled={previewLoading || !templateExists} onClick={() => void refreshPowerPointPreview()}>{previewLoading?<Loader2 size={14} className="animate-spin"/>:<RefreshCw size={14}/>} Refresh PowerPoint preview</button>
+            <button className="platform-btn" disabled={!previewViewerUrl} onClick={() => previewViewerUrl && window.open(previewViewerUrl, "_blank", "noopener,noreferrer")}><ExternalLink size={14}/> Open preview</button>
+            <button className="platform-btn" disabled={!previewViewerUrl} title="Open the actual PowerPoint in the Office viewer, then use its Print command and choose Save as PDF." onClick={() => previewViewerUrl && window.open(previewViewerUrl, "_blank", "noopener,noreferrer")}><Printer size={14}/> Print / Save PDF</button>
+            <button className="platform-btn platform-btn-primary" disabled={exportingPptx || !templateExists} title={!templateExists ? "Upload the PowerPoint template first" : undefined} onClick={exportPowerPoint}>{exportingPptx?<Loader2 size={14} className="animate-spin"/>:<Download size={14}/>} Export PowerPoint</button>
+            <button className="platform-btn platform-btn-primary" disabled={saving || !canEdit} title={!canEdit ? "Only project editors can save reports" : undefined} onClick={save}>{saving?<Loader2 size={14} className="animate-spin"/>:<Save size={14}/>} Save draft</button>
+          </div>
+          {!canEdit&&<p className="w-full text-right text-xs text-[var(--muted-foreground)]">You have read-only access to reports.</p>}
+        </div>
         <div className="mb-4 flex gap-2 overflow-x-auto pb-2">{slides.map((name,i)=><a key={name} href={"#monthly-slide-"+(i+1)} className="shrink-0 rounded-lg border border-[var(--line)] px-3 py-2 text-xs hover:bg-[var(--accent)]">{i+1}. {name}</a>)}</div>
         <section className="mb-6 overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--card)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] p-4"><div><h3 className="font-bold">PowerPoint preview</h3><p className="mt-1 text-xs text-[var(--muted-foreground)]">Rendered from the same generated .pptx file used for export.</p></div><span className={previewIsCurrent?"monthly-ready":"monthly-soon"}>{previewIsCurrent?"Preview up to date":"Preview needs refreshing"}</span></div>
