@@ -270,8 +270,8 @@ export default function ReportsPage() {
       for (const [category, value] of results) citationByCategory[category] = value;
       next.citationByCategory = citationByCategory;
       next.competitorAssets = Object.fromEntries(data.competitors.filter((row) => !row.isTracked).map((row) => [row.name, ""]));
+      setPreviewViewerUrl(""); setPreviewOpenUrl(""); setPreviewBlob(null); setPreviewSignature(""); setPreviewError("");
       setSnapshot(data); setContent(next);
-      if (templateExists) void refreshPowerPointPreview(data, next);
       setNotice("Monthly report data loaded. Complete the highlighted manual fields, then save your draft.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to generate the report.");
@@ -363,8 +363,8 @@ export default function ReportsPage() {
     restoredContent.initiatives = [...restoredContent.initiatives.slice(0, 6)];
     restoredContent.actions = ["Week 1", "Week 2", "Week 3", "Week 4", "Ongoing"].map((week, i) => ({ ...BLANK_ACTION(), ...(restoredContent.actions?.[i] ?? {}), week }));
     restoredContent.progress = Object.fromEntries(AREAS.map((area) => [area, (restoredContent.progress?.[area] ?? ["", "", ""]).slice(0, 30)]));
+    setPreviewViewerUrl(""); setPreviewOpenUrl(""); setPreviewBlob(null); setPreviewSignature(""); setPreviewError("");
     setSnapshot(row.snapshot); setContent(restoredContent);
-    if (templateExists) void refreshPowerPointPreview(row.snapshot, restoredContent);
     setActiveId(row.id);
   }
 
