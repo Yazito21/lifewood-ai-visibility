@@ -138,10 +138,13 @@ export async function generateMonthlyReportPptx(
         const source = await logoResponse.blob();
         const bitmap = await createImageBitmap(source);
         const canvas = document.createElement("canvas");
-        canvas.width = bitmap.width; canvas.height = bitmap.height;
+        canvas.width = 2104; canvas.height = 285;
         const context = canvas.getContext("2d");
         if (context) {
-          context.drawImage(bitmap, 0, 0);
+          const scale = Math.min((canvas.width - 40) / bitmap.width, (canvas.height - 20) / bitmap.height);
+          const width = bitmap.width * scale;
+          const height = bitmap.height * scale;
+          context.drawImage(bitmap, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
           const png = await new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Logo conversion failed")), "image/png"));
           zip.file("ppt/media/image3.png", await png.arrayBuffer());
         }
