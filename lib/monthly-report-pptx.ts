@@ -234,7 +234,7 @@ export async function generateMonthlyReportPptx(
     const everyPage = citationEntries.flatMap(([category, item]) => item.pages.map((page) => ({ ...page, category })));
     const allPages = [...everyPage].sort((a, b) => b.frequency - a.frequency).slice(0, 7);
     const distinctPages = new Set(everyPage.map(page => page.url)).size;
-    const brandWebsite = (() => { try { return new URL(snapshot.brand.website || "").hostname.toLowerCase().replace(/^www\./, "") || snapshot.brand.name; } catch { return snapshot.brand.name; } })();
+    const brandWebsite = (() => { try { const website = snapshot.brand.website || ""; return new URL(website.includes("://") ? website : "https://" + website).hostname.toLowerCase().replace(/^www\./, "") || snapshot.brand.name; } catch { return snapshot.brand.name; } })();
     xml = setShapeText(xml, "Text 6", fmt(total));
     xml = setShapeText(xml, "Text 7", "times AI platforms cited " + brandWebsite);
     xml = setShapeText(xml, "Text 8", dateLabel(snapshot.period.start) + " to " + dateLabel(snapshot.period.end));
