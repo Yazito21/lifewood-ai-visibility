@@ -544,15 +544,15 @@ Deno.serve(async (req: Request) => {
     const stageCandidateRows = async (tableKey: string, rows: Array<Record<string, unknown>>) => {
       if (!activeRunId || !rows.length) return;
       for (let offset = 0; offset < rows.length; offset += 250) {
-        const batch = rows.slice(offset, offset + 250).map((row, index) => ({
-          ...row,
-          _candidate_key: String(row.id ?? row.response_id
-            ? [row.id ?? "", row.response_id ?? "", row.entity_id ?? "", row.brand_id ?? "",
-                row.canonical_url ?? "", row.url ?? "", row.category ?? "", row.tracking_location ?? "",
-                row.llm_provider ?? "", row.provider ?? "", row.metric_date ?? "", row.prompt_id ?? "",
-                row.match_source ?? "", row.matched_value ?? "", offset + index].join("|")
-            : offset + index),
-        }));
+        const batch = rows.slice(offset, offset + 250).map((row, index) => {
+          const identity = [
+            row.id, row.response_id, row.entity_id, row.brand_id, row.competitor_id,
+            row.canonical_url, row.url, row.category, row.tracking_location,
+            row.llm_provider, row.provider, row.metric_date, row.prompt_id,
+            row.match_source, row.matched_value,
+          ].map((value) => String(value ?? "")).join("|");
+          return { ...row, _candidate_key: identity.replace(/\|/g, "") ? identity : String(offset + index) };
+        });
         const { error } = await admin.rpc("stage_tracking_candidate_rows", {
           p_run_id: activeRunId,
           p_table_key: tableKey,
@@ -1389,18 +1389,17 @@ Deno.serve(async (req: Request) => {
           (category !== "Overall" && isCategoryScopedRun ? r.category === category : category === "Overall" || r.category === category)
         );
       const { metrics, trackedResponseCount, competitorPresence, competitorAveragePosition } = analyzeSubset(subset, category);
-      const { data: citationCountRows, error: citationCountError } = await admin.rpc("get_scoped_citation_occurrence_counts", {
-        p_project_id: projectId,
-        p_start_date: day,
-        p_end_date: day,
-        p_category: category === "Overall" ? null : category,
-        p_engines: ["chatgpt"],
-        p_tracking_location: trackingLocation,
-      });
-      if (citationCountError) throw new Error("CITATION_OCCURRENCE_AGGREGATE_FAILED: " + citationCountError.message);
-      const citationCountsByEntity = new Map<string, number>((citationCountRows ?? []).map((row: Record<string, unknown>) =>
-        [String(row.entity_id), Number(row.citation_occurrences ?? 0)]
-      ));
+      // Count citations from this candidate's own occurrence rows. Querying the
+      // canonical table here would read the previous published run, not staged rows.
+      const subsetResponseIds = new Set(subset.map((result) =>
+        responseIdByKey.get(String(result.prompt_id) + "|" + String(result.tracking_location ?? trackingLocationsForRun[0])) ?? ""
+      ).filter(Boolean));
+      const citationCountsByEntity = new Map<string, number>();
+      for (const occurrence of citationOccurrenceRows) {
+        if (!subsetResponseIds.has(String(occurrence.response_id))) continue;
+        const entityId = String(occurrence.entity_id);
+        citationCountsByEntity.set(entityId, (citationCountsByEntity.get(entityId) ?? 0) + 1);
+      }
       const observations = (entitiesByCategory.get(category) ?? []).map((entity) => {
         const entityMentions = Number(competitorPresence[entity.key] ?? 0);
         const citations = citationCountsByEntity.get(entity.id) ?? 0;
