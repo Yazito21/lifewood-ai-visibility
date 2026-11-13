@@ -710,3 +710,47 @@ Choose between:
 The user's original requirement states that a successful rerun replaces the exact category/date scope and that failed/incomplete candidates must not disturb existing published data. The whole-batch approach gives stronger all-categories consistency but requires the dashboard to stage all categories before promotion and a batch-level promotion RPC. The per-category approach matches the existing sequential UI more closely but can leave a date containing some newly replaced categories and some older categories if a later category fails. This choice must be confirmed against the intended product behaviour before implementing the final RPC.
 
 No Production migrations, Edge Function deployments, candidate promotions, or historical deletions were performed.
+
+
+## 2026-11-13: durable category-batch continuation and location-scoped SQL consumers
+
+Commits:
+- `00a566c967ebf9a5e01f6cf54025e55e11d84fde` — validate category continuation against durable batch records.
+- `b664dbc2e904e2c19cfa7795ce5a9d85f77b64ad` — pass the batch ID from the Dashboard rather than the previous run ID.
+- `4391c9b564ab4c73dd91f2e0a5844264dd0901ac` — reserve the daily entitlement for the first category in the durable batch.
+- `dc92c7249222ec0c4f479ba4d6b489da61cd08fd` — update SQL consumers to call the location-aware presence helper.
+
+### Durable category-batch continuation
+
+The Dashboard now passes the actual `tracking_batches.id` on each category invocation. The Edge Function checks:
+- Batch exists and belongs to the same project and requesting user.
+- Batch remains in `running` state.
+- Exactly one matching category row is currently `running`.
+- Every earlier category ordinal is `completed` and has a saved `tracking_run_id`.
+
+This removes the fragile dependency on `tracking_runs.error_message = 'CATEGORY_BATCH:...'`. The new category run is created only after these durable checks pass.
+
+The first category in the batch (ordinal 0) obtains the daily entitlement using `claim_daily_tracking_run`, then updates that newly created run with the actual category and first tracking location. This is necessary because the legacy claim RPC creates a category-null run by default; without the scope update, the first category would be treated as a full run. Later categories create their own topic-scoped run rows.
+
+The Dashboard already stores each returned run ID on its corresponding `tracking_batch_categories` row, so the next invocation can validate the preceding category through durable state. No new batch schema was required.
+
+### Location-scoped SQL helper consumers
+
+Added migration `20261113140000_use_location_scoped_presence_helpers.sql`. It updates existing SQL function definitions to pass the location already available in their scope:
+- `check_metric_integrity` passes `visibility_daily.tracking_location`.
+- `publish_cross_engine_metrics` passes `p_location`.
+- `publish_engine_overall_metrics` passes `p_location`.
+- `recompute_competitor_metrics` passes the full-run row's `tracking_location`.
+
+The new migration is additive to the earlier location-aware `finalize_run_metrics` migration. The two-argument helper remains for compatibility, but these known location-aware consumers no longer pool responses across locations.
+
+### Important validation still outstanding
+
+These changes are committed to the feature branch only. The SQL migration has not been applied to Supabase, and the Edge Function has not been deployed. The category-batch changes still require a controlled integration test against an isolated database, especially:
+- First category creates a category-scoped `topic` run while claiming the daily entitlement.
+- Second and later categories are accepted only after the prior batch category is marked completed and linked to a completed run.
+- Failed categories do not permit the next ordinal to start.
+- Batch ownership and project scope are enforced.
+- A failed first-category claim or scope update does not leave an incorrectly scoped candidate behind.
+
+No Production migrations, Edge Function deployments, candidate promotions, or historical deletions were performed.
