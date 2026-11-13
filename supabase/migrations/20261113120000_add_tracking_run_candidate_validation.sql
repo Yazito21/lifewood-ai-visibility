@@ -21,6 +21,8 @@ declare
   v_staged_project_mismatch integer;
   v_staged_date_mismatch integer;
   v_staged_scope_mismatch integer;
+  v_staged_run_mismatch integer;
+  v_orphan_response_refs integer;
   v_errors text[] := array[]::text[];
 begin
   if auth.role() <> 'service_role' then
@@ -121,6 +123,32 @@ begin
     and not (row_data->>'tracking_location' = any(v_expected_locations));
   if v_staged_scope_mismatch > 0 then
     v_errors := array_append(v_errors, 'staged_location_scope_mismatch');
+  end if;
+
+  select count(*)::integer into v_staged_run_mismatch
+  from public.tracking_run_candidate_rows
+  where run_id = p_run_id
+    and row_data ? 'run_id'
+    and nullif(row_data->>'run_id', '')::uuid is distinct from p_run_id;
+  if v_staged_run_mismatch > 0 then
+    v_errors := array_append(v_errors, 'staged_run_id_mismatch');
+  end if;
+
+  -- Any staged row that points to a response must point to a raw response
+  -- belonging to this exact candidate run, never a predecessor run.
+  select count(*)::integer into v_orphan_response_refs
+  from public.tracking_run_candidate_rows staged
+  where staged.run_id = p_run_id
+    and staged.table_key in ('citation_occurrences', 'response_brand_evidence', 'third_party_mentions')
+    and nullif(staged.row_data->>'response_id', '') is not null
+    and not exists (
+      select 1
+      from public.ai_responses ar
+      where ar.id = nullif(staged.row_data->>'response_id', '')::uuid
+        and ar.run_id = p_run_id
+    );
+  if v_orphan_response_refs > 0 then
+    v_errors := array_append(v_errors, 'staged_response_reference_not_owned_by_candidate');
   end if;
 
   if coalesce(cardinality(v_dates), 0) = 1 then
