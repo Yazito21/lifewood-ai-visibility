@@ -60,7 +60,7 @@ begin
     raise exception 'unsupported_candidate_table';
   end if;
 
-  if jsonb_typeof(p_rows) <> 'array' then
+  if p_rows is null or jsonb_typeof(p_rows) <> 'array' then
     raise exception 'candidate_rows_must_be_json_array';
   end if;
 
@@ -99,8 +99,6 @@ begin
   do update set row_data = excluded.row_data;
 
   -- Return the number of rows in this submitted batch (including idempotent updates).
-  get diagnostics v_count = row_count;
-
   get diagnostics v_count = row_count;
   return v_count;
 end;
