@@ -16,6 +16,7 @@ declare
   v_dates date[];
   v_response_count integer;
   v_completed_response_count integer;
+  v_response_date_mismatch integer;
   v_metric_count integer;
   v_expected_metric_count integer;
   v_staged_project_mismatch integer;
@@ -99,6 +100,14 @@ begin
   end if;
   if coalesce(cardinality(v_dates), 0) <> 1 then
     v_errors := array_append(v_errors, 'candidate_must_have_exactly_one_metric_date');
+  else
+    select count(*)::integer into v_response_date_mismatch
+    from public.ai_responses ar
+    where ar.run_id = p_run_id
+      and (ar.captured_at at time zone 'Asia/Kuala_Lumpur')::date <> v_dates[1];
+    if v_response_date_mismatch > 0 then
+      v_errors := array_append(v_errors, 'raw_response_capture_date_does_not_match_metric_date');
+    end if;
   end if;
 
   v_expected_metric_count := coalesce(cardinality(v_expected_categories), 0)
