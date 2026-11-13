@@ -84,7 +84,15 @@ begin
            parent.supersedes_run_id, child.depth + 1
     from public.tracking_runs parent
     join lineage child on parent.id = child.supersedes_run_id
+    join candidate_scope cs
+      on cs.category = parent.category
+     and cs.tracking_location = parent.tracking_location
     where child.depth < 50
+      and parent.project_id = v_candidate.project_id
+      and parent.provider = v_candidate.provider
+      and parent.status = 'completed'
+      and parent.published_at is not null
+      and (parent.published_at at time zone 'Asia/Kuala_Lumpur')::date = v_date
   ),
   distinct_lineage as (
     select distinct on (id) * from lineage order by id, depth
