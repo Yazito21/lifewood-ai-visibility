@@ -819,3 +819,23 @@ Before any deployment, the promotion SQL still requires execution against an iso
 - Overall aggregate rebuild with all categories present, and stale Overall invalidation when a category is missing.
 
 Only after these tests pass should the migration be applied to the intended Supabase environment, followed by Edge Function deployment. A Production historical deletion inventory and separate approval remain mandatory.
+
+
+## 2026-11-13: multi-location aggregate selection and retry hardening
+
+Additional commits:
+- `13e70990a2c4396d28ff5971039eca7fdf5f7da8` — update Overall/cross-engine aggregation to select topic runs by their per-location `visibility_daily` rows rather than the run row's single `tracking_location`.
+- `8b46bbc4c1bb24b897b18ab59ba83deb0c20fbf6` — retain candidate run IDs parsed from Edge Function HTTP error responses.
+- `5e988fc2dc5c924667e133f5bc9b5ac47050dbd3` — require the candidate's primary tracking location to be present in its staged metric locations.
+
+### Multi-location correction
+
+A `tracking_runs` row has one `tracking_location`, while its raw responses and `visibility_daily` rows may cover multiple locations. The location-aware finalizer already uses each metric row's own location, but the existing Overall and cross-engine aggregators selected topic runs using only `tracking_runs.tracking_location`. That would omit secondary locations for a multi-location candidate.
+
+The location-helper migration now also updates those two aggregators to select topic runs through matching `visibility_daily` rows for the requested project/date/category/provider/location. The promotion RPC still explicitly supersedes exact-scope predecessor IDs for every location before publication. It also checks that the run row's primary location is one of the candidate's staged locations.
+
+### Batch retry correction
+
+When the first category fails after a daily claim is created, resuming the same batch now checks the existing claim. If it belongs to the same requester and category and is not actively running, a new candidate may replace the claim's run ID. If the prior candidate was already published but the client missed the response, the Edge Function marks the batch category complete from the published run rather than rerunning prompts. Candidate IDs returned in HTTP error payloads are saved in the batch row for recovery.
+
+These paths remain feature-branch-only and require isolated database integration tests.
