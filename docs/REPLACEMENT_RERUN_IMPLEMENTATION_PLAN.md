@@ -267,3 +267,43 @@ This is a required foundation for safe multi-location promotion, not the promoti
 - [ ] Invoke Overall aggregation for every affected location.
 - [ ] Delete superseded raw and derived run data after successful promotion.
 - [ ] Test single-location and multi-location replacement, rollback and scope isolation.
+
+
+## 2026-11-13: staging RPC input validation hardened
+
+Commit: `2746864fb1c21e494ed2957a5a13864a0f1cf0aa`
+
+- Removed a duplicate row-count diagnostics statement.
+- Explicitly rejects SQL NULL as well as non-array JSON input.
+- No schema or production data was changed by this code-only correction.
+
+## 2026-11-13: promotion transaction dependency audit
+
+The promotion design must preserve replacement lineage outside `tracking_runs` if superseded run rows are physically deleted. The current `supersedes_run_id` foreign key uses `ON DELETE SET NULL`, so deleting the predecessor removes the direct lineage pointer. The existing publication trigger also discovers the previous run at publication time; if the predecessor is deleted first, that trigger cannot discover it.
+
+The promotion transaction therefore needs a durable replacement audit record (with predecessor and replacement UUIDs stored as values, not foreign keys to deletable run rows), and must write it before deleting predecessor runs.
+
+Additional dependency handling required inside the same transaction:
+
+- Reassign any `tracking_run_daily_claims` rows to the replacement run before deleting the old run, otherwise the claim cascades away.
+- Update `tracking_batch_categories.tracking_run_id` to the replacement run where applicable; its current FK would otherwise be set to NULL.
+- Check and rewire or reject any `tracking_runs.source_run_id` references before deletion; this FK has no ON DELETE action and can block deletion.
+- Allow `tracking_run_stages` to cascade with the deleted predecessor only after preserving any required operational audit in the replacement audit record.
+- Explicitly delete old `third_party_mentions` rows because their response FK uses SET NULL rather than CASCADE.
+- Delete/replace canonical date-grain rows by the candidate's actual set of locations, not merely the run row's first `tracking_location`.
+
+The current Edge Function uses the current Malaysia-local date for `metric_date` and stores the first configured tracking location on the run row, while candidate rows contain their individual locations. Promotion must derive the complete scope from staged rows and raw responses. Historical-date replacement needs a separate explicit date input/contract; it must not infer historical target dates from `started_at`.
+
+### Scope of next promotion implementation
+
+The promotion RPC must reject unsupported or ambiguous candidate shapes rather than partially publish them. Category-scoped and full-run candidates must be handled explicitly, with complete location/category coverage validation. No predecessor deletion is allowed unless every replacement scope has a validated candidate.
+
+### Status
+
+- [x] Staging input validation hardened.
+- [x] Foreign-key and lineage deletion dependencies identified.
+- [ ] Durable replacement audit table.
+- [ ] Transactional promotion RPC.
+- [ ] Candidate coverage validation for category and full runs.
+- [ ] Daily-claim and batch reference reassignment.
+- [ ] Tests for rollback and all affected foreign keys.
