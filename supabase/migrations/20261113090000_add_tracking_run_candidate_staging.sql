@@ -77,15 +77,29 @@ begin
     raise exception 'candidate_run_not_writable';
   end if;
 
+  -- Reject cross-project/category rows before they enter the candidate staging area.
+  if exists (
+    select 1
+    from jsonb_array_elements(p_rows) item
+    where (item ? 'project_id' and nullif(item->>'project_id', '')::uuid is distinct from v_run.project_id)
+       or (v_run.category is not null and item ? 'category'
+           and nullif(item->>'category', '') is distinct from v_run.category)
+  ) then
+    raise exception 'candidate_row_scope_mismatch';
+  end if;
+
   insert into public.tracking_run_candidate_rows(run_id, table_key, row_key, row_data)
   select
     p_run_id,
     p_table_key,
-    coalesce(item->>'_candidate_key', md5(item::text)),
+    coalesce(item->>'_candidate_key', md5((item - '_candidate_key')::text)),
     item - '_candidate_key'
   from jsonb_array_elements(p_rows) item
   on conflict (run_id, table_key, row_key)
   do update set row_data = excluded.row_data;
+
+  -- Return the number of rows in this submitted batch (including idempotent updates).
+  get diagnostics v_count = row_count;
 
   get diagnostics v_count = row_count;
   return v_count;
