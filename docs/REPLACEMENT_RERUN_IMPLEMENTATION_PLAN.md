@@ -112,3 +112,42 @@ Prepare a separate, read-only inventory for every project/category/provider/loca
 - A rerun must never delete the current dataset before the replacement candidate passes validation.
 - The replacement and publication must be atomic from the dashboard's perspective.
 - External backups, platform logs, and infrastructure audit trails are outside the application database and cannot be erased by this workflow.
+
+
+## 2026-11-13 implementation audit addendum
+
+### Critical finding: candidate writes are not isolated
+
+A second pass through the Edge Function and live uniqueness constraints found that removing the early cleanup alone is not safe. The Edge Function currently writes candidate data into shared, date-grain tables before the run is marked completed:
+
+- `category_brand_observations` upserts on project/brand/category/date/location/provider; the key does not include `run_id`.
+- `visibility_daily` upserts on project/date/category/provider/location; the key does not include `run_id`.
+- `citation_occurrences`, `response_brand_evidence`, and `third_party_mentions` are keyed to response IDs and are candidate-isolated only because each candidate gets new `ai_responses` IDs.
+- The explicit `category_cleanup` block deletes published rows before candidate validation.
+- The Edge Function marks the run completed and sets `published_at` itself; publication currently triggers metric finalisation and supersession.
+
+The live database confirms the first two tables use date-grain uniqueness/primary keys that cannot hold both a published version and a candidate version simultaneously. Therefore, simply moving the cleanup later or removing it would still allow candidate upserts to overwrite published metrics.
+
+### Revised implementation requirement
+
+The safe implementation must use a two-phase data boundary:
+
+1. **Candidate phase:** persist raw responses and all candidate-derived rows under the candidate run ID, without modifying any currently published date-grain rows.
+2. **Publication transaction:** in one database transaction, lock the exact project/category/provider/location/MYT-date scope, validate the candidate, replace the current scope rows from candidate data, update publication lineage, finalise canonical ranks, refresh Overall, and only then commit.
+3. **Rollback:** any failure in replacement, rank finalisation, or Overall refresh must roll back the complete publication transaction and leave the previous published dataset unchanged.
+
+The current date-grain tables cannot support phase 1 without a staging boundary. The implementation must therefore add candidate staging storage (or equivalent run-versioned tables) and a transactional promotion RPC. The RPC must copy from staging into the live tables only after validation. The staging design must cover every derived table written by the Edge Function, not just `visibility_daily`.
+
+### Current implementation status
+
+- [x] Initial implementation plan committed.
+- [x] Edge Function write-path and database uniqueness audit completed.
+- [ ] Candidate staging schema and constraints.
+- [ ] Transactional replacement/promotion RPC.
+- [ ] Edge Function writes routed to candidate staging.
+- [ ] Publication moved entirely to the promotion RPC.
+- [ ] Automated tests for rollback, isolation, and replacement.
+- [ ] Historical rerun inventory.
+- [ ] Historical predecessor deletion (requires separate explicit approval).
+
+No production data has been deleted or modified as part of this audit. No schema changes or Edge Function deployments have been applied.
