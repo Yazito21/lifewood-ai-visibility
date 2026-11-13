@@ -671,7 +671,6 @@ Deno.serve(async (req: Request) => {
     const isCategoryScopedRun = Boolean(selectedCategory);
     // Daily replacement scope: project + MYT date + location + category + provider; raw responses remain run-scoped.
     const trackingBatchId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
-    const newAdminBatchRun = !isSuperadmin && isCategoryScopedRun && !trackingBatchId;
 
     if (mode !== "sample") {
       runId = crypto.randomUUID();
@@ -685,7 +684,6 @@ Deno.serve(async (req: Request) => {
           id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running",
           tracking_location: trackingLocationsForRun[0], category: isCategoryScopedRun ? selectedCategory : null,
           total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
-          ...(newAdminBatchRun ? { error_message: "CATEGORY_BATCH:" + runId } : {}),
         });
         if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
         return null;
@@ -779,13 +777,37 @@ Deno.serve(async (req: Request) => {
             message: "A tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
             run_id: claim?.run_id ?? null,
           }, 409);
+          // claim_daily_tracking_run creates the entitlement row. Convert its run
+          // into the first category candidate immediately so publication semantics
+          // and category-scoped replacement are correct.
+          const { error: scopeError } = await admin.from("tracking_runs").update({
+            category: selectedCategory,
+            tracking_location: trackingLocationsForRun[0],
+          }).eq("id", runId).eq("project_id", projectId);
+          if (scopeError) return json({ error: "TRACKING_RUN_SCOPE_UPDATE_FAILED", message: scopeError.message }, 500);
         } else {
-          const { data: parentRun, error: parentRunError } = await admin.from("tracking_runs")
-            .select("id,started_by,status,completed_at,error_message").eq("id", trackingBatchId).eq("project_id", projectId).maybeSingle();
-          if (parentRunError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED" }, 500);
-          if (!parentRun || parentRun.started_by !== userId || parentRun.status !== "completed" ||
-              !parentRun.completed_at || parentRun.error_message !== "CATEGORY_BATCH:" + trackingBatchId) {
-            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The previous category must finish successfully before the next one starts." }, 409);
+          const { data: batch, error: batchError } = await admin.from("tracking_batches")
+            .select("id,project_id,requested_by,status")
+            .eq("id", trackingBatchId).eq("project_id", projectId).maybeSingle();
+          if (batchError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED", message: batchError.message }, 500);
+          if (!batch || batch.requested_by !== userId || batch.status !== "running") {
+            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "This tracking batch is not active or does not belong to this requester." }, 409);
+          }
+          const { data: batchRows, error: batchRowsError } = await admin.from("tracking_batch_categories")
+            .select("category,ordinal,status,tracking_run_id")
+            .eq("batch_id", trackingBatchId)
+            .order("ordinal", { ascending: true });
+          if (batchRowsError) return json({ error: "TRACKING_BATCH_CATEGORIES_LOOKUP_FAILED", message: batchRowsError.message }, 500);
+          const currentRows = (batchRows ?? []).filter((row: Record<string, unknown>) =>
+            String(row.category) === selectedCategory && row.status === "running"
+          );
+          if (currentRows.length !== 1) {
+            return json({ error: "TRACKING_BATCH_CATEGORY_NOT_ACTIVE", message: "The requested category is not the active category in this batch." }, 409);
+          }
+          const currentOrdinal = Number(currentRows[0].ordinal);
+          const priorRows = (batchRows ?? []).filter((row: Record<string, unknown>) => Number(row.ordinal) < currentOrdinal);
+          if (priorRows.some((row: Record<string, unknown>) => row.status !== "completed" || !row.tracking_run_id)) {
+            return json({ error: "TRACKING_BATCH_PREVIOUS_CATEGORY_INCOMPLETE", message: "Every preceding category must complete successfully before the next category starts." }, 409);
           }
           const insertionError = await createTrackingRun();
           if (insertionError) return insertionError;
