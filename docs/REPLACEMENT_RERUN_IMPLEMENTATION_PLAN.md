@@ -398,3 +398,14 @@ The current Edge Function uses the current Malaysia-local date and has not yet i
 - [ ] Historical predecessor deletion after separate explicit approval.
 
 No Production migration or Edge Function deployment has occurred.
+
+
+## 2026-11-13: candidate validation coverage correction
+
+Commit: `713b0b9a2f91377d6bf556ba160f957add8007f5`
+
+The Edge Function emits an additional `Overall` visibility row for full-run candidates, alongside the topic/category rows. The validation gate is intended to validate topic/category coverage; Overall is a derived aggregate and is recalculated after category publication. The coverage query now excludes `category = 'Overall'` when comparing staged visibility rows to the project's configured categories. It still requires provider-specific rows for every expected category/location pair.
+
+This prevents a valid full-run candidate from being rejected simply because its staged payload also contains the Overall row.
+
+No production migration has been applied and no production data has changed.
