@@ -810,24 +810,62 @@ Deno.serve(async (req: Request) => {
             return json({ error: "TRACKING_BATCH_PREVIOUS_CATEGORY_INCOMPLETE", message: "Every preceding category must complete successfully before the next category starts." }, 409);
           }
           if (currentOrdinal === 0) {
-            const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
-              p_project_id: projectId,
-              p_started_by: userId,
-              p_run_id: runId,
-              p_total_prompts: prompts.length * trackingLocationsForRun.length,
-            });
-            if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_FAILED", message: "Could not reserve today's tracking run. Please contact an administrator." }, 500);
-            const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
-            if (!claim?.claimed) return json({
-              error: "DAILY_TRACKING_LIMIT_REACHED",
-              message: "A tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
-              run_id: claim?.run_id ?? null,
-            }, 409);
-            const { error: scopeError } = await admin.from("tracking_runs").update({
-              category: selectedCategory,
-              tracking_location: trackingLocationsForRun[0],
-            }).eq("id", runId).eq("project_id", projectId);
-            if (scopeError) return json({ error: "TRACKING_RUN_SCOPE_UPDATE_FAILED", message: scopeError.message }, 500);
+            const todayMYT = new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
+            }).format(new Date());
+            const { data: existingClaim, error: existingClaimError } = await admin.from("tracking_run_daily_claims")
+              .select("run_id").eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
+            if (existingClaimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED", message: existingClaimError.message }, 500);
+
+            if (existingClaim?.run_id) {
+              const { data: priorCandidate, error: priorCandidateError } = await admin.from("tracking_runs")
+                .select("id,project_id,started_by,category,status,published_at,completed_prompts,total_prompts,failed_prompts")
+                .eq("id", existingClaim.run_id).eq("project_id", projectId).maybeSingle();
+              if (priorCandidateError) return json({ error: "DAILY_TRACKING_CLAIM_RUN_LOOKUP_FAILED", message: priorCandidateError.message }, 500);
+              if (!priorCandidate || priorCandidate.started_by !== userId || priorCandidate.category !== selectedCategory ||
+                  priorCandidate.status === "running") {
+                return json({ error: "DAILY_TRACKING_LIMIT_REACHED", message: "Today's tracking entitlement is already owned by another run." }, 409);
+              }
+              if (priorCandidate.published_at) {
+                await admin.from("tracking_batch_categories").update({
+                  status: "completed", tracking_run_id: priorCandidate.id,
+                  completed_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString(),
+                }).eq("batch_id", trackingBatchId).eq("category", selectedCategory);
+                return json({
+                  mode, run_id: priorCandidate.id, status: "completed", published: true,
+                  total_prompts: priorCandidate.total_prompts, completed_prompts: priorCandidate.completed_prompts,
+                  failed_prompts: priorCandidate.failed_prompts, message: "The first category was already published successfully.",
+                });
+              }
+              const insertionError = await createTrackingRun();
+              if (insertionError) return insertionError;
+              const { error: claimUpdateError } = await admin.from("tracking_run_daily_claims").update({
+                run_id: runId, started_by: userId, created_at: new Date().toISOString(),
+              }).eq("project_id", projectId).eq("run_date", todayMYT).eq("run_id", existingClaim.run_id);
+              if (claimUpdateError) {
+                await admin.from("tracking_runs").delete().eq("id", runId);
+                return json({ error: "DAILY_TRACKING_CLAIM_UPDATE_FAILED", message: claimUpdateError.message }, 500);
+              }
+            } else {
+              const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
+                p_project_id: projectId,
+                p_started_by: userId,
+                p_run_id: runId,
+                p_total_prompts: prompts.length * trackingLocationsForRun.length,
+              });
+              if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_FAILED", message: "Could not reserve today's tracking run. Please contact an administrator." }, 500);
+              const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
+              if (!claim?.claimed) return json({
+                error: "DAILY_TRACKING_LIMIT_REACHED",
+                message: "A tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
+                run_id: claim?.run_id ?? null,
+              }, 409);
+              const { error: scopeError } = await admin.from("tracking_runs").update({
+                category: selectedCategory,
+                tracking_location: trackingLocationsForRun[0],
+              }).eq("id", runId).eq("project_id", projectId);
+              if (scopeError) return json({ error: "TRACKING_RUN_SCOPE_UPDATE_FAILED", message: scopeError.message }, 500);
+            }
           } else {
             const insertionError = await createTrackingRun();
             if (insertionError) return insertionError;
