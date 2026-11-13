@@ -547,3 +547,95 @@ Commit: `de88267365cbb3bbca9ebd629e86985ca19c6ee9`
 - [ ] Decide a supported replacement source/retention policy for `competitors`.
 - [ ] Implement atomic promotion for the six candidate-staged tables and the confirmed legacy citation/competitor scope.
 - [ ] Rebuild Overall metrics and validate direct-competitor reporting remains intact.
+
+
+## 2026-11-13: fresh live-schema and application-consumer audit
+
+This checkpoint re-read the live Supabase schema and trigger/function definitions and inspected the feature-branch Edge Function plus the main application pages. This is a read-only audit; no live database writes or Production changes were made.
+
+### Live database deployment status reconfirmed
+
+The live Supabase project does not yet contain the feature-branch replacement objects:
+- `tracking_run_candidate_rows` is absent.
+- `tracking_run_replacements` is absent.
+- `stage_tracking_candidate_rows` is absent.
+- `validate_tracking_run_candidate` is absent.
+- `preview_tracking_run_replacement` is absent.
+
+The live database still has the original two-argument `run_tracked_presence(run_id, category)` and original `finalize_run_metrics` implementation. The live `tracking_runs_publication_guard` remains enabled for both INSERT and UPDATE. The new three-argument helper and location-aware finalizer exist only in the feature-branch migration.
+
+This confirms that the new Edge Function must not be deployed until the staging migration and the complete promotion path are deployed in a compatible sequence.
+
+### Fresh FK confirmation
+
+The live FK audit reconfirmed:
+- `citation_occurrences.response_id -> ai_responses.id`: ON DELETE CASCADE.
+- `response_brand_evidence.response_id -> ai_responses.id`: ON DELETE CASCADE.
+- `third_party_mentions.response_id -> ai_responses.id`: ON DELETE SET NULL, so predecessor mentions need explicit deletion.
+- `tracking_run_stages.run_id -> tracking_runs.id`: ON DELETE CASCADE.
+- `tracking_run_daily_claims.run_id -> tracking_runs.id`: ON DELETE CASCADE; claims must be reassigned or intentionally released before predecessor deletion.
+- `tracking_batch_categories.tracking_run_id -> tracking_runs.id`: ON DELETE SET NULL; references must be reassigned where appropriate.
+- `category_brand_observations.run_id -> tracking_runs.id` and `visibility_daily.run_id -> tracking_runs.id`: ON DELETE SET NULL.
+- `tracking_runs.source_run_id -> tracking_runs.id`: NO ACTION; predecessor deletion must be blocked or references explicitly and correctly rewired.
+- `tracking_runs.supersedes_run_id -> tracking_runs.id`: ON DELETE SET NULL; durable audit records must preserve predecessor lineage.
+
+Only the publication guard triggers were found on `tracking_runs` in the targeted live trigger audit. They execute on INSERT and UPDATE.
+
+### Critical issue: existing supersedes lineage can cross dates
+
+The feature-branch Edge Function's `createTrackingRun()` currently looks up the latest published run for the same project/category/provider/first tracking location, but it does not constrain that lookup to the current Malaysia-local metric date. It stores that row in the candidate's `supersedes_run_id` before candidate validation/promotion.
+
+Consequences:
+- A candidate may point to a predecessor from an earlier date.
+- The current replacement preview recursively follows `supersedes_run_id` lineage up to 50 levels without rechecking project/date/category/provider/location at each recursive step.
+- Therefore, the preview can include older-date runs in a candidate's predecessor lineage. A future promotion RPC must not delete those rows merely because they are in this lineage chain.
+
+Required correction:
+1. Do not trust `supersedes_run_id` as sufficient evidence of same-date replacement.
+2. Restrict predecessor discovery to canonical rows for the exact candidate project + metric date + category + provider + tracking location.
+3. Restrict every recursive lineage step to the same exact scope, or stop using lineage traversal as a deletion selector.
+4. Store only exact-scope predecessor IDs in `tracking_run_replacements`.
+5. Set candidate supersession lineage inside the promotion transaction after the exact predecessor set has been established.
+6. Add a regression test where the latest published run is from the previous date and verify it is not included or deleted.
+
+This is a promotion safety blocker and must be fixed before any destructive RPC is implemented.
+
+### Critical issue: per-location helper migration does not update all consumers
+
+The feature-branch migration adds `run_tracked_presence(run_id, category, tracking_location)` and updates `finalize_run_metrics` to call it. The audit found other live SQL functions still calling the two-argument helper:
+- `check_metric_integrity`
+- `publish_cross_engine_metrics`
+- `publish_engine_overall_metrics`
+- `recompute_competitor_metrics`
+
+The two-argument helper intentionally remains available for compatibility, but it aggregates responses across all locations. Therefore, those callers remain location-pooled unless updated. At minimum, the Overall aggregation and integrity/recompute paths must be reviewed and changed to pass the exact location. Do not assume the location-aware finalizer alone fixes multi-location reporting.
+
+### Full-run versus category-run semantics need an explicit decision
+
+The Edge Function creates category runs with `tracking_runs.category = selectedCategory`. A full run has `category = null` and the insert trigger assigns `run_kind = 'full'`. The candidate validator supports both shapes by expecting either the selected category or all configured project categories.
+
+However, the existing `publish_engine_overall_metrics` function selects published `run_kind = 'topic'` runs only. A full candidate's daily rows are associated with a `run_kind = 'full'` run, so the promotion design must not assume that simply publishing a full run will make it eligible for the existing topic-based Overall aggregation. Existing full-run category slicing/backfill logic must be understood and the replacement transaction must define whether it creates topic slices, uses a dedicated full-run aggregate path, or rejects full-run promotion until supported.
+
+The safer first implementation may be category-scoped promotion only, provided the Edge Function/UI explicitly route supported replacements through that path and full-run candidates remain unpublished until a separately tested implementation is ready. Do not silently publish a full-run candidate with incomplete Overall semantics.
+
+### Application-consumer audit: legacy `competitors` table
+
+Inspected feature-branch dashboard, analytics, responses, citations, competitors, reports, samples, and report-data/leaderboard helpers.
+
+Findings:
+- The Competitors page uses the direct competitor registry and observation workflow, not the legacy `competitors` table.
+- The leaderboard helper reads `direct_competitors`, `direct_competitor_observations`, `category_brand_observations`, and `visibility_daily`.
+- Dashboard and Analytics primarily read `visibility_daily`; citation views use `get_cumulative_citations`.
+- Responses page reads `ai_responses`.
+- No direct `competitors` table reference was found in the inspected pages/helpers. This is useful evidence, but it is not a complete proof that no indirect RPC, report, admin, or other application route uses the legacy table. Keep the conservative no-delete policy until a repository-wide branch scan is complete.
+
+### Updated next actions
+
+1. [ ] Fix exact-date predecessor selection in the Edge Function and ensure promotion owns supersession lineage.
+2. [ ] Restrict preview lineage recursion to the exact replacement scope; add cross-date regression coverage.
+3. [ ] Update all relevant SQL consumers of `run_tracked_presence` to use the location-aware helper where location is known.
+4. [ ] Decide and test category-only promotion first versus full-run promotion with topic-slice semantics.
+5. [ ] Complete repository-wide application scan for legacy `competitors` usage, including RPCs and report code.
+6. [ ] Only then design and implement the atomic promotion RPC.
+
+No Production migration, Edge Function deployment, candidate promotion, or historical deletion was performed in this checkpoint.
