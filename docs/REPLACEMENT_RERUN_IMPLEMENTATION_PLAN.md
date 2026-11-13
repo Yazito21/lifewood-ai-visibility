@@ -237,3 +237,33 @@ Commits:
 - [ ] Historical predecessor deletion (separate explicit approval).
 
 No Production migration, Edge Function deployment, or historical data deletion has occurred.
+
+
+## 2026-11-13: per-location metric finalisation migration committed
+
+Commit: `8e15d5e8531c68cb36a4b6a29163599092624590`
+
+Added `supabase/migrations/20261113100000_finalize_metrics_per_tracking_location.sql`.
+
+### Audit finding addressed
+
+The existing `run_tracked_presence(run_id, category)` helper counted completed responses across every tracking location in a run. Meanwhile, `finalize_run_metrics` iterated daily rows by location but passed the run-level `tracking_location` into canonical ranking. For projects tracking multiple locations, this could pool response counts and calculate ranks against the wrong location.
+
+### Migration changes
+
+- Adds a three-argument `run_tracked_presence(run_id, category, tracking_location)` helper.
+- Filters completed AI responses to the exact tracking location before calculating response and tracked-brand presence counts.
+- Replaces `finalize_run_metrics` so each daily row uses its own `tracking_location` for presence counts and `canonical_scoped_rank`.
+- Keeps the existing two-argument helper available for other existing callers.
+- Restricts direct execution of the new helper and finalisation function to service role; the existing publication trigger continues to invoke finalisation through its security-definer context.
+
+### Status
+
+This is a required foundation for safe multi-location promotion, not the promotion transaction itself. The migration is committed to the feature branch only and has not been applied to Production.
+
+- [x] Correct per-location presence and response counts during finalisation.
+- [x] Rank each location against its own canonical population.
+- [ ] Promotion RPC to replace canonical rows transactionally.
+- [ ] Invoke Overall aggregation for every affected location.
+- [ ] Delete superseded raw and derived run data after successful promotion.
+- [ ] Test single-location and multi-location replacement, rollback and scope isolation.
