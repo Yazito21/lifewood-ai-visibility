@@ -157,7 +157,7 @@ export default function DashboardPage() {
             project_id: projectId,
             providers: ["chatgpt"],
             category,
-            ...(!isSuperadmin && item.tracking_run_id ? { tracking_batch_id: item.tracking_run_id } : {}),
+            ...(!isSuperadmin && batchId ? { tracking_batch_id: batchId } : {}),
           },
         });
         if (error) {
