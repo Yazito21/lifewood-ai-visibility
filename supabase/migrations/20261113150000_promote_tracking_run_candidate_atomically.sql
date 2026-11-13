@@ -173,6 +173,7 @@ begin
         pr.category is distinct from v_run.category
         or ar.tracking_location is null
         or not (ar.tracking_location = any(v_locations))
+        or (ar.captured_at at time zone 'Asia/Kuala_Lumpur')::date <> v_date
       )
   ) then
     raise exception 'predecessor_raw_responses_extend_beyond_replacement_scope';
