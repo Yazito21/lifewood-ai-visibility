@@ -409,3 +409,48 @@ The Edge Function emits an additional `Overall` visibility row for full-run cand
 This prevents a valid full-run candidate from being rejected simply because its staged payload also contains the Overall row.
 
 No production migration has been applied and no production data has changed.
+
+
+## 2026-11-13: read-only replacement preview RPC committed
+
+Commits:
+- `713b0b9a2f91377d6bf556ba160f957add8007f5` — exclude derived Overall rows from category coverage validation.
+- `b00393828d108f894258851bdc61b8c24897c1c5` — document the validation correction.
+- `d169c8a0427924de32ecec48461347a3260581f0` — add replacement preview RPC.
+
+Added `supabase/migrations/20261113130000_add_tracking_run_replacement_preview.sql`.
+
+### Preview behaviour
+
+The service-role-only `preview_tracking_run_replacement(p_run_id)` function:
+- Calls the read-only candidate validator first.
+- Returns `ready_for_promotion=false` and the validation report when the candidate is invalid.
+- Derives the candidate's exact category/location scope from staged provider-specific visibility rows, excluding derived Overall rows.
+- Finds currently published canonical predecessor runs that occupy those exact date/category/provider/location scopes.
+- Walks predecessor lineage through `supersedes_run_id` up to 50 levels.
+- Reports dependent counts for raw responses, response evidence, citation occurrences, third-party mentions, category observations, daily metrics, daily claims, batch references and source-run references.
+- Performs no inserts, updates or deletes.
+
+### Safety / known limitations
+
+- The preview is not the promotion transaction and does not authorize deletion.
+- Date is read from the candidate's staged metric rows, not inferred from run start time.
+- Legacy date-grain `citations`, `competitors` and direct competitor observations without run IDs are not yet included in predecessor row counts; their exact scope handling must be implemented in the promotion migration.
+- The preview identifies active canonical predecessors and follows their recorded supersession lineage. Historical runs that have no canonical row and no lineage edge will require a separate read-only historical inventory.
+- No Production migration has been applied.
+
+### Updated checklist
+
+- [x] Candidate staging schema and RPC.
+- [x] Candidate write path in Edge Function.
+- [x] Per-location metric finalisation.
+- [x] Durable replacement audit table.
+- [x] Read-only candidate validation.
+- [x] Read-only replacement preview with predecessor dependency counts.
+- [ ] Atomic promotion RPC.
+- [ ] Canonical replacement for all staged and legacy date-grain tables.
+- [ ] Reassignment of daily claims and batch references.
+- [ ] Rebuild Overall metrics per location.
+- [ ] Safe predecessor raw-response and run deletion.
+- [ ] Automated tests for full-run, category-run, multi-location, rollback and retries.
+- [ ] Historical rerun inventory and separate approval before cleanup.
