@@ -186,3 +186,12 @@ This is the staging foundation, not the completed rerun implementation. The Edge
 - [ ] Historical predecessor deletion (separate explicit approval).
 
 No production migration, Edge Function deployment, or production data deletion has occurred.
+
+
+## 2026-11-13: staging scope validation hardened
+
+Commit: `a1866960f9a5fb4fd4dfeb33bca90f11ea48382a`
+
+Updated the staging RPC to reject rows whose `project_id` differs from the candidate run's project, and (for category-scoped runs) reject rows whose category differs from the candidate run's category. The generated fallback row key is now calculated after removing the optional caller-supplied `_candidate_key`, so that metadata does not affect idempotency.
+
+This is a defensive database boundary only. The Edge Function still writes derived data to canonical tables, so replacement behaviour is not active. No migration has been applied to Production.
