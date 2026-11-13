@@ -69,6 +69,9 @@ begin
   if coalesce(cardinality(v_locations), 0) = 0 then
     raise exception 'candidate_has_no_valid_locations';
   end if;
+  if not (v_run.tracking_location = any(v_locations)) then
+    raise exception 'candidate_primary_location_not_in_metric_scope';
+  end if;
 
   -- Every staged date-grain row must match the candidate's exact project/date/category,
   -- location set and provider. The Overall provider is allowed only for visibility_daily.
