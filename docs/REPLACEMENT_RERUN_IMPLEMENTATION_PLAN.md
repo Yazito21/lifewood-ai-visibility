@@ -348,3 +348,53 @@ This is the durable audit foundation only. The table is not yet populated by a p
 - [ ] Historical predecessor deletion after separate explicit approval.
 
 No Production migration or Edge Function deployment has occurred.
+
+
+## 2026-11-13: read-only candidate validation gate committed
+
+Commits:
+- `a57637313fb2053797eac8684319a39778f6f9b2` — add validation RPC.
+- `a62686019fdfdeeda6099356521c23c2f530db71` — correct raw/completed response count validation.
+
+Added `supabase/migrations/20261113120000_add_tracking_run_candidate_validation.sql`.
+
+### Validation behaviour
+
+The service-role-only `validate_tracking_run_candidate(p_run_id)` function is read-only. It returns a JSON report with `valid`, candidate identity, project, run kind, category scope, metric date(s), categories, locations, response counts, metric row counts and a list of validation errors.
+
+It rejects candidates that:
+- Are missing, not completed, already published, or are an Overall aggregate.
+- Have a raw response count different from `tracking_runs.total_prompts`.
+- Have completed response count different from `tracking_runs.completed_prompts`.
+- Contain any non-completed response in an otherwise completed candidate.
+- Have no tracking locations.
+- Do not have exactly one metric date.
+- Do not have the complete expected category/location coverage in provider-specific staged visibility rows.
+- Contain staged rows with project, location or metric-date scope mismatches.
+
+Raw response totals and completed response totals are validated separately because failed prompts can also have persisted diagnostic response rows.
+
+RLS and execute grants restrict the function to service role. It does not publish runs, write canonical tables, delete predecessors, or mutate candidate data.
+
+### Important scope restriction
+
+The current Edge Function uses the current Malaysia-local date and has not yet implemented a historical target-date input. The validator therefore verifies that a candidate has exactly one metric date, but it does not assume that a candidate is a historical rerun. Historical date support remains a separate implementation requirement.
+
+### Updated checklist
+
+- [x] Candidate staging schema and RPC.
+- [x] Edge Function candidate staging writes.
+- [x] Per-location metric finalisation.
+- [x] Durable replacement audit table.
+- [x] Read-only candidate validation gate.
+- [ ] Transactional promotion RPC.
+- [ ] Candidate validation invocation before promotion.
+- [ ] Atomic canonical row replacement and predecessor cleanup.
+- [ ] Daily-claim and batch reference reassignment.
+- [ ] Overall aggregation refresh for every affected location.
+- [ ] Full-run and category-run semantics.
+- [ ] Integration tests including rollback and multi-location cases.
+- [ ] Read-only historical rerun inventory.
+- [ ] Historical predecessor deletion after separate explicit approval.
+
+No Production migration or Edge Function deployment has occurred.
