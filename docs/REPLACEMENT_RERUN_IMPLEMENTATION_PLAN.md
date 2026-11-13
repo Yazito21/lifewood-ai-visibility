@@ -667,3 +667,46 @@ This prevents an old cross-date `supersedes_run_id` chain from being treated as 
 The publication guard still operates on the run row's single `tracking_location`. If candidates can cover more than one location, the promotion transaction must explicitly manage all exact-location predecessor rows; it cannot rely solely on the trigger's single-location supersession lookup. The candidate validator supports multiple locations, so the promotion RPC must either fully support all locations or reject multi-location candidates until that behaviour is tested.
 
 No Production migrations, Edge Function deployments, candidate promotions, or historical deletions were performed.
+
+
+## 2026-11-13: sequential category batch and full-run audit
+
+A further source review traced the dashboard's category batch orchestration and the legacy full-run lineage path. No live data was modified.
+
+### Category batches create one candidate run per category
+
+The Dashboard loops through configured categories sequentially and invokes `visibility-tracking` once per category. Each call creates a separate category-scoped `tracking_runs` candidate. The dashboard records each returned run ID in `tracking_batch_categories.tracking_run_id` and marks the batch category completed when the Edge Function returns `status = completed`.
+
+Because publication has been deferred in the feature branch, these runs can be completed but unpublished. The Dashboard currently treats a completed Edge Function response as a completed category without itself invoking a promotion RPC. Therefore, the future integration must ensure that the Edge Function's final successful response is returned only after the promotion RPC has committed, or the dashboard must explicitly distinguish candidate completion from canonical publication.
+
+### Batch continuation marker is not durable
+
+The Edge Function currently uses `tracking_runs.error_message = 'CATEGORY_BATCH:' || run_id` as a marker to authorize the next category request. However, the final run-status update writes `error_message = null` when there are no run issues. This appears to clear the marker before the next category checks it. The next category's `parentRun` lookup then requires the marker to still be present.
+
+This is a likely sequential-batch continuation defect and must be resolved before end-to-end batch testing. Do not overload `error_message` for batch membership/authorization. Prefer validating the previous run against durable `tracking_batches` / `tracking_batch_categories` membership, project, requester and in-progress batch status, or introduce a dedicated batch relationship field. Preserve normal error_message semantics for actual errors.
+
+### Daily-claim and batch reference semantics
+
+The first standard-admin category run claims the project's daily entitlement. Later category runs in the same batch are created using the previous category run ID as the continuation token. The daily claim therefore points to the first category run, while each category row points to its own run.
+
+The promotion design must not blindly reassign every daily claim to every replacement run. It must preserve the batch's entitlement semantics and ensure deleting/replacing the first category run does not release the daily entitlement or make a completed batch resumable incorrectly. For `tracking_batch_categories`, replace only the exact category row's `tracking_run_id` with its new candidate run ID. Keep the batch-level row/status relationship intact.
+
+### Full-run path remains separate
+
+The Edge Function still supports a full Superadmin request with `tracking_runs.category = null` and `run_kind = 'full'`. The dashboard's standard category batch is a sequence of topic/category runs. The existing Overall aggregation functions select `run_kind = 'topic'` members, so full-run publication cannot be treated as equivalent to a batch of topic runs without an explicit conversion/slicing strategy.
+
+Recommended first safe release:
+- Support category-scoped candidate promotion only.
+- Ensure the standard dashboard category batch promotes each category candidate after validation, or promotes the whole batch atomically only after every category candidate is ready. Choose one model explicitly; do not allow partial batch state to masquerade as a fully replaced multi-category date.
+- Keep full-run candidates completed-but-unpublished and reject promotion until their category-slice and Overall semantics are designed and tested.
+- Superadmin single-category reruns can use the same category promotion contract.
+
+### Next implementation design decision
+
+Choose between:
+1. **Per-category atomic promotion:** each category candidate replaces its own exact scope when successful; the batch can show partial progress if a later category fails. Overall is rebuilt after each category using the latest surviving category runs.
+2. **Whole-batch atomic promotion:** all category candidates stage first; validate the entire batch; replace all configured categories and Overall in one transaction. If any category fails, none of the categories for that batch are replaced.
+
+The user's original requirement states that a successful rerun replaces the exact category/date scope and that failed/incomplete candidates must not disturb existing published data. The whole-batch approach gives stronger all-categories consistency but requires the dashboard to stage all categories before promotion and a batch-level promotion RPC. The per-category approach matches the existing sequential UI more closely but can leave a date containing some newly replaced categories and some older categories if a later category fails. This choice must be confirmed against the intended product behaviour before implementing the final RPC.
+
+No Production migrations, Edge Function deployments, candidate promotions, or historical deletions were performed.
