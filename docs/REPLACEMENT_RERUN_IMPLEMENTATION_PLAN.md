@@ -754,3 +754,68 @@ These changes are committed to the feature branch only. The SQL migration has no
 - A failed first-category claim or scope update does not leave an incorrectly scoped candidate behind.
 
 No Production migrations, Edge Function deployments, candidate promotions, or historical deletions were performed.
+
+
+## 2026-11-13: atomic category promotion implementation drafted
+
+Commits:
+- `aca36d28ae24221cb2d5129bea7f30d648b2bfa0` — initial atomic category promotion RPC.
+- `0313af91af3f51185beee854bc0df583c0f680e4` — strict staged-scope checks and per-run audit counts.
+- `354301d3dde25c06a872bfd4b4ca95fa504fbfc2` — reject orphaned canonical metrics and include surviving/metadata-only predecessor lineage in audit.
+- `010b5e97f59d31acba95ae4220caadc266dd0aea` — invalidate stale Overall snapshots if the category set is incomplete.
+- `554950766d92f9cb294e8da92053e8448f49a830` — call the promotion RPC only after the candidate is completed.
+- `a049b4e1f2f7b0a38a71a52cf722f92d3b4543c5` — retain candidate run ID in batch state when promotion returns an error.
+- `e7beaa05a39f8f9fc825103fb9b1340f844debd6` — audit metadata-only predecessor lineage.
+- `60d92802809b8bc6db14e40f6b3d681526b77ba6` — reject candidates whose raw responses span a different Malaysia-local date.
+- `23b1beaca0db0983e3879b12ddccf95ebe3be94c` — safely resume a failed first-category batch without losing its daily entitlement.
+- `e7e4324626eb472d0d825eafd16077422eaa3837` — restore failed batch status to running when resumed and preserve failed candidate IDs in batch rows.
+
+### Promotion RPC behaviour
+
+New migration `20261113150000_promote_tracking_run_candidate_atomically.sql` adds service-role-only `promote_tracking_run_candidate(p_run_id, p_actor_id)`.
+
+It is deliberately limited to completed, unpublished, category-scoped `topic` candidates. It:
+1. Locks the candidate and serializes the project/date/category/provider scope.
+2. Runs the candidate validator and read-only replacement preview.
+3. Confirms every staged row matches the candidate project, date, category, provider and allowed locations.
+4. Rejects orphaned/unpublished canonical metrics, full-run predecessors, shared-source topic slices, cross-category predecessors and predecessor runs referenced by another source run.
+5. Preserves daily entitlement by reassigning a same-date claim if it points to a predecessor being replaced.
+6. Writes durable per-location predecessor snapshots and row counts to `tracking_run_replacements`.
+7. Removes predecessor raw responses and exact-scope derived rows, while preserving direct competitor registry/observations and the legacy `competitors` table.
+8. Promotes the staged citations, citation occurrences, brand evidence, third-party mentions, category observations and daily metrics using explicit column lists so generated IDs/defaults remain active.
+9. Publishes the candidate only after all canonical rows are inserted; the publication trigger finalizes its per-location metrics.
+10. Rebuilds the engine Overall aggregate independently for every affected location. If the category set is incomplete, it invalidates the stale Overall snapshot instead of leaving metrics that still include the replaced run.
+11. Deletes the candidate staging rows after successful publication.
+
+All operations run in the same PostgreSQL transaction. An exception rolls back the entire promotion, including predecessor deletion and canonical inserts. Full-run candidates and topic slices backed by shared source runs are rejected rather than partially removed.
+
+### Edge Function and batch integration
+
+The Edge Function now calls the promotion RPC only after it has completed response processing and written a completed, unpublished candidate. If promotion fails, it returns `CANDIDATE_PROMOTION_FAILED` with the candidate run ID and leaves the existing published dataset untouched. The Dashboard records that candidate ID for diagnosis/retry.
+
+The category batch workflow now uses durable `tracking_batches` and `tracking_batch_categories` rows for continuation. It passes the actual batch ID, verifies ownership and prior category completion, and no longer relies on the `CATEGORY_BATCH:` error-message marker. The first category's daily-claim-created run is updated to the correct category and tracking location so it becomes a topic run rather than a category-null full run. A failed batch can be resumed by restoring its batch status to running. If the first category already published but the client did not receive the success response, the Edge Function recognises the existing published claim and avoids rerunning it.
+
+### New validation guard
+
+The candidate validator now rejects a candidate if any raw response's `captured_at` Malaysia-local date differs from the staged metric date. This prevents a long run crossing midnight from publishing mixed-date responses under one metric date.
+
+### Important test/deployment gate
+
+The promotion migration and the Edge Function call are committed to the feature branch but have **not** been deployed. No Production data has been changed or deleted.
+
+The live Supabase project inventory queried during this checkpoint returned only Dr D Signature Clinic and MDLand project records; it did not return a Lifewood project record. Do not use either of those client projects for promotion tests. Confirm the intended isolated/staging project or restore a disposable Lifewood test project before running an end-to-end replacement test.
+
+Before any deployment, the promotion SQL still requires execution against an isolated database with fixtures covering:
+- First publication with no predecessor.
+- Single-location replacement.
+- Multi-location replacement where one run owns responses in several locations.
+- Multiple predecessor lineage levels.
+- Cross-date lineage exclusion.
+- Full-run and source-run predecessor rejection.
+- Orphaned daily metric rejection.
+- Daily-claim reassignment.
+- Batch first-category retry after partial failure and after promotion failure.
+- Candidate validation failure and SQL exception rollback.
+- Overall aggregate rebuild with all categories present, and stale Overall invalidation when a category is missing.
+
+Only after these tests pass should the migration be applied to the intended Supabase environment, followed by Edge Function deployment. A Production historical deletion inventory and separate approval remain mandatory.
