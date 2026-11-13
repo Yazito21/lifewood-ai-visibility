@@ -141,6 +141,9 @@ export default function DashboardPage() {
         .select("*").eq("batch_id", batchId).order("ordinal");
       if (readCategoriesError || !batchCategories?.length) throw new Error(readCategoriesError?.message || "No saved batch categories found.");
       const orderedCategories = batchCategories as Array<{id:string;category:string;status:string;tracking_run_id:string|null;ordinal:number}>;
+      await supabase.from("tracking_batches").update({
+        status:"running",last_error:null,completed_at:null,updated_at:new Date().toISOString(),
+      }).eq("id",batchId);
       for (const item of orderedCategories) {
         const category = item.category;
         if (item.status === "completed") {
@@ -171,7 +174,7 @@ export default function DashboardPage() {
         }
         if (data?.error) {
           const message = String(data.message || data.error);
-          await supabase.from("tracking_batch_categories").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
+          await supabase.from("tracking_batch_categories").update({status:"failed",tracking_run_id:data?.run_id ?? null,last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
           await supabase.from("tracking_batches").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",batchId);
           throw new Error(category + ": " + message);
         }
