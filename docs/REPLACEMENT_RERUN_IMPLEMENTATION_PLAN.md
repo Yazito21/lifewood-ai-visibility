@@ -486,3 +486,35 @@ The preview now also reports counts of legacy date-grain `citations` and `compet
 The current Edge Function reads prior canonical citations and merges their frequency into the new candidate citation rows during a full rerun. That behaviour is incompatible with a strict replacement contract, where the new successful run must represent its own result set and superseded date-level citation data must be removed. The preservation/merge block must be removed as part of the final Edge Function promotion integration; until then, the new candidate citation payload is not a pure replacement dataset.
 
 No production migrations or Edge Function deployments have been applied. No production rows have been changed or deleted.
+
+
+## 2026-11-13: predecessor citation carry-forward removed
+
+Commit: `25c197dcd28c4c20eb5798e78a89ca6e476f89fe`
+
+Removed the full-rerun block that read prior `citations` rows and merged their frequencies/URLs into the new candidate. Candidate citation rows now represent citations extracted from the candidate's own responses only. This aligns the candidate payload with replacement semantics: old date-grain citation rows will be removed at promotion, and only the replacement run's citation set should be inserted.
+
+### Candidate staging audit
+
+A source audit of the current Edge Function confirms that it stages these canonical derived tables:
+- `citations`
+- `citation_occurrences`
+- `response_brand_evidence`
+- `third_party_mentions`
+- `category_brand_observations`
+- `visibility_daily`
+
+The Edge Function no longer directly inserts, updates or deletes the canonical derived tables. Raw `ai_responses` and run bookkeeping remain separate candidate-owned writes. The staging schema also allows `competitors` and `direct_competitor_observations`, but the current Edge Function does not stage either table. The promotion implementation must not assume these tables are populated by this candidate path; if these tables are still needed for UI/report consumers, their data must be rebuilt from supported candidate data or deliberately retained according to their independent source-of-truth rules.
+
+### Remaining promotion design gates
+
+Before the promotion RPC is considered safe:
+- Determine whether the legacy `competitors` table is still read by any active application route/report.
+- Determine whether `direct_competitor_observations` is managed by another workflow and must be retained rather than deleted.
+- Define exact category-scoped versus full-run deletion rules for date-grain tables.
+- Replace only citation rows for candidate categories and locations, not other categories or locations.
+- Rebuild Overall after the category-level transaction using the established aggregation function.
+- Ensure the publication trigger's supersession behaviour does not depend on predecessor rows after their deletion.
+- Preserve daily claims, batch references and source-run references before deleting predecessor run records.
+
+No Production migrations or Edge Function deployments have been applied. No production data has been changed or deleted.
