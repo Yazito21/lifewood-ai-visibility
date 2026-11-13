@@ -677,22 +677,13 @@ Deno.serve(async (req: Request) => {
       runId = crypto.randomUUID();
 
       const createTrackingRun = async () => {
-        // Record the previous published run for the exact category/provider/location grain.
-        // This is lineage only: prior rows and raw responses remain immutable/auditable.
-        let supersedesRunId: string | null = null;
-        if (isCategoryScopedRun) {
-          const { data: priorPublished, error: priorError } = await admin.from("tracking_runs")
-            .select("id").eq("project_id", projectId).eq("category", selectedCategory)
-            .eq("provider", "chatgpt").eq("tracking_location", trackingLocationsForRun[0])
-            .not("published_at", "is", null).eq("status", "completed")
-            .order("published_at", { ascending: false }).limit(1).maybeSingle();
-          if (priorError) return json({ error: "PUBLISHED_RUN_LOOKUP_FAILED", message: priorError.message }, 500);
-          supersedesRunId = priorPublished?.id ?? null;
-        }
+        // Do not attach predecessor lineage while the candidate is being created.
+        // The previous implementation selected the latest run without a metric-date
+        // filter, which could link a new day's candidate to an older date. Exact-scope
+        // predecessor discovery and lineage assignment belong in the promotion RPC.
         const { error: runInsertError } = await admin.from("tracking_runs").insert({
           id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running",
           tracking_location: trackingLocationsForRun[0], category: isCategoryScopedRun ? selectedCategory : null,
-          supersedes_run_id: supersedesRunId,
           total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
           ...(newAdminBatchRun ? { error_message: "CATEGORY_BATCH:" + runId } : {}),
         });
