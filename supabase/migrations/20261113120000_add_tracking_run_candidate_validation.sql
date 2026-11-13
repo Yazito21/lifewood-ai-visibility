@@ -86,7 +86,8 @@ begin
     into v_actual_categories, v_metric_locations, v_dates, v_metric_count
   from public.tracking_run_candidate_rows
   where run_id = p_run_id and table_key = 'visibility_daily'
-    and row_data->>'llm_provider' = v_run.provider;
+    and row_data->>'llm_provider' = v_run.provider
+    and coalesce(row_data->>'category', '') <> 'Overall';
 
   if v_actual_categories is distinct from v_expected_categories then
     v_errors := array_append(v_errors, 'candidate_category_coverage_mismatch');
