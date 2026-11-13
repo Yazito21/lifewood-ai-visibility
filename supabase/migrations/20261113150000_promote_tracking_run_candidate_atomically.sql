@@ -474,6 +474,43 @@ begin
     v_aggregate := public.publish_engine_overall_metrics(
       v_run.project_id, v_date, v_location, v_run.provider, true
     );
+
+    -- If one or more categories are still missing, the aggregation function
+    -- returns NULL. Remove any previously published Overall snapshot rather
+    -- than leave an aggregate that still includes the replaced predecessor.
+    if v_aggregate is null then
+      update public.tracking_runs
+      set superseded_at = coalesce(superseded_at, now())
+      where project_id = v_run.project_id
+        and provider = v_run.provider
+        and tracking_location = v_location
+        and run_kind = 'overall_aggregate'
+        and published_at is not null
+        and superseded_at is null
+        and (published_at at time zone 'Asia/Kuala_Lumpur')::date = v_date;
+
+      delete from public.category_brand_observations
+      where project_id = v_run.project_id
+        and category = 'Overall'
+        and metric_date = v_date
+        and tracking_location = v_location
+        and llm_provider = v_run.provider;
+
+      delete from public.visibility_daily
+      where project_id = v_run.project_id
+        and category = 'Overall'
+        and metric_date = v_date
+        and tracking_location = v_location
+        and llm_provider in ('Overall', v_run.provider)
+        and run_id in (
+          select id from public.tracking_runs
+          where project_id = v_run.project_id
+            and provider = v_run.provider
+            and tracking_location = v_location
+            and run_kind = 'overall_aggregate'
+            and (published_at at time zone 'Asia/Kuala_Lumpur')::date = v_date
+        );
+    end if;
   end loop;
 
   delete from public.tracking_run_candidate_rows where run_id = p_run_id;
