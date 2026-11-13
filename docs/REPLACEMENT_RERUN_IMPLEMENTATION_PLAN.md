@@ -307,3 +307,44 @@ The promotion RPC must reject unsupported or ambiguous candidate shapes rather t
 - [ ] Candidate coverage validation for category and full runs.
 - [ ] Daily-claim and batch reference reassignment.
 - [ ] Tests for rollback and all affected foreign keys.
+
+
+## 2026-11-13: durable replacement audit table committed
+
+Commit: `3a5d5a56c066aed6e6fb1f767f9639ad51f68032`
+
+Added `supabase/migrations/20261113110000_add_tracking_run_replacement_audit.sql`.
+
+### Schema
+
+The new `tracking_run_replacements` table records:
+- Project, Malaysia-local metric date, category, provider and tracking location.
+- Replacement run ID and replaced predecessor run ID.
+- JSON snapshots of both run records.
+- Per-table deleted-row counts.
+- Replacement timestamp and actor.
+
+Run IDs are intentionally stored without foreign keys to `tracking_runs`. This is necessary because the required physical deletion of predecessor run records must not erase their replacement lineage. Project and actor references retain normal referential integrity.
+
+RLS is enabled, with direct access revoked from public, anon and authenticated and granted to service role only.
+
+### Scope and limitations
+
+This is the durable audit foundation only. The table is not yet populated by a promotion function. No predecessor records are deleted by this migration. It does not enable production rerun replacement.
+
+### Updated checklist
+
+- [x] Candidate staging schema and RPC.
+- [x] Candidate write path in Edge Function.
+- [x] Per-location metric finalisation.
+- [x] Durable replacement audit schema.
+- [ ] Promotion RPC with exact-scope locking and complete candidate validation.
+- [ ] Atomic canonical replacement and metrics publication.
+- [ ] Daily claim and batch reference reassignment.
+- [ ] Safe predecessor raw-response and run deletion.
+- [ ] Overall aggregation refresh per affected location.
+- [ ] Tests for success, failure, rollback, retries, full-run and category-run cases.
+- [ ] Read-only historical rerun inventory.
+- [ ] Historical predecessor deletion after separate explicit approval.
+
+No Production migration or Edge Function deployment has occurred.
