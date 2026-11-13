@@ -195,3 +195,45 @@ Commit: `a1866960f9a5fb4fd4dfeb33bca90f11ea48382a`
 Updated the staging RPC to reject rows whose `project_id` differs from the candidate run's project, and (for category-scoped runs) reject rows whose category differs from the candidate run's category. The generated fallback row key is now calculated after removing the optional caller-supplied `_candidate_key`, so that metadata does not affect idempotency.
 
 This is a defensive database boundary only. The Edge Function still writes derived data to canonical tables, so replacement behaviour is not active. No migration has been applied to Production.
+
+
+## 2026-11-13: Edge Function candidate-write refactor committed
+
+Commits:
+- `4eb3f2b88769f9f17370ad8405228d0f7fb4ecb5` — route derived candidate writes to staging and defer publication.
+- `0699abef6c22e62235c0ff36e49fb77e0eae2ba1` — calculate candidate citation metrics from candidate occurrence rows.
+
+### Changes
+
+- Added a chunked `stageCandidateRows` helper that sends derived rows to `stage_tracking_candidate_rows` in batches of 250.
+- Replaced direct canonical writes for citations, citation occurrences, response brand evidence, third-party mentions, category brand observations and visibility daily metrics with candidate staging.
+- Removed pre-publication category cleanup of canonical competitors, observations, citations, occurrences and daily metrics.
+- Removed the category rerun cleanup of evidence and third-party mentions.
+- Candidate run completion no longer sets `published_at`; publication is deferred to the future promotion RPC.
+- Citation counts for candidate metrics are calculated from the current candidate's in-memory occurrence rows, rather than querying canonical occurrence rows belonging to a prior published run.
+- Added deterministic candidate keys based on stable row identity fields.
+
+### Important incomplete items / blockers
+
+- The Edge Function still persists raw `ai_responses` under the candidate run ID. This is intentional and necessary for evidence foreign keys, but promotion and failure-retention policies still need to be completed.
+- The promotion RPC has not yet been implemented. Therefore successful runs remain completed but unpublished and do not update the canonical dashboard.
+- The full-run path needs separate treatment for its Overall aggregate and per-category publication semantics.
+- The staging RPC and migration have not been applied to Production. The modified Edge Function must not be deployed to Production before the migration and promotion RPC are deployed together.
+- No Deno typecheck, integration test or live candidate run has been executed yet.
+
+### Updated checklist
+
+- [x] Add candidate staging schema and service-role RPC.
+- [x] Add Edge Function staging helper and route the derived write paths to staging.
+- [x] Remove premature category cleanup operations.
+- [x] Defer publication until a promotion transaction exists.
+- [x] Compute candidate citation counts without reading the old canonical dataset.
+- [ ] Implement atomic promotion RPC for category-scoped and full-run workflows.
+- [ ] Ensure promotion deletes/replaces all scoped canonical derived rows and handles foreign-key dependencies.
+- [ ] Ensure canonical rank finalisation and Overall aggregation occur within the intended transaction boundary.
+- [ ] Update client/run-history logic for completed-but-unpublished candidate runs.
+- [ ] Add automated tests and run Deno checks.
+- [ ] Read-only historical rerun inventory.
+- [ ] Historical predecessor deletion (separate explicit approval).
+
+No Production migration, Edge Function deployment, or historical data deletion has occurred.
