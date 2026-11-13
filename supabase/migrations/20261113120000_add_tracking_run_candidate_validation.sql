@@ -66,10 +66,13 @@ begin
   from public.ai_responses ar
   where ar.run_id = p_run_id;
 
-  if v_response_count <> v_run.completed_prompts then
-    v_errors := array_append(v_errors, 'raw_response_count_does_not_match_completed_prompts');
+  if v_response_count <> v_run.total_prompts then
+    v_errors := array_append(v_errors, 'raw_response_count_does_not_match_total_prompts');
   end if;
   if v_completed_response_count <> v_run.completed_prompts then
+    v_errors := array_append(v_errors, 'completed_response_count_does_not_match_completed_prompts');
+  end if;
+  if v_completed_response_count <> v_response_count then
     v_errors := array_append(v_errors, 'candidate_contains_non_completed_response');
   end if;
   if coalesce(cardinality(v_expected_locations), 0) = 0 then
