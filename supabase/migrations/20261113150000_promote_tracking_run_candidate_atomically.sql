@@ -209,6 +209,9 @@ begin
           and vd.metric_date = v_date
           and vd.category = v_run.category
           and vd.tracking_location = any(v_locations)
+        union
+        select v_old.tracking_location
+        where v_old.tracking_location = any(v_locations)
       ) scoped
       where scoped.tracking_location is not null
       order by scoped.tracking_location
