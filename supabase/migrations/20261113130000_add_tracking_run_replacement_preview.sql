@@ -104,6 +104,18 @@ begin
       join public.ai_responses ar on ar.id = co.response_id where ar.run_id = l.id),
     'third_party_mentions', (select count(*) from public.third_party_mentions tm
       join public.ai_responses ar on ar.id = tm.response_id where ar.run_id = l.id),
+    'legacy_citations_in_scope', (select count(*) from public.citations c
+      where c.project_id = v_candidate.project_id
+        and c.metric_date = v_date
+        and c.category = l.category
+        and c.llm_provider = v_candidate.provider
+        and c.tracking_location = l.tracking_location),
+    'legacy_competitors_in_scope', (select count(*) from public.competitors c
+      where c.project_id = v_candidate.project_id
+        and c.metric_date = v_date
+        and c.category = l.category
+        and c.llm_provider = v_candidate.provider
+        and c.tracking_location = l.tracking_location),
     'category_brand_observations', (select count(*) from public.category_brand_observations o where o.run_id = l.id),
     'visibility_daily', (select count(*) from public.visibility_daily v where v.run_id = l.id),
     'daily_claims', (select count(*) from public.tracking_run_daily_claims c where c.run_id = l.id),
