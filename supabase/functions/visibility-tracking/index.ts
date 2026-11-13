@@ -1465,12 +1465,30 @@ Deno.serve(async (req: Request) => {
         message: runIssues.join("; ") || "The category did not complete successfully.",
       });
     }
+
+    // A successful candidate becomes canonical only through the atomic promotion RPC.
+    // If promotion fails, retain this completed unpublished candidate for diagnosis
+    // and leave the currently published dataset untouched.
+    const { data: promotion, error: promotionError } = await admin.rpc("promote_tracking_run_candidate", {
+      p_run_id: runId,
+      p_actor_id: userId,
+    });
+    if (promotionError || promotion?.status !== "published") {
+      return json({
+        error: "CANDIDATE_PROMOTION_FAILED",
+        run_id: runId,
+        status: "completed_unpublished",
+        message: promotionError?.message || "The promotion RPC did not confirm publication.",
+      }, 500);
+    }
+
     return json({
-      mode, run_id: runId, status, total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
+      mode, run_id: runId, status, published: true, promotion,
+      total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
       analysis_failures: extractionFailures,
       classification_failures: classificationFailures,
       visibility_score: succeeded.length ? Math.round(succeeded.filter((r) => r.brand_mentioned).length / succeeded.length * 1000) / 10 : 0,
-      message: extractionFailures || classificationFailures.length ? "Tracking completed with analysis/classification failures; inspect the run before using derived metrics." : "ChatGPT tracking run finished.",
+      message: "ChatGPT tracking run finished and its replacement was published successfully.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
