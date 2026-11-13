@@ -454,3 +454,10 @@ The service-role-only `preview_tracking_run_replacement(p_run_id)` function:
 - [ ] Safe predecessor raw-response and run deletion.
 - [ ] Automated tests for full-run, category-run, multi-location, rollback and retries.
 - [ ] Historical rerun inventory and separate approval before cleanup.
+
+
+### Replacement preview SQL correction
+
+Commit: `7689e40c710d29c0b48fe4f728829e2e50226598`
+
+Enabled PostgreSQL recursive-CTE syntax for the predecessor lineage walk. This is a syntax correction to the read-only preview function; it does not change database state.
