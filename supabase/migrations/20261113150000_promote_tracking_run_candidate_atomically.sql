@@ -82,7 +82,8 @@ begin
         or (s.row_data ? 'category' and s.row_data->>'category' is distinct from v_run.category)
         or (s.row_data ? 'tracking_location' and not (s.row_data->>'tracking_location' = any(v_locations)))
         or (s.row_data ? 'llm_provider'
-            and s.row_data->>'llm_provider' not in (v_run.provider, 'Overall'))
+            and s.row_data->>'llm_provider' <> v_run.provider
+            and not (s.table_key = 'visibility_daily' and s.row_data->>'llm_provider' = 'Overall'))
         or (s.row_data ? 'provider' and s.row_data->>'provider' is distinct from v_run.provider)
         or (s.row_data ? 'run_id' and nullif(s.row_data->>'run_id', '')::uuid is distinct from p_run_id)
       )
@@ -100,6 +101,25 @@ begin
   select coalesce(array_agg(distinct (item->>'run_id')::uuid order by (item->>'run_id')::uuid), array[]::uuid[])
     into v_predecessors
   from jsonb_array_elements(coalesce(v_preview->'predecessors', '[]'::jsonb)) item;
+
+  if exists (
+    select 1
+    from public.visibility_daily vd
+    left join public.tracking_runs old on old.id = vd.run_id
+    where vd.project_id = v_run.project_id
+      and vd.metric_date = v_date
+      and vd.category = v_run.category
+      and vd.llm_provider = v_run.provider
+      and vd.tracking_location = any(v_locations)
+      and (
+        vd.run_id is null
+        or old.id is null
+        or old.status <> 'completed'
+        or old.published_at is null
+      )
+  ) then
+    raise exception 'existing_canonical_metric_has_missing_or_unpublished_run_lineage';
+  end if;
 
   -- A category replacement must never delete a full run or a topic slice whose
   -- raw responses are owned by a shared source run. Those require a separate
@@ -175,14 +195,23 @@ begin
     order by id
   loop
     for v_location in
-      select distinct vd.tracking_location
-      from public.visibility_daily vd
-      where vd.run_id = v_old.id
-        and vd.project_id = v_run.project_id
-        and vd.metric_date = v_date
-        and vd.category = v_run.category
-        and vd.llm_provider = v_run.provider
-      order by vd.tracking_location
+      select distinct scoped.tracking_location
+      from (
+        select ar.tracking_location
+        from public.ai_responses ar
+        where ar.run_id = v_old.id
+          and ar.tracking_location = any(v_locations)
+        union
+        select vd.tracking_location
+        from public.visibility_daily vd
+        where vd.run_id = v_old.id
+          and vd.project_id = v_run.project_id
+          and vd.metric_date = v_date
+          and vd.category = v_run.category
+          and vd.tracking_location = any(v_locations)
+      ) scoped
+      where scoped.tracking_location is not null
+      order by scoped.tracking_location
     loop
       select jsonb_build_object(
         'raw_responses', (
