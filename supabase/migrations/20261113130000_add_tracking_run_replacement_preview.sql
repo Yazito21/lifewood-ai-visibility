@@ -50,7 +50,7 @@ begin
   ) order by category, tracking_location), '[]'::jsonb)
   into v_scope from candidate_scope;
 
-  with candidate_scope as (
+  with recursive candidate_scope as (
     select distinct row_data->>'category' as category,
                     row_data->>'tracking_location' as tracking_location
     from public.tracking_run_candidate_rows
