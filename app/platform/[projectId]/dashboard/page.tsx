@@ -165,7 +165,7 @@ export default function DashboardPage() {
           if (error.context instanceof Response) {
             try { const body = await error.context.clone().json(); message = body?.message || body?.error || message; } catch { /* use SDK message */ }
           }
-          await supabase.from("tracking_batch_categories").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
+          await supabase.from("tracking_batch_categories").update({status:"failed",tracking_run_id:data.run_id ?? null,last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
           await supabase.from("tracking_batches").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",batchId);
           throw new Error(category + ": " + message);
         }
