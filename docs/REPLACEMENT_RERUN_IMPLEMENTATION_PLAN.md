@@ -639,3 +639,31 @@ Findings:
 6. [ ] Only then design and implement the atomic promotion RPC.
 
 No Production migration, Edge Function deployment, candidate promotion, or historical deletion was performed in this checkpoint.
+
+
+## 2026-11-13: exact-scope lineage safety fixes committed
+
+Commits:
+- `1234688d37ad8c560ae6c5e344271ddce57016cf` — defer predecessor lineage assignment in the Edge Function.
+- `82510d61ad7f499957ad267d9bc22e964a36cd82` — constrain replacement-preview lineage recursion to the exact candidate scope/date.
+
+### Edge Function change
+
+The Edge Function no longer queries the latest published run and writes it into `supersedes_run_id` when creating a candidate. The old lookup did not constrain the Malaysia-local metric date, so a new candidate could have been linked to a prior day's run. Candidate creation now leaves predecessor lineage unset. The promotion transaction must discover exact-scope predecessors and assign lineage as part of the atomic publication process.
+
+### Preview change
+
+The recursive predecessor walk now additionally requires each parent run to match:
+- Candidate project.
+- Candidate provider.
+- Candidate category and tracking location.
+- Candidate metric date derived from the staged visibility rows, compared using Malaysia-local publication date.
+- Completed and published status.
+
+This prevents an old cross-date `supersedes_run_id` chain from being treated as a deletion list for the current date. The initial predecessor selection remains based on canonical visibility rows for the candidate's exact date/category/provider/location.
+
+### Remaining caveat
+
+The publication guard still operates on the run row's single `tracking_location`. If candidates can cover more than one location, the promotion transaction must explicitly manage all exact-location predecessor rows; it cannot rely solely on the trigger's single-location supersession lookup. The candidate validator supports multiple locations, so the promotion RPC must either fully support all locations or reject multi-location candidates until that behaviour is tested.
+
+No Production migrations, Edge Function deployments, candidate promotions, or historical deletions were performed.
