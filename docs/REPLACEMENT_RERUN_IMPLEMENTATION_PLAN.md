@@ -461,3 +461,28 @@ The service-role-only `preview_tracking_run_replacement(p_run_id)` function:
 Commit: `7689e40c710d29c0b48fe4f728829e2e50226598`
 
 Enabled PostgreSQL recursive-CTE syntax for the predecessor lineage walk. This is a syntax correction to the read-only preview function; it does not change database state.
+
+
+## 2026-11-13: candidate ownership validation and preview coverage
+
+Commits:
+- `9a858e4e7b0586bfce06b26f1e6b24566c816199` — validate staged run and response ownership.
+- `e4537e958bcb575244000cad49fbd407254073ee` — include legacy citation and competitor counts in preview.
+
+### Candidate validator hardening
+
+The read-only validator now rejects staged rows that:
+- Carry a `run_id` different from the candidate.
+- Reference an `ai_responses` row that does not belong to the candidate run (for citation occurrences, response evidence and third-party mentions).
+
+This prevents candidate staging from accidentally retaining response-linked derived records from a predecessor.
+
+### Replacement preview coverage
+
+The preview now also reports counts of legacy date-grain `citations` and `competitors` for each predecessor's exact project/date/category/provider/location scope. These tables do not carry a run ID, so their replacement must be driven by the candidate's exact scope rather than predecessor run lineage.
+
+### Newly confirmed replacement constraint
+
+The current Edge Function reads prior canonical citations and merges their frequency into the new candidate citation rows during a full rerun. That behaviour is incompatible with a strict replacement contract, where the new successful run must represent its own result set and superseded date-level citation data must be removed. The preservation/merge block must be removed as part of the final Edge Function promotion integration; until then, the new candidate citation payload is not a pure replacement dataset.
+
+No production migrations or Edge Function deployments have been applied. No production rows have been changed or deleted.
