@@ -151,3 +151,38 @@ The current date-grain tables cannot support phase 1 without a staging boundary.
 - [ ] Historical predecessor deletion (requires separate explicit approval).
 
 No production data has been deleted or modified as part of this audit. No schema changes or Edge Function deployments have been applied.
+
+
+## 2026-11-13: candidate staging foundation committed
+
+Commit: `d2be5f1b853ebe0b0b87fbb9a8371863e621833e`
+
+Added migration `supabase/migrations/20261113090000_add_tracking_run_candidate_staging.sql` to the feature branch.
+
+### What it adds
+
+- `tracking_run_candidate_rows`: run-scoped JSONB staging for derived rows.
+- Allowed table keys are explicitly whitelisted: citations, citation occurrences, response evidence, third-party mentions, category observations, daily metrics, competitors and direct competitor observations.
+- Unique run/table/row key makes retries idempotent.
+- `stage_tracking_candidate_rows` RPC validates service-role access, run existence, writable run status and allowed table keys.
+- RLS enabled; access revoked from public, anon and authenticated; service role only.
+- Additive migration only. It does not alter or delete existing published data.
+
+### Important limitation
+
+This is the staging foundation, not the completed rerun implementation. The Edge Function has not yet been switched to write these candidate rows, and there is no promotion RPC yet. Do not apply this migration to Production or consider rerun replacement active until the Edge Function, promotion transaction, read-path changes and tests are complete.
+
+### Updated checklist
+
+- [x] Initial implementation plan and audit.
+- [x] Additive candidate staging schema and staging RPC committed to feature branch.
+- [ ] Route every derived Edge Function write to candidate staging.
+- [ ] Remove all pre-publication cleanup of canonical rows.
+- [ ] Add atomic promotion RPC with exact scope locking and rollback.
+- [ ] Promote candidate rows into canonical tables and refresh category/Overall metrics.
+- [ ] Update read paths and run history to expose only canonical published data.
+- [ ] Automated and integration tests.
+- [ ] Historical rerun inventory (read-only).
+- [ ] Historical predecessor deletion (separate explicit approval).
+
+No production migration, Edge Function deployment, or production data deletion has occurred.
