@@ -541,6 +541,26 @@ Deno.serve(async (req: Request) => {
       if (error) throw new Error("STAGE_JOURNAL_COMPLETE_FAILED: " + error.message);
       if (activeStageKey === stageKey) activeStageKey = null;
     };
+    const stageCandidateRows = async (tableKey: string, rows: Array<Record<string, unknown>>) => {
+      if (!activeRunId || !rows.length) return;
+      for (let offset = 0; offset < rows.length; offset += 250) {
+        const batch = rows.slice(offset, offset + 250).map((row, index) => ({
+          ...row,
+          _candidate_key: String(row.id ?? row.response_id
+            ? [row.id ?? "", row.response_id ?? "", row.entity_id ?? "", row.brand_id ?? "",
+                row.canonical_url ?? "", row.url ?? "", row.category ?? "", row.tracking_location ?? "",
+                row.llm_provider ?? "", row.provider ?? "", row.metric_date ?? "", row.prompt_id ?? "",
+                row.match_source ?? "", row.matched_value ?? "", offset + index].join("|")
+            : offset + index),
+        }));
+        const { error } = await admin.rpc("stage_tracking_candidate_rows", {
+          p_run_id: activeRunId,
+          p_table_key: tableKey,
+          p_rows: batch,
+        });
+        if (error) throw new Error("CANDIDATE_STAGING_FAILED (" + tableKey + "): " + error.message);
+      }
+    };
     const body = await req.json();
     // Category-scoped tracking is orchestrated client-side as one request per category.
     // The server validates and processes only that category for each persistent run.
@@ -881,47 +901,11 @@ Deno.serve(async (req: Request) => {
     }).formatToParts(new Date());
     const day = `${dateParts.find((p) => p.type === "year")?.value}-${dateParts.find((p) => p.type === "month")?.value}-${dateParts.find((p) => p.type === "day")?.value}`;
 
-    await startStage("category_cleanup", { category: selectedCategory ?? null, category_scoped: isCategoryScopedRun });
-    // Category-scoped reruns replace same-day aggregate rows for only the selected category.
-    // Raw responses and historical run rows are intentionally retained.
-    if (isSuperadminRerun && isCategoryScopedRun) {
-      // Replace only this category's daily aggregates at every configured location.
-      // Deletion before publication remains a TRK-04 recovery risk.
-      const { data: categoryCompetitors, error: categoryCompetitorsError } = await admin.from("direct_competitors")
-        .select("id").eq("project_id", projectId).eq("category", selectedCategory);
-      if (categoryCompetitorsError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + categoryCompetitorsError.message);
-      const competitorIds = (categoryCompetitors ?? []).map((row: { id: string }) => row.id);
-      for (const trackingLocation of trackingLocationsForRun) {
-        const { error: competitorDeleteError } = await admin.from("competitors").delete()
-          .eq("project_id", projectId).eq("metric_date", day)
-          .eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (competitorDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + competitorDeleteError.message);
-        if (competitorIds.length) {
-          const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations").delete()
-            .eq("project_id", projectId).eq("metric_date", day)
-            .eq("tracking_location", trackingLocation).in("competitor_id", competitorIds);
-          if (directObservationDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + directObservationDeleteError.message);
-        }
-        const { error: categoryObservationDeleteError } = await admin.from("category_brand_observations").delete()
-          .eq("project_id", projectId).eq("metric_date", day)
-          .eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (categoryObservationDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + categoryObservationDeleteError.message);
-        const { error: citationDeleteError } = await admin.from("citations").delete()
-          .eq("project_id", projectId).eq("metric_date", day)
-          .eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (citationDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
-        const { error: occurrenceDeleteError } = await admin.from("citation_occurrences").delete()
-          .eq("project_id", projectId).eq("metric_date", day)
-          .eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (occurrenceDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + occurrenceDeleteError.message);
-        const { error: metricsDeleteError } = await admin.from("visibility_daily").delete()
-          .eq("project_id", projectId).eq("metric_date", day)
-          .eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (metricsDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + metricsDeleteError.message);
-      }
-    }
+    // Candidate reruns must never delete or modify published date-grain rows.
+    // Cleanup is deferred to the atomic promotion transaction.
+    await startStage("candidate_scope_preparation", { category: selectedCategory ?? null, category_scoped: isCategoryScopedRun });
+    await completeStage("candidate_scope_preparation", { cleanup_deferred_to_promotion: true });
 
-    await completeStage("category_cleanup", { category: selectedCategory ?? null, category_scoped: isCategoryScopedRun });
     const categoryNames = [...new Set(prompts.map((p) => String(p.category ?? "General")))];
     const citationsMap = new Map<string, Record<string,unknown>>();
     const competitorMap = new Map<string, number>();
@@ -969,8 +953,7 @@ Deno.serve(async (req: Request) => {
     }
     await startStage("citation_persistence", { citation_rows: citationRows.length });
     if (citationRows.length) {
-      const { error } = await admin.from("citations").upsert(citationRows, { onConflict: "project_id,metric_date,category,llm_provider,url,tracking_location" });
-      if (error) throw new Error("CITATIONS_WRITE_FAILED: " + error.message);
+      await stageCandidateRows("citations", citationRows);
     }
 
 
@@ -1237,26 +1220,8 @@ Deno.serve(async (req: Request) => {
         });
       }
     }
-    if (isSuperadminRerun && isCategoryScopedRun) {
-      // Remove only this category's derived evidence and mention aggregates before replacing them.
-      const { data: selectedCategoryResponses, error: selectedCategoryResponsesError } = await admin.from("ai_responses")
-        .select("id").eq("project_id", projectId).eq("run_id", runId).eq("tracking_location", trackingLocationsForRun[0]);
-      if (selectedCategoryResponsesError) throw new Error("CATEGORY_RERUN_RESPONSE_LOOKUP_FAILED: " + selectedCategoryResponsesError.message);
-      const selectedResponseIds = (selectedCategoryResponses ?? []).map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
-      if (selectedResponseIds.length) {
-        for (let offset = 0; offset < selectedResponseIds.length; offset += 500) {
-          const responseIds = selectedResponseIds.slice(offset, offset + 500);
-          const { error: oldEvidenceDeleteError } = await admin.from("response_brand_evidence").delete()
-            .in("response_id", responseIds).eq("category", selectedCategory);
-          if (oldEvidenceDeleteError) throw new Error("CATEGORY_RERUN_EVIDENCE_CLEANUP_FAILED: " + oldEvidenceDeleteError.message);
-        }
-      }
-      for (const trackingLocation of trackingLocationsForRun) {
-        const { error: thirdPartyDeleteError } = await admin.from("third_party_mentions").delete()
-          .eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (thirdPartyDeleteError) throw new Error("CATEGORY_RERUN_MENTIONS_CLEANUP_FAILED: " + thirdPartyDeleteError.message);
-      }
-    }
+    // Candidate evidence and mention rows are isolated by run_id and staged;
+    // published evidence is left untouched until atomic promotion.
 
     // Include brand classification and evidence generation in this journaled stage.
     // Counts are recorded at completion once the final row sets are known.
@@ -1292,25 +1257,16 @@ Deno.serve(async (req: Request) => {
 
     for (let offset = 0; offset < citationOccurrenceRows.length; offset += 500) {
       const batch = citationOccurrenceRows.slice(offset, offset + 500);
-      const { error: citationOccurrenceError } = await admin.from("citation_occurrences").upsert(batch, {
-        onConflict: "response_id,entity_id,canonical_url",
-      });
-      if (citationOccurrenceError) throw new Error("CITATION_OCCURRENCE_WRITE_FAILED: " + citationOccurrenceError.message);
+      await stageCandidateRows("citation_occurrences", batch);
     }
 
     for (let offset = 0; offset < uniqueEvidenceRows.length; offset += 500) {
       const batch = uniqueEvidenceRows.slice(offset, offset + 500);
-      const { error: evidenceWriteError } = await admin.from("response_brand_evidence").upsert(batch, {
-        onConflict: "response_id,brand_id,category,match_source,matched_value",
-      });
-      if (evidenceWriteError) throw new Error("RESPONSE_BRAND_EVIDENCE_WRITE_FAILED: " + evidenceWriteError.message);
+      await stageCandidateRows("response_brand_evidence", batch);
     }
     for (let offset = 0; offset < uniqueThirdPartyRows.length; offset += 500) {
       const batch = uniqueThirdPartyRows.slice(offset, offset + 500);
-      const { error: thirdPartyWriteError } = await admin.from("third_party_mentions").upsert(batch, {
-        onConflict: "project_id,response_id,canonical_url,source_type,category,tracking_location",
-      });
-      if (thirdPartyWriteError) throw new Error("THIRD_PARTY_MENTIONS_WRITE_FAILED: " + thirdPartyWriteError.message);
+      await stageCandidateRows("third_party_mentions", batch);
     }
     await completeStage("evidence_and_mentions_persistence", { evidence_rows: uniqueEvidenceRows.length, mention_rows: uniqueThirdPartyRows.length });
     const brandName = String(project.brand_name ?? "Brand");
@@ -1458,21 +1414,14 @@ Deno.serve(async (req: Request) => {
         };
       });
       if (observations.length) {
-        const { error: observationError } = await admin.from("category_brand_observations").upsert(observations, {
-          onConflict: "project_id,brand_id,category,metric_date,tracking_location,llm_provider",
-        });
-        if (observationError) throw new Error("CATEGORY_BRAND_OBSERVATION_WRITE_FAILED: " + observationError.message);
+        await stageCandidateRows("category_brand_observations", observations);
       }
       const row = {
         project_id: projectId, metric_date: day, tracking_location: trackingLocation, category, llm_provider: "Overall", run_id: runId,
         ...metrics,
         citation_count: citationCountsByEntity.get(fixedTrackedId) ?? 0,
       };
-      const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,category,llm_provider,tracking_location" });
-      if (error) throw new Error("METRICS_WRITE_FAILED for " + category + ": " + error.message);
-      const providerRow = { ...row, llm_provider: "chatgpt" };
-      const { error: providerError } = await admin.from("visibility_daily").upsert(providerRow, { onConflict: "project_id,metric_date,category,llm_provider,tracking_location" });
-      if (providerError) throw new Error("PROVIDER_METRICS_WRITE_FAILED for " + category + ": " + providerError.message);
+      await stageCandidateRows("visibility_daily", [row, { ...row, llm_provider: "chatgpt" }]);
       }
     }
 
@@ -1498,7 +1447,9 @@ Deno.serve(async (req: Request) => {
       completed_at: finalizedAt,
       // Only a fully successful run is a published canonical candidate. Partial
       // runs retain their raw data and diagnostics but do not enter lineage.
-      published_at: status === "completed" ? finalizedAt : null,
+      // Candidate runs are not published here. The promotion RPC will publish
+      // only after validating and atomically replacing the exact date scope.
+      published_at: null,
     }).eq("id", runId);
     if (runStatusWriteError) throw new Error("TRACKING_RUN_STATUS_WRITE_FAILED: " + runStatusWriteError.message);
     if (status !== "completed") {
