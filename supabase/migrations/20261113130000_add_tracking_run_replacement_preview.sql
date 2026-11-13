@@ -116,6 +116,18 @@ begin
         and c.category = l.category
         and c.llm_provider = v_candidate.provider
         and c.tracking_location = l.tracking_location),
+    'direct_competitor_observations_retained', (select count(*)
+      from public.direct_competitor_observations o
+      join public.direct_competitors dc on dc.id = o.competitor_id and dc.project_id = o.project_id
+      where o.project_id = v_candidate.project_id
+        and o.metric_date = v_date
+        and o.tracking_location = l.tracking_location
+        and o.llm_provider = v_candidate.provider
+        and dc.category = l.category),
+    'direct_competitor_registry_rows_retained', (select count(*)
+      from public.direct_competitors dc
+      where dc.project_id = v_candidate.project_id
+        and dc.category = l.category),
     'category_brand_observations', (select count(*) from public.category_brand_observations o where o.run_id = l.id),
     'visibility_daily', (select count(*) from public.visibility_daily v where v.run_id = l.id),
     'daily_claims', (select count(*) from public.tracking_run_daily_claims c where c.run_id = l.id),
