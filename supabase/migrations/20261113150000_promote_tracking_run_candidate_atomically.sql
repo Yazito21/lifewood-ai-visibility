@@ -42,7 +42,7 @@ begin
     raise exception 'candidate_must_be_completed_and_unpublished';
   end if;
 
-  if v_run.category is null or v_run.run_kind <> 'topic' then
+  if v_run.category is null or v_run.run_kind is distinct from 'topic' then
     raise exception 'only_category_scoped_topic_candidates_can_be_promoted';
   end if;
 
@@ -70,6 +70,26 @@ begin
     raise exception 'candidate_has_no_valid_locations';
   end if;
 
+  -- Every staged date-grain row must match the candidate's exact project/date/category,
+  -- location set and provider. The Overall provider is allowed only for visibility_daily.
+  if exists (
+    select 1
+    from public.tracking_run_candidate_rows s
+    where s.run_id = p_run_id
+      and (
+        (s.row_data ? 'project_id' and nullif(s.row_data->>'project_id', '')::uuid is distinct from v_run.project_id)
+        or (s.row_data ? 'metric_date' and (s.row_data->>'metric_date')::date <> v_date)
+        or (s.row_data ? 'category' and s.row_data->>'category' is distinct from v_run.category)
+        or (s.row_data ? 'tracking_location' and not (s.row_data->>'tracking_location' = any(v_locations)))
+        or (s.row_data ? 'llm_provider'
+            and s.row_data->>'llm_provider' not in (v_run.provider, 'Overall'))
+        or (s.row_data ? 'provider' and s.row_data->>'provider' is distinct from v_run.provider)
+        or (s.row_data ? 'run_id' and nullif(s.row_data->>'run_id', '')::uuid is distinct from p_run_id)
+      )
+  ) then
+    raise exception 'staged_rows_do_not_match_exact_candidate_scope';
+  end if;
+
   -- Serialize replacements for this exact project/date/category/provider scope.
   perform pg_advisory_xact_lock(hashtextextended(
     v_run.project_id::text || '|' || v_date::text || '|' || v_run.category || '|' || v_run.provider,
@@ -92,7 +112,7 @@ begin
         old.project_id <> v_run.project_id
         or old.provider <> v_run.provider
         or old.category is distinct from v_run.category
-        or old.run_kind <> 'topic'
+        or old.run_kind is distinct from 'topic'
         or old.source_run_id is not null
         or old.status <> 'completed'
         or old.published_at is null
@@ -128,6 +148,7 @@ begin
     where ar.run_id = any(v_predecessors)
       and (
         pr.category is distinct from v_run.category
+        or ar.tracking_location is null
         or not (ar.tracking_location = any(v_locations))
       )
   ) then
@@ -181,26 +202,36 @@ begin
         ),
         'third_party_mentions', (
           select count(*) from public.third_party_mentions tm
-          where tm.project_id = v_run.project_id and tm.metric_date = v_date
+          join public.ai_responses ar on ar.id = tm.response_id
+          where ar.run_id = v_old.id and ar.tracking_location = v_location
+            and tm.project_id = v_run.project_id and tm.metric_date = v_date
             and tm.category = v_run.category and tm.llm_provider = v_run.provider
             and tm.tracking_location = v_location
         ),
         'citations', (
-          select count(*) from public.citations c
-          where c.project_id = v_run.project_id and c.metric_date = v_date
-            and c.category = v_run.category and c.llm_provider = v_run.provider
-            and c.tracking_location = v_location
+          select case when exists (
+            select 1 from public.visibility_daily vd
+            where vd.run_id = v_old.id and vd.project_id = v_run.project_id
+              and vd.metric_date = v_date and vd.category = v_run.category
+              and vd.tracking_location = v_location and vd.llm_provider = v_run.provider
+          ) then (
+            select count(*) from public.citations c
+            where c.project_id = v_run.project_id and c.metric_date = v_date
+              and c.category = v_run.category and c.llm_provider = v_run.provider
+              and c.tracking_location = v_location
+          ) else 0 end
         ),
         'category_brand_observations', (
           select count(*) from public.category_brand_observations o
           where o.project_id = v_run.project_id and o.metric_date = v_date
             and o.category = v_run.category and o.llm_provider = v_run.provider
-            and o.tracking_location = v_location
+            and o.tracking_location = v_location and o.run_id = v_old.id
         ),
         'visibility_daily', (
           select count(*) from public.visibility_daily vd
-          where vd.project_id = v_run.project_id and vd.metric_date = v_date
-            and vd.category = v_run.category and vd.tracking_location = v_location
+          where vd.run_id = v_old.id and vd.project_id = v_run.project_id
+            and vd.metric_date = v_date and vd.category = v_run.category
+            and vd.tracking_location = v_location
             and vd.llm_provider in ('Overall', v_run.provider)
         )
       ) into v_deleted;
