@@ -924,33 +924,6 @@ Deno.serve(async (req: Request) => {
       }
     }
     const citationRows = [...citationsMap.values()];
-    if (isSuperadminRerun && !isCategoryScopedRun) {
-      // Preserve historical URLs independently for each location on full reruns.
-      const { data: previousCitations, error: previousCitationError } = await admin.from("citations")
-        .select("category,url,frequency,page_name,brand_name,is_brand_related,prompt_id,tracking_location")
-        .eq("project_id", projectId).eq("metric_date", day)
-        .in("tracking_location", trackingLocationsForRun).eq("llm_provider", "chatgpt");
-      if (previousCitationError) throw new Error("CITATION_HISTORY_READ_FAILED: " + previousCitationError.message);
-      const currentByKey = new Map(citationRows.map((row) => [JSON.stringify([row.tracking_location, row.category, row.url]), row]));
-      for (const previous of previousCitations ?? []) {
-        const previousLocation = String((previous as Record<string, unknown>).tracking_location ?? trackingLocationsForRun[0]);
-        const key = JSON.stringify([previousLocation, String(previous.category), String(previous.url)]);
-        const current = currentByKey.get(key);
-        if (current) {
-          current.frequency = Number(current.frequency ?? 0) + Number(previous.frequency ?? 0);
-        } else {
-          const preserved = {
-            project_id: projectId, metric_date: day, tracking_location: previousLocation,
-            llm_provider: "chatgpt", category: previous.category, url: previous.url,
-            frequency: Number(previous.frequency ?? 0), page_name: previous.page_name,
-            brand_name: previous.brand_name, is_brand_related: previous.is_brand_related,
-            prompt_id: previous.prompt_id,
-          };
-          citationRows.push(preserved);
-          currentByKey.set(key, preserved);
-        }
-      }
-    }
     await startStage("citation_persistence", { citation_rows: citationRows.length });
     if (citationRows.length) {
       await stageCandidateRows("citations", citationRows);
