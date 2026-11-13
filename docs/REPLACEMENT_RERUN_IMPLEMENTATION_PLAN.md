@@ -518,3 +518,32 @@ Before the promotion RPC is considered safe:
 - Preserve daily claims, batch references and source-run references before deleting predecessor run records.
 
 No Production migrations or Edge Function deployments have been applied. No production data has been changed or deleted.
+
+
+## 2026-11-13: competitor table ownership audit
+
+Commit: `de88267365cbb3bbca9ebd629e86985ca19c6ee9`
+
+### Findings from the live schema and database routines
+
+- `direct_competitor_observations` is actively consumed by `get_direct_competitor_metrics_for_period`, which joins it to `direct_competitors` and uses its per-date/location/provider presence and response counts to calculate direct-competitor ranks. These observations are not produced by the current visibility-tracking Edge Function candidate staging path.
+- `direct_competitors` is the configured direct-competitor registry used by that metrics function. It is not run-owned data.
+- `competitors` is a separate date-grain summary table. No public SQL view or database function referencing this table was found in the audit; application-level consumers have not yet been fully verified.
+- Live row counts at audit time: `competitors` 6,076; `direct_competitor_observations` 2,688; `direct_competitors` 448.
+
+### Replacement policy
+
+- Preserve `direct_competitors` configuration rows unconditionally.
+- Preserve `direct_competitor_observations` during visibility-tracking candidate promotion because they are produced/consumed by a separate direct-competitor workflow and are not candidate-staged. A future direct-competitor rerun must have its own candidate staging and replacement contract before these rows can be replaced.
+- Treat `competitors` separately from the direct-competitor observation model. The current candidate path does not stage it; do not delete it until application-level usage and a replacement source are established.
+- The read-only replacement preview now reports the direct-competitor observations and registry rows that overlap the candidate's exact scope, clearly labelled as retained rather than predecessor rows to delete.
+
+### Updated checklist
+
+- [x] Audit direct competitor observation consumers and source-of-truth boundary.
+- [x] Preserve direct-competitor registry and observations outside visibility-tracking replacement.
+- [x] Extend preview to report direct-competitor rows that will be retained.
+- [ ] Verify application-level consumers of legacy `competitors` table.
+- [ ] Decide a supported replacement source/retention policy for `competitors`.
+- [ ] Implement atomic promotion for the six candidate-staged tables and the confirmed legacy citation/competitor scope.
+- [ ] Rebuild Overall metrics and validate direct-competitor reporting remains intact.
