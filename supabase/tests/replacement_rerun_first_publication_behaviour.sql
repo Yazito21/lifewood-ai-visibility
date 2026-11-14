@@ -47,7 +47,9 @@ begin
       'tracking_location', 'MY',
       'run_id', v_run,
       'visibility_score', 0,
-      'visibility_rank', 1,
+      'visibility_rank', null,
+      'rank_population_count', null,
+      'rank_population_status', 'unverified',
       'citation_count', 0,
       'presence_count', 0,
       'response_count', 1
