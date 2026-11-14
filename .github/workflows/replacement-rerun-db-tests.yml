@@ -1,0 +1,36 @@
+name: Replacement Rerun Database Smoke Tests
+
+on:
+  push:
+    branches: [feat/replace-rerun-data]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  replacement-rerun-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start isolated local Supabase stack
+        run: supabase start -x studio,edge-runtime,logflare,vector,supavisor
+
+      - name: Apply the complete migration chain to the disposable local database
+        run: supabase db reset --local
+
+      - name: Verify replacement RPCs, staging protections and grants
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_schema_contract.sql
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: supabase stop --no-backup
