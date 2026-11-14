@@ -839,3 +839,58 @@ The location-helper migration now also updates those two aggregators to select t
 When the first category fails after a daily claim is created, resuming the same batch now checks the existing claim. If it belongs to the same requester and category and is not actively running, a new candidate may replace the claim's run ID. If the prior candidate was already published but the client missed the response, the Edge Function marks the batch category complete from the published run rather than rerunning prompts. Candidate IDs returned in HTTP error payloads are saved in the batch row for recovery.
 
 These paths remain feature-branch-only and require isolated database integration tests.
+
+
+## 2026-11-14: atomic promotion integration and isolated database smoke workflow
+
+### Repository state
+
+- Branch: `feat/replace-rerun-data`
+- The category-scoped atomic promotion migration is present:
+  `supabase/migrations/20261113150000_promote_tracking_run_candidate_atomically.sql`.
+- The Edge Function calls `promote_tracking_run_candidate` only after a candidate is completed. Promotion failure returns `CANDIDATE_PROMOTION_FAILED` and leaves the candidate completed but unpublished.
+- This promotion path is limited to category-scoped `topic` runs. Full-run replacement is deliberately not implemented and must not be represented as supported.
+
+### Work completed in this continuation
+
+1. Added `.github/workflows/replacement-rerun-db-tests.yml`.
+   - Runs on pushes to `feat/replace-rerun-data`, pull requests targeting `main`, and manual dispatch.
+   - Installs the Supabase CLI on a GitHub-hosted runner.
+   - Starts a disposable local Supabase stack and applies the full migration chain with `supabase db reset --local`.
+   - Runs a SQL schema/security contract test.
+   - Stops the local stack even when a prior step fails.
+   - Does not connect to the hosted Supabase project or require Supabase credentials.
+
+2. Added `supabase/tests/replacement_rerun_schema_contract.sql`.
+   - Verifies the staging, validation, preview and promotion RPCs exist.
+   - Verifies candidate staging and replacement audit relations exist.
+   - Verifies staging RLS is enabled and client roles cannot read staging rows.
+   - Verifies promotion is SECURITY DEFINER, executable by service_role, and not executable by public/anon/authenticated.
+
+3. GitHub Actions started automatically after the commits:
+   - Workflow run: [Replacement Rerun Database Smoke Tests](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/43551594407)
+   - Run status at the time of this update: in progress.
+   - Commit adding workflow: `f0a27b621778f9b111333a734629f78826c7fcb8`.
+   - Commit adding SQL contract: `641aaedab130b46cb4df6404c1e8e79342042f5a`.
+
+### Important test limitation
+
+The new workflow is the first isolated migration-chain and security smoke test. It is not yet the complete behavioural test suite. It does not yet create synthetic tracking projects/runs or prove successful replacement, failed-candidate preservation, multi-location isolation, Overall rebuild, concurrency, or rollback. Those tests remain mandatory before Production deployment.
+
+### Next actions
+
+- Inspect the first GitHub Actions run and fix any CLI, migration, schema-contract or workflow failures.
+- Add synthetic fixture-based SQL integration tests for the promotion transaction.
+- Specifically test first publication, single- and multi-location replacement, predecessor lineage, date/provider/project/category isolation, failed validation, source-run FK rejection, daily-claim handling, Overall rebuild/invalidation, and transaction rollback.
+- Complete the Edge Function write-path and frontend/API consumer audit.
+- Review and correct any promotion SQL issues revealed by the tests before any deployment.
+- Keep all work on `feat/replace-rerun-data`; do not merge or deploy yet.
+
+### Safety and cost status
+
+- This workflow uses a disposable local Supabase stack on a GitHub-hosted runner. It does not create a Supabase branch or provision a paid Supabase resource.
+- No hosted Supabase migration has been applied.
+- The updated Edge Function has not been deployed.
+- No Production data has been changed or deleted.
+- Dr D Signature Clinic, MDLand and unrelated projects remain out of scope.
+- Historical cleanup still requires a read-only inventory and separate explicit approval before any Production deletion.
