@@ -18,8 +18,40 @@ jobs:
       - name: Start isolated local Supabase stack
         run: supabase start -x studio,edge-runtime,logflare,vector,supavisor
 
-      - name: Apply the complete migration chain to the disposable local database
-        run: supabase db reset --local
+      - name: Assemble schema-only baseline fixture
+        run: |
+          cat \
+            supabase/tests/fixtures/schema_baseline/part-01.sql \
+            supabase/tests/fixtures/schema_baseline/part-02.sql \
+            supabase/tests/fixtures/schema_baseline/part-03.sql \
+            supabase/tests/fixtures/schema_baseline/part-04.sql \
+            supabase/tests/fixtures/schema_baseline/part-05.sql \
+            > /tmp/lifewood-schema-baseline.sql
+          test -s /tmp/lifewood-schema-baseline.sql
+          ! grep -Eq '^COPY |^INSERT INTO ' /tmp/lifewood-schema-baseline.sql
+
+      - name: Restore schema-only baseline into disposable local database
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f /tmp/lifewood-schema-baseline.sql
+
+      - name: Apply replacement-rerun migrations only
+        run: |
+          set -euo pipefail
+          DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          for migration in \
+            supabase/migrations/20261113090000_add_tracking_run_candidate_staging.sql \
+            supabase/migrations/20261113100000_finalize_metrics_per_tracking_location.sql \
+            supabase/migrations/20261113110000_add_tracking_run_replacement_audit.sql \
+            supabase/migrations/20261113120000_add_tracking_run_candidate_validation.sql \
+            supabase/migrations/20261113130000_add_tracking_run_replacement_preview.sql \
+            supabase/migrations/20261113140000_use_location_scoped_presence_helpers.sql \
+            supabase/migrations/20261113150000_promote_tracking_run_candidate_atomically.sql
+          do
+            echo "Applying $migration"
+            psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
+          done
 
       - name: Verify replacement RPCs, staging protections and grants
         run: |
