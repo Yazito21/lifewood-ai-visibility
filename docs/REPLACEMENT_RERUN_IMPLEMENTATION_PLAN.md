@@ -894,3 +894,45 @@ The new workflow is the first isolated migration-chain and security smoke test. 
 - No Production data has been changed or deleted.
 - Dr D Signature Clinic, MDLand and unrelated projects remain out of scope.
 - Historical cleanup still requires a read-only inventory and separate explicit approval before any Production deletion.
+
+
+## 2026-11-14 follow-up: local migration test blocked by missing baseline schema
+
+The first GitHub Actions execution exposed a repository-level testing prerequisite:
+
+- The local `supabase/migrations` directory begins at `20261009070000_repair_topic_mappings_and_backfill_competitors.sql`.
+- That migration immediately references `public.prompts`, which does not exist in a fresh local Supabase database.
+- The hosted Supabase project's migration history shows earlier foundational migrations beginning with `20261008034612_initial_visibility_platform_schema`, plus several auth/RLS/permission bootstrap migrations. Those foundational migrations are recorded in the hosted project's migration history but are absent from the repository's migration directory.
+- Therefore `supabase db reset --local` cannot replay the repository's migration chain from an empty database. This is not a failure of the new replacement migrations; it is a missing historical baseline in source control.
+
+The workflow run failed at the first existing migration with:
+`ERROR: relation "public.prompts" does not exist`.
+
+Actions taken:
+- Changed the replacement DB workflow to manual dispatch only so it does not create a permanently failing required check on every feature-branch push or pull request.
+- Corrected the SQL contract's PUBLIC execute-privilege check to inspect the function ACL directly.
+- Retained the workflow as a ready test harness, but it must not be considered passing or usable until the baseline schema is restored.
+
+### Required next testing-environment work
+
+1. Recover or reconstruct a schema-only baseline from the hosted project's foundational schema/migration history, without copying Production data.
+2. Add the baseline to source control in a controlled, reviewed form, or create a dedicated isolated test bootstrap that reproduces all dependencies required by the migration chain.
+3. Confirm the bootstrap includes required extensions, auth/storage schemas, enums, functions, triggers, RLS policies, and base tables.
+4. Re-run `supabase db reset --local` and the replacement schema/security contract.
+5. Only after the schema bootstraps successfully, add synthetic behavioural fixtures for promotion, replacement, rollback and isolation.
+
+The hosted Supabase project was queried read-only for migration history and table metadata to diagnose this issue. No migration was applied and no data was modified. No Supabase branch or paid Supabase resource was created.
+
+The two initial workflow attempts failed during Docker image pulls with transient ECR rate-limit messages, then proceeded far enough to expose the missing `public.prompts` baseline dependency. Both runs ultimately failed; neither reached the new contract SQL.
+
+### Current test status correction
+
+- [x] GitHub Actions workflow and schema/security smoke test files committed.
+- [x] Workflow execution attempted on isolated GitHub-hosted runners.
+- [x] Missing baseline migration dependency identified.
+- [ ] Fresh local database migration replay.
+- [ ] Replacement schema/security contract passing.
+- [ ] Synthetic behavioural integration tests.
+- [ ] Full replacement workflow verified in isolation.
+
+Do not describe database smoke tests as passing. No Production deployment or deletion has occurred.
