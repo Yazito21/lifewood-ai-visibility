@@ -63,6 +63,47 @@ begin
   ) then
     raise exception 'replacement rerun contract: promotion RPC must be SECURITY DEFINER';
   end if;
+
+  -- Every candidate-management RPC must be unavailable to browser-facing roles.
+  foreach fn in array array[
+    'public.stage_tracking_candidate_rows(uuid,text,jsonb)',
+    'public.validate_tracking_run_candidate(uuid)',
+    'public.preview_tracking_run_replacement(uuid)',
+    'public.promote_tracking_run_candidate(uuid,uuid)'
+  ] loop
+    if has_function_privilege('anon', fn, 'EXECUTE')
+       or has_function_privilege('authenticated', fn, 'EXECUTE')
+       or exists (
+         select 1
+         from pg_proc p
+         cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+         where p.oid = fn::regprocedure
+           and acl.grantee = 0
+           and acl.privilege_type = 'EXECUTE'
+       ) then
+      raise exception 'replacement rerun contract: untrusted role can execute %', fn;
+    end if;
+    if not has_function_privilege('service_role', fn, 'EXECUTE') then
+      raise exception 'replacement rerun contract: service_role cannot execute %', fn;
+    end if;
+  end loop;
+
+  -- All RPCs that read or mutate candidate state must run with a fixed safe search_path.
+  if exists (
+    select 1
+    from pg_proc p
+    where p.oid in (
+      'public.stage_tracking_candidate_rows(uuid,text,jsonb)'::regprocedure,
+      'public.validate_tracking_run_candidate(uuid)'::regprocedure,
+      'public.preview_tracking_run_replacement(uuid)'::regprocedure,
+      'public.promote_tracking_run_candidate(uuid,uuid)'::regprocedure
+    )
+    and (not p.prosecdef or p.proconfig is null
+         or not exists (select 1 from unnest(p.proconfig) setting
+                        where setting like 'search_path=public, pg_temp%'))
+  ) then
+    raise exception 'replacement rerun contract: RPC missing SECURITY DEFINER or fixed search_path';
+  end if;
 end
 $$;
 
