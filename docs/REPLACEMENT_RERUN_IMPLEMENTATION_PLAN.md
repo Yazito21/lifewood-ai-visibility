@@ -993,3 +993,38 @@ Preferred recovery order:
 ### Immediate next action
 
 Continue searching GitHub branches/commit history and project files for the original baseline SQL. If it cannot be recovered, request a schema-only dump from the project owner rather than guessing or applying an unverified schema reconstruction.
+
+## 2026-11-14: recovered prior schema-backup handover; baseline recovery path clarified
+
+A search of the user's Library and prior conversation files found an existing detailed handover, `Lifewood_Supabase_Cleanup_Handover.md`, documenting that a schema-only Supabase export was already created on the user's Windows machine. This changes the recovery plan: we may not need to generate a new export.
+
+### Existing schema backup documented in the handover
+
+- Folder: `C:\\Users\\Slimzito21\\AI-Visibility-Database-Backup`
+- File: `schema.sql`
+- Size: 219,243 bytes (~219 KB)
+- Created with `npx supabase db dump --remote "$env:DB_URL" --file schema.sql`
+- Described contents: app schema, functions, constraints, indexes, policies, triggers and extensions.
+- A separate `schema_restore_test.sql` was also created for local restore testing, omitting the `pg_cron` extension declaration.
+- The same handover documents a local Supabase environment at `C:\\Users\\Slimzito21\\supabase-restore-test`, with a database named `lifewood_backup_test`.
+- That local database's app schema was previously checked as 32 tables across public/private, 1 view, 49 functions, 12 triggers, 99 indexes and 44 RLS policies. The data restore is a separate concern and must not be imported for this replacement feature test.
+
+### Security boundary
+
+The handover also documents a separate `data.sql` (~234.65 MB) containing Auth records, including email addresses and password hashes. Do not request, upload, inspect or use `data.sql` for the replacement test environment. The schema-only `schema.sql` is the relevant artifact; inspect it for secrets/credential literals before adding it to GitHub. Prefer a sanitized schema-only fixture with secrets removed and test-only placeholders.
+
+### Updated recovery plan
+
+1. Ask the user to attach only `schema.sql` (or `schema_restore_test.sql` if it is the already-validated restore-safe variant). Do not ask for `data.sql`, `roles.sql`, the ZIP, or any connection string.
+2. Inspect the schema dump for hard-coded secret values, project-specific data, extension dependencies and local Supabase managed-schema assumptions.
+3. Create a sanitized, reproducible local baseline under a dedicated test-only path in the repository (or a documented bootstrap script) without importing any production rows or secrets.
+4. Use GitHub Actions to initialize the required Supabase-managed schemas/services, apply the schema-only baseline, and run the replacement migrations/contracts. If the baseline dump is not directly replayable against the CI Supabase image, adapt the test harness based on the actual SQL errors rather than fabricating DDL.
+5. Keep original backup files unchanged. Never commit raw production data or credentials.
+
+### Correction to prior status
+
+The repository's historical migration chain is still incomplete, and the existing CI `db reset` remains blocked. However, the user already has a documented schema-only backup on their local machine. Therefore, the next blocker is obtaining the exact schema-only file in this conversation/workspace so it can be reviewed and adapted for CI, not creating a fresh export from Production.
+
+### Safety status
+
+No Production DDL, Edge Function deployment or data deletion occurred. No Supabase paid branch/resource was created. No backup data dump was requested or accessed. All replacement implementation work remains on `feat/replace-rerun-data`.
