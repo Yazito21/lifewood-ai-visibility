@@ -1028,3 +1028,71 @@ The repository's historical migration chain is still incomplete, and the existin
 ### Safety status
 
 No Production DDL, Edge Function deployment or data deletion occurred. No Supabase paid branch/resource was created. No backup data dump was requested or accessed. All replacement implementation work remains on `feat/replace-rerun-data`.
+
+## 2026-11-14: uploaded schema-only baseline inspected and wired into CI
+
+### Uploaded backup inspection
+
+The user uploaded `schema.sql` (219,243 bytes, 4,965 lines). It was read and inspected before use. Static scan results:
+
+- 32 `CREATE TABLE` statements (including the private secrets table and its public legacy counterpart)
+- 49 `CREATE OR REPLACE FUNCTION` statements
+- 44 RLS policies
+- 8 explicit triggers
+- 1 view
+- 60 explicit index statements
+- 5 extension declarations in the original file
+- No `COPY` statements and no top-level `INSERT INTO` statements, so it is a schema-only dump with no application rows.
+- No obvious API-key formats, private-key blocks, JWT-like literals, or database connection strings detected by the static scan.
+
+The baseline includes the schema of `llm_secrets` and `llm_configs` tables, but no rows/secret values. The original uploaded file was not modified. The test fixture omits the `pg_cron` extension declaration because pg_cron is not required for replacement-rerun tests and may not be enabled in the hosted runner's local database image. The other schema definitions, policies, grants, triggers, and functions are retained.
+
+### Baseline fixture committed
+
+The schema dump was split into five ordered SQL parts to fit repository file operations without truncating content:
+
+- `supabase/tests/fixtures/schema_baseline/part-01.sql`
+- `supabase/tests/fixtures/schema_baseline/part-02.sql`
+- `supabase/tests/fixtures/schema_baseline/part-03.sql`
+- `supabase/tests/fixtures/schema_baseline/part-04.sql`
+- `supabase/tests/fixtures/schema_baseline/part-05.sql`
+
+The workflow concatenates these files into a temporary SQL file at runtime. The parts are test fixtures only; they are not added to the production migration chain and do not import client/application rows.
+
+### CI workflow changed to use the baseline snapshot
+
+Updated `.github/workflows/replacement-rerun-db-tests.yml` to:
+
+1. Start a disposable local Supabase stack on GitHub Actions.
+2. Concatenate the five schema fixture parts.
+3. Assert the assembled baseline contains no top-level `COPY` or `INSERT INTO` data statements.
+4. Restore the schema-only baseline into the disposable local database.
+5. Apply only the seven replacement-rerun migrations in order, rather than replaying the incomplete historical migration directory from scratch.
+6. Run `replacement_rerun_schema_contract.sql` to check required RPCs, RLS and grants.
+7. Stop the local stack.
+
+The workflow is again triggered on feature-branch pushes, pull requests to main, and manual dispatch.
+
+### Current CI run
+
+- Run: [Replacement Rerun Database Smoke Tests](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/43553107282)
+- Commit: `afca859967cd67182de95904ab983660edefa905`
+- Status at the time of this update: `in_progress`; Supabase CLI setup succeeded and the local Supabase stack was starting. Baseline restoration, feature migration replay and SQL contract have not yet reported results.
+
+### Important caveat and next steps
+
+This schema snapshot is a point-in-time schema-only restore, not a reconstruction of every historical migration version. It is intentionally used as a test fixture baseline, then the new replacement migrations are applied on top. It should not be treated as a replacement for restoring the historical migration ledger in the Production project.
+
+The schema snapshot includes the existing live functions/triggers but does not include the new replacement staging/audit objects, which are supplied by the seven feature migrations. If the local restore fails due to missing Supabase-managed schemas/extensions or unsupported dump statements, adapt the isolated harness based on the actual error. Do not alter the live database to resolve local test issues.
+
+After the schema/security smoke test passes, add synthetic behavioural tests for first publication, successful replacement, failed candidate preservation, multi-location isolation, exact-scope boundaries, Overall rebuild/invalidation, daily-claim and FK handling, concurrency, and rollback.
+
+### Safety status
+
+- Only schema definitions were used; no application rows were included in the test fixture.
+- No `data.sql`, Auth dump, or project secrets were requested or used.
+- The original uploaded `schema.sql` remains unchanged.
+- No hosted Supabase migration or DDL was applied.
+- No Supabase paid branch/resource was created.
+- No Production Edge Function deployment or historical deletion occurred.
+- Dr D Signature Clinic, MDLand and unrelated projects remain out of scope.
