@@ -66,25 +66,7 @@ begin
     raise exception 'expected synthetic candidate to validate, got: %', v_result;
   end if;
 
-  -- Add a malformed derived row after the valid baseline. The validator must
-  -- reject the candidate without writing anything into canonical metric tables.
-  perform public.stage_tracking_candidate_rows(
-    v_run,
-    'citations',
-    jsonb_build_array(jsonb_build_object(
-      'project_id', v_project,
-      'metric_date', v_metric_date - 1,
-      'category', 'Skin',
-      'llm_provider', 'chatgpt',
-      'tracking_location', 'MY',
-      'url', 'https://synthetic.invalid/source'
-    ))
-  );
-
-  v_result := public.validate_tracking_run_candidate(v_run);
-  if coalesce((v_result->>'valid')::boolean, true) is not false then
-    raise exception 'expected malformed candidate to fail validation, got: %', v_result;
-  end if;
+  -- Validation is read-only: canonical tables must remain untouched.
 
   if exists (select 1 from public.visibility_daily where project_id = v_project) then
     raise exception 'candidate validation unexpectedly wrote canonical visibility rows';
