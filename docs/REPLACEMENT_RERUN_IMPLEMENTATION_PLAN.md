@@ -1096,3 +1096,59 @@ After the schema/security smoke test passes, add synthetic behavioural tests for
 - No Supabase paid branch/resource was created.
 - No Production Edge Function deployment or historical deletion occurred.
 - Dr D Signature Clinic, MDLand and unrelated projects remain out of scope.
+
+## 2026-11-14: local migration replay passed; RPC security contract expanded
+
+### Successful isolated database replay
+
+GitHub Actions run [43553464032](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/43553464032) completed successfully. Every step passed:
+
+- Supabase CLI setup.
+- Disposable local Supabase stack startup.
+- Schema-only baseline fixture assembly.
+- Restore of the schema-only baseline.
+- Application of all seven replacement-rerun migrations.
+- Replacement schema/security contract.
+- Local stack shutdown.
+
+This confirms that the baseline snapshot can be restored in CI and that the current feature migrations apply successfully on top of it. It does not yet prove end-to-end promotion behaviour with synthetic project/run data.
+
+### Security contract strengthened
+
+Updated `supabase/tests/replacement_rerun_schema_contract.sql` to check all four candidate-management RPCs:
+
+- `stage_tracking_candidate_rows`
+- `validate_tracking_run_candidate`
+- `preview_tracking_run_replacement`
+- `promote_tracking_run_candidate`
+
+For each RPC, the contract now verifies that service_role has execute permission, anon/authenticated do not, PUBLIC does not, and the function is SECURITY DEFINER with a fixed `search_path=public, pg_temp`. Existing staging-table RLS and browser-role SELECT checks remain.
+
+- Contract update commit: `dfe03aa3a08f5a958aca68185a48ba4aa5738580`
+- Follow-up CI run: [43553708963](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/43553708963), queued at the time of writing.
+
+### Next testing stage
+
+Add isolated synthetic behavioural tests with minimal fixtures. Cover:
+
+1. Candidate validation rejects missing/incomplete/unpublished-invalid states without modifying canonical data.
+2. First publication with no predecessor.
+3. Successful exact-scope replacement, including predecessor removal and audit lineage.
+4. A failed promotion rolls back all changes and preserves predecessor canonical rows.
+5. Project/date/provider/category/location boundaries remain untouched.
+6. Multi-location candidate behaviour and per-location metric aggregation.
+7. Overall aggregation rebuild/invalidation.
+8. Daily claim reassignment, source-run FK protections and batch reference behaviour.
+9. Concurrent promotion serialization.
+
+Avoid production data and live project writes. Keep all tests in the disposable local database. Review promotion SQL correctness based on those test results before deployment.
+
+### Status and safety
+
+- Migration replay on schema-only baseline: PASS.
+- Initial schema/security contract: PASS.
+- Expanded security contract: committed; follow-up CI pending.
+- Synthetic behavioural promotion tests: NOT YET IMPLEMENTED.
+- Production migration/Edge Function deployment: NOT performed.
+- Production data modification/deletion: NONE.
+- Paid Supabase resource: NONE.
