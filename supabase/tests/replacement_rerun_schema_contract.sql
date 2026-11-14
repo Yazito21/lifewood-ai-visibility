@@ -38,7 +38,14 @@ begin
 
   if has_function_privilege('anon', 'public.promote_tracking_run_candidate(uuid,uuid)', 'EXECUTE')
      or has_function_privilege('authenticated', 'public.promote_tracking_run_candidate(uuid,uuid)', 'EXECUTE')
-     or has_function_privilege('public', 'public.promote_tracking_run_candidate(uuid,uuid)', 'EXECUTE') then
+     or exists (
+       select 1
+       from pg_proc p
+       cross join lateral aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+       where p.oid = 'public.promote_tracking_run_candidate(uuid,uuid)'::regprocedure
+         and acl.grantee = 0
+         and acl.privilege_type = 'EXECUTE'
+     ) then
     raise exception 'replacement rerun contract: untrusted role can execute promotion RPC';
   end if;
 
