@@ -470,9 +470,12 @@ begin
 
   -- Publish only after all canonical rows are present. The publication trigger
   -- finalises every location row using the location-aware helper.
+  -- Predecessors are physically removed in this transaction, so a
+  -- supersedes_run_id FK would immediately become invalid (ON DELETE SET NULL).
+  -- Durable lineage is recorded in tracking_run_replacements instead.
   update public.tracking_runs
   set published_at = now(),
-      supersedes_run_id = coalesce(supersedes_run_id, v_first_predecessor),
+      supersedes_run_id = null,
       error_message = null
   where id = p_run_id;
 
