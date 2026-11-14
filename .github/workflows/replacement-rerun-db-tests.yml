@@ -17,7 +17,7 @@ jobs:
       - name: Set up Supabase CLI
         uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.62.10
 
       - name: Start isolated local Supabase stack
         run: supabase start -x studio,edge-runtime,logflare,vector,supavisor
