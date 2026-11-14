@@ -15,8 +15,8 @@ declare
   v_new_response uuid;
   v_result jsonb;
   v_metric_date date := (now() at time zone 'Asia/Kuala_Lumpur')::date;
-  v_old_score numeric := 0.11;
-  v_new_score numeric := 0.77;
+  v_old_score numeric := 0;
+  v_new_score numeric := 0;
 begin
   insert into public.projects (brand_name, categories, tracking_market, tracking_locations)
   values ('Synthetic Replacement Brand', array['Skin'], 'MY', array['MY'])
