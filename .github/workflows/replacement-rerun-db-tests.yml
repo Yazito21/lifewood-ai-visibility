@@ -1,10 +1,6 @@
 name: Replacement Rerun Database Smoke Tests
 
 on:
-  push:
-    branches: [feat/replace-rerun-data]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
