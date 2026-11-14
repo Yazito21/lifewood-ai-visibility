@@ -936,3 +936,60 @@ The two initial workflow attempts failed during Docker image pulls with transien
 - [ ] Full replacement workflow verified in isolation.
 
 Do not describe database smoke tests as passing. No Production deployment or deletion has occurred.
+
+## 2026-11-14: baseline recovery investigation continued
+
+### Deployment status clarification
+
+The user confirmed that the latest deployments shown in their screenshot are successful/Ready. These are deployment statuses, not proof that the Supabase migration replay or replacement database tests passed. The replacement workflow's prior run remains failed before the replacement contract test could execute.
+
+### Read-only hosted migration/schema audit
+
+Read-only Supabase inspection confirmed that the hosted project's migration history contains foundational versions absent from the repository's `supabase/migrations` directory. The hosted history includes, among others:
+
+- `20261008034612 initial_visibility_platform_schema`
+- `20261008034733 raw_response_retention_and_auth_bootstrap`
+- `20261008034950 tighten_rbac_and_raw_retention`
+- `20261008035028 revoke_remaining_public_function_execute`
+- `20261008041322 restore_rls_function_permissions`
+- `20261008041332 grant_authenticated_table_access_for_rls`
+- `20261008042328 complete_platform_data_model`
+- `20261008042545 secure_private_llm_secrets`
+- `20261008042611 add_profile_email_for_account_management`
+- `20261008051216 allow_project_admins_to_view_member_profiles`
+- `20261009012544 grant_llm_key_management_service_role_access`
+- `20261009012735 secure_llm_secrets_storage`
+- `20261009014712 add_visibility_tracking_runs_and_indexes`
+- `20261009015739 grant_service_role_visibility_tracking_access`
+- `20261009024746 enforce_one_tracking_run_per_project_myt_day`
+- `20261009025013 fix_daily_tracking_claim_transaction_order`
+- `20261009040731 fix_daily_tracking_claim_ambiguous_conflict_target`
+
+The repository's first migration file is `20261009070000_repair_topic_mappings_and_backfill_competitors.sql`, which assumes `public.prompts`, `public.citations`, `public.visibility_daily`, `public.ai_responses`, `public.projects`, and `public.competitors` already exist. The file's timestamp/name also does not match the corresponding hosted migration history sequence. This is broader than one missing table: the checked-in migration history is incomplete and has drifted from the hosted migration ledger.
+
+Read-only catalog inspection also confirmed the current hosted schema has 31 base tables across `public` and `private`, an `app_role` enum, multiple extensions, dozens of functions, and triggers governing publication, user protection, reporting and competitor recomputation. A faithful local baseline must therefore preserve more than table columns: constraints, indexes, policies, grants, functions, triggers, storage/auth dependencies and extension requirements all matter.
+
+### Decision: do not fabricate a partial baseline
+
+Do not create a guessed bootstrap migration from table names or column metadata alone. That could make a fresh database appear to migrate while silently omitting critical RLS policies, grants, triggers, helper functions or foreign-key semantics. It could also conflict with later migrations that assume the original migration ordering.
+
+Preferred recovery order:
+
+1. Search repository history/other branches and retained project files for the original foundational SQL migration files.
+2. If unavailable, produce a schema-only export from the hosted database using a supported Supabase CLI/database dump workflow with the appropriate read-only database credentials supplied by the project owner. Do not export application rows or secrets.
+3. Reconcile the export against the hosted migration ledger and the current checked-in migration files. Preserve exact historical ordering and names where possible; document any unavoidable baseline squash explicitly.
+4. Recreate a disposable local Supabase database from that schema-only baseline and replay the remaining migrations.
+5. Only then run the replacement schema/security contract and synthetic behavioural tests.
+
+### Current safety status
+
+- Hosted inspection was read-only (migration history, table metadata, extensions, function signatures and trigger metadata).
+- No DDL was applied to the hosted project.
+- No client/business data was exported as part of this investigation.
+- No paid Supabase branch or resource was created.
+- No Production Edge Function deployment or data deletion occurred.
+- The successful deployments in the user's screenshot do not change these database-test limitations.
+
+### Immediate next action
+
+Continue searching GitHub branches/commit history and project files for the original baseline SQL. If it cannot be recovered, request a schema-only dump from the project owner rather than guessing or applying an unverified schema reconstruction.
