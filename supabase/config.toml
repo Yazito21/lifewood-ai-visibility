@@ -20,3 +20,8 @@ verify_jwt = false
 
 [functions.site-audit]
 verify_jwt = false
+
+# The replacement DB test restores a schema-only snapshot and applies only
+# the feature migrations under test. Do not auto-replay the incomplete legacy chain.
+[db.migrations]
+enabled = false
