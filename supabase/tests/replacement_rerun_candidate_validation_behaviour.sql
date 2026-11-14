@@ -27,8 +27,8 @@ begin
     project_id, provider, status, total_prompts, completed_prompts,
     started_at, completed_at, tracking_location, category, run_kind
   ) values (
-    v_project, 'chatgpt', 'completed', 1, 1,
-    now(), now(), 'MY', 'Skin', 'topic'
+    v_project, 'chatgpt', 'running', 1, 0,
+    now(), null, 'MY', 'Skin', 'topic'
   ) returning id into v_run;
 
   insert into public.ai_responses (
@@ -56,6 +56,10 @@ begin
       'response_count', 1
     ))
   );
+
+  update public.tracking_runs
+  set status = 'completed', completed_prompts = 1, completed_at = now()
+  where id = v_run;
 
   v_result := public.validate_tracking_run_candidate(v_run);
   if coalesce((v_result->>'valid')::boolean, false) is not true then
