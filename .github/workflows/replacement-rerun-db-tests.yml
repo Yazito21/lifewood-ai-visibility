@@ -56,7 +56,8 @@ jobs:
             supabase/migrations/20261117120000_harden_candidate_raw_response_scope_validation.sql \
             supabase/migrations/20261117130000_validate_staged_brand_project_ownership.sql \
             supabase/migrations/20261117140000_rebuild_cross_provider_overall_after_replacement.sql \
-            supabase/migrations/20261117150000_exclude_superseded_runs_from_leaderboard_lookup.sql
+            supabase/migrations/20261117150000_exclude_superseded_runs_from_leaderboard_lookup.sql \
+            supabase/migrations/20261117160000_standardise_category_run_kind.sql
           do
             echo "Applying $migration"
             psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
