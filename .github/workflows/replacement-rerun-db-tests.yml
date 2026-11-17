@@ -49,6 +49,7 @@ jobs:
             supabase/migrations/20261113100000_finalize_metrics_per_tracking_location.sql \
             supabase/migrations/20261113110000_add_tracking_run_replacement_audit.sql \
             supabase/migrations/20261113120000_add_tracking_run_candidate_validation.sql \
+            supabase/migrations/20261117120000_harden_candidate_raw_response_scope_validation.sql \
             supabase/migrations/20261113130000_add_tracking_run_replacement_preview.sql \
             supabase/migrations/20261113140000_use_location_scoped_presence_helpers.sql \
             supabase/migrations/20261113150000_promote_tracking_run_candidate_atomically.sql \
