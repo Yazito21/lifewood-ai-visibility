@@ -21,7 +21,7 @@ The branch also adds CI fixtures/tests and this operational documentation. No ot
 
 Do not begin a hosted release until all of the following are satisfied:
 
-- A separate non-Production Supabase project is available for a hosted integration rehearsal. Current CI uses a disposable local database only.
+- **Cost constraint:** do not create a Supabase development branch or additional Supabase project for this work. No Supabase spend is authorised. Use the disposable local Supabase stack in GitHub Actions for continued database and Edge Function integration testing. A hosted rehearsal is therefore deferred, not silently treated as passed. This remains a release limitation and must be disclosed in any Production decision.
 - Handler-level mocked lifecycle tests now cover provider failures, entity-extraction failures/retries, raw response persistence, all six candidate staging tables, promotion success/failure, and fail-closed promotion responses. The tests are committed but must pass in CI before any hosted rehearsal.
 - The tracked-brand registry bootstrap write side effect has been removed. Tracking now performs a read-only registry/category-assignment preflight and fails before provider calls or run creation when configuration is incomplete.
 - A fresh read-only audit confirms the live schema, triggers, foreign keys, grants, RLS, function definitions, and migration history still match the assumptions in the implementation. The read-only Production preflight has confirmed the migration history, required columns, and tracking-run foreign keys; the remaining trigger/grant/RLS/function-definition checks are still release preconditions.
@@ -115,7 +115,20 @@ The connected Production project is active and healthy. Its applied migration hi
 
 No Production schema or data changes were made during the preflight. This section is informational and does not authorize a release.
 
-## 7. Explicitly out of scope
+## 7. Zero-additional-cost execution path
+
+The user has explicitly instructed that no money is to be spent on Supabase for this implementation. This is a hard constraint:
+
+- Do not create a Supabase development branch; branch creation can incur hourly compute charges.
+- Do not create another hosted Supabase project or upgrade a plan.
+- Do not request an organisation ID or run a Supabase branch/project cost-confirmation flow.
+- Continue using the disposable local Supabase database created inside GitHub Actions. The latest successful run applied the replacement migrations to a schema-only local fixture and passed behavioural tests for first publication, exact-scope replacement, forced mid-promotion rollback, scope isolation, Overall aggregation, derived-data replacement, source-run FK rejection, and concurrent same-scope replacement.
+- Treat local CI as strong database-contract and behavioural evidence, **not** as a hosted rehearsal. Hosted configuration, deployed Edge Function behaviour, real Production integration, and live Vercel-to-Supabase interactions remain unverified by this path.
+- Do not compensate for the missing hosted rehearsal by using Production as a test environment. Production remains read-only until the user separately approves an appropriately controlled release with the limitation explicitly acknowledged.
+
+The next no-cost work is continued local CI coverage, code review, runbook hardening, and (where available without additional charges) Vercel Preview validation. No paid Supabase resource is required for those activities.
+
+## 8. Explicitly out of scope
 
 - No Production migration, Edge Function deployment, or Vercel Production deployment has been performed by preparing this runbook.
 - A read-only Production historical predecessor/dependency inventory has been performed. No historical rows have been deleted.
