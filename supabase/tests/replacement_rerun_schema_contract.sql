@@ -127,6 +127,17 @@ begin
     raise exception 'replacement rerun contract: legacy topic run_kind values remain';
   end if;
 
+  declare
+    publication_guard_definition text;
+  begin
+    select pg_get_functiondef('public.tracking_runs_publication_guard()'::regprocedure)
+      into publication_guard_definition;
+    if position('then ''category'' end' in publication_guard_definition) = 0
+       or position('run_kind is distinct from ''topic''' in publication_guard_definition) > 0 then
+      raise exception 'replacement rerun contract: publication trigger still uses legacy run kind';
+    end if;
+  end;
+
   -- All RPCs that read or mutate candidate state must run with a fixed safe search_path.
   if exists (
     select 1
