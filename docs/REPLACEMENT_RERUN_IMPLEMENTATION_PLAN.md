@@ -1672,3 +1672,23 @@ Entity-analysis failure gate coverage:
 - Commit: `593ceb83cdba8468656188c8ea3ba02f40ab58b2` - test entity extraction failure remains unpublished.
 
 This covers another condition in the publication gate: a provider answer alone is insufficient for publication if required response analysis did not complete.
+
+
+## Development update - 2026-11-17 (entity-extraction retry correction)
+
+A review of the new handler lifecycle test exposed a mismatch between the entity-extraction retry comment and the actual catch behaviour: deterministic failures such as HTTP 401 were being retried because the catch block unconditionally continued after the first exception.
+
+Corrected on `feat/replace-rerun-data`:
+
+- Entity extraction now retries a network/timeout/abort failure once, then stops if the retry also fails.
+- HTTP 429 and 5xx responses retain their existing bounded retry path.
+- Authentication/validation errors, malformed extraction JSON, missing response IDs, and other deterministic failures now fail the extraction batch immediately.
+- Updated the handler-level HTTP 401 regression test to assert exactly one extraction request instead of three. The run remains partial/unpublished and promotion is not called.
+
+Commits:
+- `f855856d900812fd9c21c45d42c037353ad756b7` - stop retrying deterministic entity extraction failures.
+- `02d9d4717fbc800bde39c73583d5d036900f15bb` - assert extraction auth failure is not retried.
+
+Validation status:
+- The code and test changes are committed to the feature branch. They have not yet been executed in a confirmed Deno/SQL CI run.
+- No hosted Supabase rehearsal, Production migration, Edge Function deployment, Vercel Production deployment, unpause, or historical deletion was performed.
