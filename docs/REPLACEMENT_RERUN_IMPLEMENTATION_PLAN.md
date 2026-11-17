@@ -1654,3 +1654,12 @@ Additional fail-closed coverage:
 - Commit: `8478b0be52247fd3cc095024f332fa6d4e2521c3` - test unexpected candidate promotion status fails closed.
 
 The Deno/SQL workflow result remains unverified for these latest commits. The combined commit status still reports only a Vercel check, which is not the Edge Function or database test workflow.
+
+
+Further strengthening of the successful lifecycle test:
+- Asserted that each of the six candidate staging RPC calls contains a non-empty row payload, rather than merely checking that the table key was mentioned.
+- Asserted raw `ai_responses` persistence occurs before candidate staging.
+- Asserted every required staging call occurs before the promotion RPC, and that the tracking run is marked completed before promotion.
+- Commit: `45b1a68b159f94484529c7015daede952055d6b3` - assert candidate staging contains rows before promotion.
+
+These are source-level test additions only. The branch-push workflow still needs an observable successful run before the Deno and SQL behaviour suite can be considered verified.
