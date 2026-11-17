@@ -90,7 +90,7 @@ begin
     started_at, completed_at, tracking_location, category, run_kind, data_source, import_batch
   ) values (
     v_project, 'gemini', 'completed', 2, 2, 0,
-    v_import_ts, v_import_ts, 'MY', 'Skin', 'topic', 'profound_import', 'synthetic-import'
+    v_import_ts, v_import_ts, 'MY', 'Skin', 'category', 'profound_import', 'synthetic-import'
   ) returning id into v_import_run;
 
   insert into public.ai_responses (
@@ -136,7 +136,7 @@ begin
   ) values (
     v_project, 'perplexity', 'completed', 1, 1, 0,
     v_replace_ts - interval '10 minutes', v_replace_ts - interval '10 minutes',
-    'MY', 'Skin', 'topic'
+    'MY', 'Skin', 'category'
   ) returning id into v_old_run;
 
   insert into public.ai_responses (
@@ -170,7 +170,7 @@ begin
     started_at, completed_at, tracking_location, category, run_kind
   ) values (
     v_project, 'perplexity', 'completed', 1, 1, 0,
-    v_replace_ts, v_replace_ts, 'MY', 'Skin', 'topic'
+    v_replace_ts, v_replace_ts, 'MY', 'Skin', 'category'
   ) returning id into v_new_run;
 
   insert into public.ai_responses (
