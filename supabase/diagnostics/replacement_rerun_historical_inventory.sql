@@ -55,21 +55,26 @@ scope_counts as (
     s.source_run_ids, s.data_sources, s.import_batches,
     (select count(distinct ar.id)::integer
        from public.ai_responses ar
+       join run_scope rs on rs.run_id = ar.run_id or rs.source_run_id = ar.run_id
+      where rs.project_id = s.project_id and rs.metric_date = s.metric_date
+        and rs.category is not distinct from s.category and rs.provider = s.provider
+        and rs.tracking_location = s.tracking_location and rs.run_kind = s.run_kind) as source_response_rows_shared,
+    (select count(distinct ar.id)::integer
+       from public.ai_responses ar
        join public.prompts pr on pr.id = ar.prompt_id
        join run_scope rs on rs.run_id = ar.run_id or rs.source_run_id = ar.run_id
       where rs.project_id = s.project_id and rs.metric_date = s.metric_date
         and rs.category is not distinct from s.category and rs.provider = s.provider
         and rs.tracking_location = s.tracking_location and rs.run_kind = s.run_kind
-        and (s.category is null or pr.category = s.category)) as raw_response_rows,
+        and (s.category is null or pr.category = s.category)) as prompt_linked_response_rows,
     (select count(distinct e.id)::integer
        from public.response_brand_evidence e
        join public.ai_responses ar on ar.id = e.response_id
-       join public.prompts pr on pr.id = ar.prompt_id
        join run_scope rs on rs.run_id = ar.run_id or rs.source_run_id = ar.run_id
       where rs.project_id = s.project_id and rs.metric_date = s.metric_date
         and rs.category is not distinct from s.category and rs.provider = s.provider
         and rs.tracking_location = s.tracking_location and rs.run_kind = s.run_kind
-        and (s.category is null or pr.category = s.category)) as response_evidence_rows,
+        and (s.category is null or e.category = s.category)) as response_evidence_rows,
     case when s.run_kind = 'topic' then (select count(*)::integer
        from public.citation_occurrences co
       where co.project_id = s.project_id and co.metric_date = s.metric_date

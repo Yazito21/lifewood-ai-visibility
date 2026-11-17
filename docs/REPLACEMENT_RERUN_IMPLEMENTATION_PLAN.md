@@ -1968,3 +1968,6 @@ The hosted inventory itself remains a SELECT-only operation. No schema changes, 
 The first hosted inventory execution revealed that grouping all run kinds together obscures the distinction between legacy `full` source runs, category-level `topic` runs, and `overall_aggregate` records. The diagnostic is now grouped by `run_kind` and reports completed-but-unpublished runs separately.
 
 For synthetic category slices, raw-response and evidence counts now filter the source run's responses by the prompt's category. This avoids counting every response from a shared legacy full run in every synthetic category slice. The query still makes no changes and treats the not-yet-deployed replacement audit table as unavailable rather than reporting a misleading zero.
+
+
+The live inventory exposed a historical data-model nuance: some legacy full-run source responses have `prompt_id IS NULL` after the historical prompt reset. The diagnostic now distinguishes shared source-run raw response rows from the subset still linked to category prompts, and counts retained response evidence by its own category field. This prevents reporting zero source responses solely because the prompt foreign keys were cleared.
