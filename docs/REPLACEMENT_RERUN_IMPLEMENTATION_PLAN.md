@@ -1349,6 +1349,25 @@ Exact continuation commits:
 
 The schema contract is further tightened to assert the executable advisory-lock key expressions, not merely the sentinel comments.
 
+### 2026-11-17: candidate staging isolation and failure-path tests
+
+Commit `55393fd02aeab0badd8c53d627da02d9fa93e38f` extracts the Edge Function's candidate-row staging operation into `candidate-staging.ts` and adds dedicated Deno tests.
+
+Coverage added:
+- Candidate rows are chunked and submitted with the exact run ID and target table.
+- `source_type` and `citation_index` remain part of the deterministic identity, so distinct third-party source types and citation occurrences do not collapse into one staged row.
+- A staging RPC error throws a table-specific `CANDIDATE_STAGING_FAILED` error, preventing the handler from silently continuing.
+- Missing run IDs and empty row sets perform no RPC calls.
+
+GitHub Actions run [#43](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44009545105), commit `55393fd02aeab0badd8c53d627da02d9fa93e38f`, **SUCCESS**. Both jobs passed:
+- Application/Edge quality: `npx tsc --noEmit`, `deno check supabase/functions/visibility-tracking/index.ts`, and all visibility-tracking Deno unit tests, including the new staging tests.
+- Disposable local database: schema-only baseline restore, replacement migrations, schema/security contract, candidate validation, first publication, exact replacement, forced rollback, scope isolation, Overall rebuild/invalidation, six-table derived-data replacement, source-run FK rejection, and concurrent same-scope replacement.
+
+The CI run used only a disposable local Supabase stack and stopped it successfully. It did not connect to the hosted Supabase project.
+
+Exact current feature-branch head after this code commit: `55393fd02aeab0badd8c53d627da02d9fa93e38f`.
+
+
 
 ### 2026-11-17: executable lock contract correction and final CI verification
 
