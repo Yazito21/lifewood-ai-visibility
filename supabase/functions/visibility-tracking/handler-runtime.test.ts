@@ -486,6 +486,7 @@ Deno.test("provider failure finalizes an unpublished candidate and never calls p
 
 async function runSuccessfulLifecycle(
   promotionResult: { data: unknown; error: unknown } = { data: { status: "published" }, error: null },
+  entityExtractionStatus = 200,
 ) {
   const serviceSecret = "test-service-role-secret";
   const ciphertext = await encryptStoredSecret(serviceSecret, "lifewood-project:chatgpt", "test-openai-key");
@@ -558,6 +559,11 @@ async function runSuccessfulLifecycle(
         const inputText = JSON.stringify(requestBody.input ?? []);
         if (inputText.includes("Extract explicitly mentioned real-world organizations")) {
           extractionRequests += 1;
+          if (entityExtractionStatus !== 200) {
+            return new Response(JSON.stringify({ error: { message: "Entity extraction rejected" } }), {
+              status: entityExtractionStatus,
+            });
+          }
           return new Response(JSON.stringify({
             model: "gpt-4o-mini",
             output: [{
@@ -707,5 +713,24 @@ Deno.test("unexpected promotion status is not reported as published", async () =
   assertEquals(result.payload.error, "CANDIDATE_PROMOTION_FAILED");
   assertEquals(result.payload.status, "completed_unpublished");
   assertEquals(result.events.some((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate"), true);
+  assertEquals(result.events.some((event) => event.kind === "table" && event.operation === "delete"), false);
+});
+
+
+Deno.test("entity extraction failure leaves provider response partial and unpublished", async () => {
+  const result = await runSuccessfulLifecycle(
+    { data: { status: "published" }, error: null },
+    401,
+  );
+
+  assertEquals(result.response.status, 200);
+  assertEquals(result.payload.status, "partial");
+  assertEquals(result.payload.analysis_failures, 1);
+  assertEquals(result.payload.published, undefined);
+  assertEquals(result.providerRequests, 1);
+  assertEquals(result.extractionRequests, 3);
+  assertEquals(result.events.some((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate"), false);
+  assertEquals(result.events.some((event) => event.kind === "table" && event.table === "tracking_runs" &&
+    event.operation === "update" && (event.payload as Record<string, unknown>)?.status === "partial"), true);
   assertEquals(result.events.some((event) => event.kind === "table" && event.operation === "delete"), false);
 });
