@@ -4,6 +4,7 @@ import { calculateEntityVisibility } from "./visibility-score.ts";
 import { buildCitationOccurrenceRows } from "./citation-occurrences.ts";
 import { callWithRetry, describeProviderFailures, newRetryState, sleepMs } from "./provider-retry.ts";
 import { stageTrackingCandidateRows } from "./candidate-staging.ts";
+import { isTrackingPaused } from "./tracking-pause.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -511,6 +512,14 @@ const MIN_PROMPTS_PER_CATEGORY = 5;
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  // Emergency stop for tracking writes. This check precedes auth, DB access,
+  // run creation, provider calls, staging and promotion.
+  if (isTrackingPaused(Deno.env.get("TRACKING_REPLACEMENT_PAUSED"))) {
+    return json({
+      error: "TRACKING_TEMPORARILY_PAUSED",
+      message: "Tracking is temporarily paused by an administrator. No run was started.",
+    }, 503);
+  }
   let activeRunId: string | null = null;
   let activeStageKey: string | null = null;
   let activeAdmin: any = null;
