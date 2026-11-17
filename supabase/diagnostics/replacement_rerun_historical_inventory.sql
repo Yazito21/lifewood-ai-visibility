@@ -112,7 +112,13 @@ scope_counts as (
        from public.category_brand_observations o
       where o.project_id = s.project_id and o.metric_date = s.metric_date
         and o.category is not distinct from s.category and o.llm_provider = s.provider
-        and o.tracking_location = s.tracking_location) as competitor_observation_rows,
+        and o.tracking_location = s.tracking_location
+        and o.run_id in (
+          select rs.run_id from run_scope rs
+          where rs.project_id = s.project_id and rs.metric_date = s.metric_date
+            and rs.category is not distinct from s.category and rs.provider = s.provider
+            and rs.tracking_location = s.tracking_location and rs.run_kind = s.run_kind
+        )) as competitor_observation_rows,
     (select count(*)::integer
        from public.citations c
       where c.project_id = s.project_id and c.metric_date = s.metric_date
@@ -136,8 +142,14 @@ scope_counts as (
     (select count(*)::integer
        from public.visibility_daily v
       where v.project_id = s.project_id and v.metric_date = s.metric_date
-        and v.category is not distinct from s.category and v.llm_provider = s.provider
-        and v.tracking_location = s.tracking_location) as visibility_metric_rows,
+        and v.category is not distinct from s.category
+        and v.tracking_location = s.tracking_location
+        and v.run_id in (
+          select rs.run_id from run_scope rs
+          where rs.project_id = s.project_id and rs.metric_date = s.metric_date
+            and rs.category is not distinct from s.category and rs.provider = s.provider
+            and rs.tracking_location = s.tracking_location and rs.run_kind = s.run_kind
+        )) as visibility_metric_rows,
     null::integer as replacement_audit_rows -- audit table is introduced by the pending replacement migration
   from scope_summary s
 )
