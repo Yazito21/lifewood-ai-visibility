@@ -34,6 +34,7 @@ begin
     v_updated := replace(v_updated, 'then ''topic'' end', 'then ''category'' end');
     v_updated := replace(v_updated, 'run_kind := ''topic''', 'run_kind := ''category''');
     v_updated := replace(v_updated, 'fr.completed_at, ''topic'', fr.id', 'fr.completed_at, ''category'', fr.id');
+    v_updated := replace(v_updated, 'v_loc, g.category, ''topic'', ''profound_import''', 'v_loc, g.category, ''category'', ''profound_import''');
     v_updated := replace(v_updated, '''topic'', ur.category', '''category'', ur.category');
     if v_updated is distinct from v_definition then
       execute v_updated;
