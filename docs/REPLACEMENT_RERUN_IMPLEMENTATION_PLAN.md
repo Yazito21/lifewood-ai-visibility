@@ -1692,3 +1692,10 @@ Commits:
 Validation status:
 - The code and test changes are committed to the feature branch. They have not yet been executed in a confirmed Deno/SQL CI run.
 - No hosted Supabase rehearsal, Production migration, Edge Function deployment, Vercel Production deployment, unpause, or historical deletion was performed.
+
+
+Additional retry regression coverage:
+- Extended the actual-handler lifecycle fixture to simulate one transient network failure during entity extraction.
+- Added a test asserting the extraction request is retried once, the second request succeeds, and the completed candidate proceeds to promotion.
+- Commit: `d79744bb43e15e5a0ce56303b36e953c31465915` - cover transient entity extraction retry.
+- These tests are committed but still require a confirmed Deno CI execution; they are not yet claimed as passing.
