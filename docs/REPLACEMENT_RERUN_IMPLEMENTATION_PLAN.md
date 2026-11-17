@@ -1887,3 +1887,19 @@ Added `supabase/tests/replacement_rerun_competitor_recompute_contract.sql` and w
 - Recompute does not delete raw AI responses or the separate direct-competitor configuration/observation tables.
 
 This is a database-function contract test, not a substitute for the planned end-to-end synthetic legacy/imported-data fixture. It must pass in a fresh CI run before being treated as verified.
+
+
+### End-to-end competitor recomputation fixture and historical inventory
+
+Added `supabase/tests/replacement_rerun_competitor_recompute_behaviour.sql` and wired it into the disposable-database workflow. The fixture exercises:
+
+- Imported Gemini run whose tracked-brand presence is represented by stored Profound evidence even though the tracked brand name is absent from response text.
+- A Perplexity predecessor and replacement on the same project/category/date/provider/location, confirming only the active replacement is used for rebuilt observations.
+- A removed competitor observation being archived before it disappears from active observations.
+- Rebuilding competitor response evidence and citation occurrences from raw response annotations.
+- A verifiable legacy ChatGPT full run being republished as a synthetic category run with `source_run_id` lineage.
+- Canonical finalization of the synthetic, imported, and replacement-published units.
+
+Also added `supabase/diagnostics/replacement_rerun_historical_inventory.sql`. It is a SELECT-only report that groups historical runs by project, Malaysia-local date, category, provider, and tracking location and reports run lineage plus raw response, evidence, citation occurrence, competitor observation, visibility metric, and replacement audit row counts. It does not modify or delete any records.
+
+The new behavioural fixture must pass in CI before it is considered verified. The inventory query has not been run against hosted data; it is provided for a later, separately approved read-only review. No historical deletion is included.
