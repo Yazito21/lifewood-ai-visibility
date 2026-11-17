@@ -1704,3 +1704,28 @@ Additional retry regression coverage:
 A further hardening pass made HTTP failure handling explicit: non-retryable HTTP responses now set the batch error and break directly, rather than throwing into the network-exception classifier. This prevents provider-supplied error wording from accidentally matching the transient-network regex. HTTP 429/5xx retain their explicit retry branch; the network exception path remains limited to one retry.
 
 Commit: `d6d6b3561cc7b09e7e73581b0695802af0f2e0a1` - fail fast on non-retryable extraction HTTP responses.
+
+
+## Development update - 2026-11-17 (candidate raw-response scope validation)
+
+The promotion audit found that the original candidate validator checked response counts and metric scope, but did not independently prove that every raw response belonged to the candidate's project/provider/prompt category. The handler normally constructs those fields correctly, but the database promotion gate must defend itself against malformed or inconsistent candidate data.
+
+Added migration `20261117120000_harden_candidate_raw_response_scope_validation.sql`:
+
+- Requires each candidate raw response's `project_id` to equal the candidate project.
+- Requires each raw response's `llm_provider` to equal the candidate provider.
+- Requires each response's prompt to exist, belong to the same project, and fall within the candidate category scope (or configured project categories for a full-run validation).
+- Rejects null response tracking locations.
+- Enforces the currently supported single configured project tracking location, requiring the candidate responses to match it and the run's primary location.
+- Keeps validation read-only; it does not modify canonical data or predecessors.
+
+Expanded `replacement_rerun_candidate_validation_behaviour.sql` with negative cases for wrong provider, wrong project, wrong prompt category, and an unconfigured second location. These cases assert the explicit validation errors rather than relying on the HTTP handler to prevent bad input.
+
+Commits:
+- `08aa428ad35d356a284c69df02a50106f1237949` - add raw-response scope validation migration.
+- `4666c21cf061015beb8864ca971da0a5e5282141` - test provider and prompt category isolation.
+- `aac1288f725a5edeecd18114b96f4fc39cdaf545` - test project isolation.
+- `a37d6830e13131e6b918307b9e418082f2f1906c` - enforce single configured location.
+- `34d05d255a9aa4155cf9e33bc775303f63816709` - test unconfigured location rejection.
+
+Verification remains pending: these SQL behavioural tests have not yet been executed against a local disposable Supabase database or confirmed CI run. No hosted or Production resources were changed.
