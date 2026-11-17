@@ -128,6 +128,18 @@ begin
     raise exception 'replacement rerun contract: legacy topic run_kind values remain';
   end if;
 
+  if not exists (
+    select 1
+    from public.tracking_runs tr
+    join public.projects p on p.id = tr.project_id
+    where p.brand_name = 'Replacement Rerun Legacy Run Kind Migration Fixture'
+      and tr.category = 'Skin'
+      and tr.run_kind = 'category'
+      and tr.status = 'failed'
+  ) then
+    raise exception 'replacement rerun contract: legacy run kind was not converted to category';
+  end if;
+
   select pg_get_functiondef('public.tracking_runs_publication_guard()'::regprocedure)
     into publication_guard_definition;
   if position('then ''category'' end' in publication_guard_definition) = 0
