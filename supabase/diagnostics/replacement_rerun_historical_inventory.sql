@@ -70,6 +70,26 @@ scope_counts as (
         and o.category is not distinct from s.category and o.llm_provider = s.provider
         and o.tracking_location = s.tracking_location) as competitor_observation_rows,
     (select count(*)::integer
+       from public.citations c
+      where c.project_id = s.project_id and c.metric_date = s.metric_date
+        and c.category is not distinct from s.category and c.llm_provider = s.provider
+        and c.tracking_location = s.tracking_location) as legacy_citation_rows,
+    (select count(*)::integer
+       from public.competitors c
+      where c.project_id = s.project_id and c.metric_date = s.metric_date
+        and c.category is not distinct from s.category and c.llm_provider = s.provider
+        and c.tracking_location = s.tracking_location) as legacy_competitor_rows,
+    (select count(*)::integer
+       from public.direct_competitor_observations o
+       join public.direct_competitors dc on dc.id = o.competitor_id and dc.project_id = o.project_id
+      where o.project_id = s.project_id and o.metric_date = s.metric_date
+        and o.llm_provider = s.provider and o.tracking_location = s.tracking_location
+        and dc.category is not distinct from s.category) as direct_competitor_observation_rows,
+    (select count(*)::integer
+       from public.direct_competitors dc
+      where dc.project_id = s.project_id and dc.category is not distinct from s.category
+    ) as direct_competitor_registry_rows,
+    (select count(*)::integer
        from public.visibility_daily v
       where v.project_id = s.project_id and v.metric_date = s.metric_date
         and v.category is not distinct from s.category and v.llm_provider = s.provider

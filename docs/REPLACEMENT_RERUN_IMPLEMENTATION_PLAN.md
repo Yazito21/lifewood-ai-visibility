@@ -1923,3 +1923,6 @@ Verification is pending the next fresh CI run. No Production migration or hosted
 The first end-to-end fixture run failed at the imported Gemini observation assertion. The recomputation worker intentionally selects the latest completed response per prompt, so the initial fixture incorrectly attached two imported responses to the same prompt ID. That caused the worker to treat them as one response. The fixture now uses two distinct prompt IDs, matching the real tracking/import data model. This was a test-fixture correction, not a production-code change.
 
 The failing run was `44026470833`; application and Edge checks passed, and the database suite reached the new behavioural test. The corrected fixture and active-run lookup migration are being re-run together.
+
+
+The read-only inventory query is now also executed by the disposable database workflow as a syntax/schema compatibility check. The CI check runs against the empty schema fixture only; it does not inspect hosted historical records.
