@@ -36,7 +36,7 @@ begin
     from public.tracking_runs tr
     where tr.project_id = p_project_id and tr.provider = p_provider and tr.tracking_location = p_location
       and tr.status = 'completed' and tr.published_at is not null and tr.superseded_at is null
-      and tr.run_kind = 'topic' and tr.category = any(v_categories)
+      and tr.run_kind = 'category' and tr.category = any(v_categories)
       and (tr.published_at at time zone 'Asia/Kuala_Lumpur')::date = p_metric_date
     order by tr.category, tr.published_at desc, tr.id desc
   ) r;
@@ -244,7 +244,7 @@ begin
     where (p_date_from is null or tr.d >= p_date_from) and (p_date_to is null or tr.d <= p_date_to)
       and not exists (
         select 1 from public.tracking_runs x
-        where x.project_id = tr.project_id and x.run_kind = 'topic' and x.source_run_id is null
+        where x.project_id = tr.project_id and x.run_kind = 'category' and x.source_run_id is null
           and x.status = 'completed' and x.published_at is not null and x.superseded_at is null
           and x.tracking_location = tr.tracking_location and x.provider = tr.provider
           and (x.published_at at time zone 'Asia/Kuala_Lumpur')::date = tr.d)
@@ -265,7 +265,7 @@ begin
           project_id, provider, status, total_prompts, completed_prompts, failed_prompts, started_at, completed_at,
           tracking_location, category, published_at, run_kind, source_run_id, error_message)
         values (p_project_id, fr.provider, 'completed', v_resp, v_resp, 0, fr.started_at, fr.completed_at,
-          fr.tracking_location, tn, fr.completed_at, 'topic', fr.id, 'Backfilled category slice of all-category run ' || fr.id)
+          fr.tracking_location, tn, fr.completed_at, 'category', fr.id, 'Backfilled category slice of all-category run ' || fr.id)
         returning id into v_synth;
         update public.visibility_daily set run_id = v_synth
         where project_id = p_project_id and metric_date = fr.d and category = tn
@@ -273,7 +273,7 @@ begin
         v_slices := v_slices + 1;
       else
         v_skipped := v_skipped || jsonb_build_object(
-          'date', fr.d, 'topic', tn, 'stored_score', v_score,
+          'date', fr.d, 'category', tn, 'stored_score', v_score,
           'recomputed', case when coalesce(v_resp, 0) > 0 then round(v_pres::numeric / v_resp * 100, 1) end);
       end if;
     end loop;
@@ -285,7 +285,7 @@ begin
   select tr.id as unit_run, coalesce(tr.source_run_id, tr.id) as src_run, tr.category, tr.tracking_location as loc,
          tr.provider, (tr.published_at at time zone 'Asia/Kuala_Lumpur')::date as d
   from public.tracking_runs tr
-  where tr.project_id = p_project_id and tr.run_kind = 'topic' and tr.status = 'completed'
+  where tr.project_id = p_project_id and tr.run_kind = 'category' and tr.status = 'completed'
     and tr.published_at is not null and tr.superseded_at is null and tr.provider <> 'Overall'
     and tr.category = any(v_categories)
     and (p_date_from is null or (tr.published_at at time zone 'Asia/Kuala_Lumpur')::date >= p_date_from)
@@ -468,7 +468,7 @@ begin
       perform public.finalize_run_metrics(ur.unit_run);
       v_units := v_units + 1;
     exception when others then
-      v_blocked := v_blocked || jsonb_build_object('date', ur.d, 'topic', ur.category, 'reason', sqlerrm);
+      v_blocked := v_blocked || jsonb_build_object('date', ur.d, 'category', ur.category, 'reason', sqlerrm);
     end;
   end loop;
 
@@ -476,7 +476,7 @@ begin
   for ur in select distinct d, loc, provider from _cm_units order by d loop
     if public.publish_engine_overall_metrics(p_project_id, ur.d, ur.loc, ur.provider, not exists (
         select 1 from public.tracking_runs tx
-        where tx.project_id = p_project_id and tx.tracking_location = ur.loc and tx.run_kind = 'topic'
+        where tx.project_id = p_project_id and tx.tracking_location = ur.loc and tx.run_kind = 'category'
           and tx.status = 'completed' and tx.published_at is not null and tx.superseded_at is null
           and tx.provider <> 'Overall' and tx.provider <> ur.provider
           and (tx.published_at at time zone 'Asia/Kuala_Lumpur')::date = ur.d)) is not null then
@@ -484,7 +484,7 @@ begin
     end if;
     -- Days with several engines are also pooled across engines (idempotent per day).
     if exists (select 1 from public.tracking_runs tx
-               where tx.project_id = p_project_id and tx.tracking_location = ur.loc and tx.run_kind = 'topic'
+               where tx.project_id = p_project_id and tx.tracking_location = ur.loc and tx.run_kind = 'category'
                  and tx.status = 'completed' and tx.published_at is not null and tx.superseded_at is null
                  and tx.provider <> 'Overall' and tx.provider <> ur.provider
                  and (tx.published_at at time zone 'Asia/Kuala_Lumpur')::date = ur.d) then
