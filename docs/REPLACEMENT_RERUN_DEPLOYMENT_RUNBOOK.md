@@ -118,6 +118,6 @@ No Production schema or data changes were made during the preflight. This sectio
 ## 7. Explicitly out of scope
 
 - No Production migration, Edge Function deployment, or Vercel Production deployment has been performed by preparing this runbook.
-- No Production historical predecessor inventory or deletion has been performed.
+- A read-only Production historical predecessor/dependency inventory has been performed. No historical rows have been deleted.
 - No legacy `competitors`, `direct_competitors`, or `direct_competitor_observations` data is to be deleted.
 - No Dr D Signature Clinic, MDLand, or unrelated project is to be modified or used for testing.
