@@ -85,12 +85,12 @@ Deno.test("invalid bearer token is rejected before database client creation", as
     SUPABASE_PUBLISHABLE_KEY: "public-key",
     SUPABASE_SERVICE_ROLE_KEY: "service-key",
   };
-  let authRequest: Request | null = null;
+  const authRequests: Request[] = [];
   let clientCreations = 0;
   const handler = createVisibilityTrackingHandler({
     getEnv: (name) => values[name],
     fetcher: async (input, init) => {
-      authRequest = new Request(input, init);
+      authRequests.push(new Request(input, init));
       return new Response(JSON.stringify({ message: "invalid token" }), { status: 401 });
     },
     createAdminClient: (() => {
@@ -107,8 +107,8 @@ Deno.test("invalid bearer token is rejected before database client creation", as
 
   assertEquals(response.status, 401);
   assertEquals((await response.json()).error, "AUTH_VALIDATION_FAILED");
-  assertEquals(authRequest?.url, "https://project.supabase.co/auth/v1/user");
-  assertEquals(authRequest?.headers.get("apikey"), "public-key");
-  assertEquals(authRequest?.headers.get("Authorization"), "Bearer invalid-token");
+  assertEquals(authRequests[0]?.url, "https://project.supabase.co/auth/v1/user");
+  assertEquals(authRequests[0]?.headers.get("apikey"), "public-key");
+  assertEquals(authRequests[0]?.headers.get("Authorization"), "Bearer invalid-token");
   assertEquals(clientCreations, 0);
 });
