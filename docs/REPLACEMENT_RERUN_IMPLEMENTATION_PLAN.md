@@ -1699,3 +1699,8 @@ Additional retry regression coverage:
 - Added a test asserting the extraction request is retried once, the second request succeeds, and the completed candidate proceeds to promotion.
 - Commit: `d79744bb43e15e5a0ce56303b36e953c31465915` - cover transient entity extraction retry.
 - These tests are committed but still require a confirmed Deno CI execution; they are not yet claimed as passing.
+
+
+A further hardening pass made HTTP failure handling explicit: non-retryable HTTP responses now set the batch error and break directly, rather than throwing into the network-exception classifier. This prevents provider-supplied error wording from accidentally matching the transient-network regex. HTTP 429/5xx retain their explicit retry branch; the network exception path remains limited to one retry.
+
+Commit: `d6d6b3561cc7b09e7e73581b0695802af0f2e0a1` - fail fast on non-retryable extraction HTTP responses.
