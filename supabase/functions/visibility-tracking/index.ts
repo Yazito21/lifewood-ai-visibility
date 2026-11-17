@@ -620,6 +620,15 @@ export function createVisibilityTrackingHandler(
 
     let promptQuery = admin.from("prompts").select("id,prompt_number,prompt,category,language,active").eq("project_id", projectId).eq("active", true).order("prompt_number");
     const selectedCategory = typeof body?.category === "string" ? body.category.trim() : "";
+    // Atomic promotion currently supports category-scoped topic candidates only.
+    // Reject legacy full-run requests before creating a run or spending provider
+    // tokens; otherwise they would finish as completed_unpublished candidates.
+    if (mode !== "sample" && !selectedCategory) {
+      return json({
+        error: "FULL_RUN_REPLACEMENT_NOT_SUPPORTED",
+        message: "Run tracking one category at a time. Full-run replacement is not yet supported by the atomic publication workflow.",
+      }, 409);
+    }
     if (selectedCategory) promptQuery = promptQuery.eq("category", selectedCategory);
     if (Array.isArray(body?.prompt_ids)) {
       const ids = body.prompt_ids.map(String).filter(Boolean);
