@@ -18,6 +18,7 @@ declare
   v_old_score numeric := 0;
   v_new_score numeric := 0;
   v_batch uuid;
+  v_actor uuid := gen_random_uuid();
 begin
   insert into public.projects (brand_name, categories, tracking_market, tracking_locations)
   values ('Synthetic Replacement Brand', array['Skin'], 'MY', array['MY'])
@@ -74,9 +75,19 @@ begin
     raise exception 'original canonical visibility row missing before replacement';
   end if;
 
+  -- Seed an auth user because tracking_batches.requested_by references auth.users.
+  insert into auth.users (
+    id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data,
+    created_at, updated_at
+  ) values (
+    v_actor, 'authenticated', 'authenticated',
+    v_actor::text || '@replacement-test.invalid', '',
+    '{}'::jsonb, '{}'::jsonb, now(), now()
+  );
+
   -- Keep historical batch lineage observable; the FK is intentionally SET NULL on predecessor deletion.
   insert into public.tracking_batches (project_id, requested_by, status, category_order)
-  values (v_project, gen_random_uuid(), 'completed', '["Skin"]'::jsonb)
+  values (v_project, v_actor, 'completed', '["Skin"]'::jsonb)
   returning id into v_batch;
   insert into public.tracking_batch_topics (batch_id, topic, ordinal, status, tracking_run_id)
   values (v_batch, 'Skin', 0, 'completed', v_old_run);
