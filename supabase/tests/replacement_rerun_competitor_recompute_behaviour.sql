@@ -14,6 +14,7 @@ declare
   v_competitor uuid;
   v_retired_competitor uuid;
   v_prompt uuid;
+  v_prompt_2 uuid;
 
   v_import_run uuid;
   v_import_response_1 uuid;
@@ -72,6 +73,10 @@ begin
   values (v_project, 1, 'Which clinics are recommended for skin treatments?', 'Skin', 'English', true)
   returning id into v_prompt;
 
+  insert into public.prompts (project_id, prompt_number, prompt, category, language, active)
+  values (v_project, 2, 'Which providers offer skin treatment advice?', 'Skin', 'English', true)
+  returning id into v_prompt_2;
+
   -- Imported Gemini data: the tracked brand is present according to stored
   -- Profound evidence even though its name is absent from the response text.
   insert into public.tracking_runs (
@@ -95,7 +100,7 @@ begin
     project_id, prompt_id, llm_provider, captured_at, prompt_snapshot, raw_response,
     response_text, response_status, run_id, tracking_location, data_source
   ) values (
-    v_project, v_prompt, 'gemini', v_import_ts + interval '1 minute', 'Imported prompt 2',
+    v_project, v_prompt_2, 'gemini', v_import_ts + interval '1 minute', 'Imported prompt 2',
     '{"output":[{"content":[{"annotations":[{"type":"url_citation","url":"https://beta.example/skin-guide"}]}]}]}'::jsonb,
     'Beta Clinic is another option.', 'completed', v_import_run, 'MY', 'profound_import'
   ) returning id into v_import_response_2;
