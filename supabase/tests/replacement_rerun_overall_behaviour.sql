@@ -308,7 +308,7 @@ end
 $$;
 
 
-do $
+do $multi_provider$
 declare
   v_project uuid;
   v_prompt uuid;
@@ -437,7 +437,7 @@ begin
     raise exception 'shared Overall pool was overwritten by one provider instead of pooling ChatGPT and Gemini';
   end if;
 end
-$;
+$multi_provider$;
 
 rollback;
 select 'replacement rerun Overall aggregation behavioural tests passed' as result;
