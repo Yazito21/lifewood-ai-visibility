@@ -639,24 +639,44 @@ Deno.test("successful provider response stages all candidate data before confirm
   assertEquals((result.fixtures.ai_responses as Array<Record<string, unknown>>).length, 1);
   assertEquals(result.events.some((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate"), true);
 
-  const stagedTables = new Set(result.events
-    .filter((event) => event.kind === "rpc" && event.name === "stage_tracking_candidate_rows")
-    .map((event) => String(event.args?.p_table_key)));
-  for (const table of [
+  const stagingEvents = result.events.filter((event) =>
+    event.kind === "rpc" && event.name === "stage_tracking_candidate_rows"
+  );
+  const stagedTables = new Set(stagingEvents.map((event) => String(event.args?.p_table_key)));
+  const requiredTables = [
     "citations",
     "citation_occurrences",
     "response_brand_evidence",
     "third_party_mentions",
     "category_brand_observations",
     "visibility_daily",
-  ]) {
+  ];
+  for (const table of requiredTables) {
     assertEquals(stagedTables.has(table), true, "expected staged candidate table: " + table);
+    const tableEvent = stagingEvents.find((event) => event.args?.p_table_key === table)!;
+    const rows = tableEvent.args?.p_rows;
+    assertEquals(Array.isArray(rows) && rows.length > 0, true, "expected non-empty staged rows: " + table);
   }
 
-  const promotionIndex = result.events.findIndex((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate");
+  const rawInsertIndex = result.events.findIndex((event) =>
+    event.kind === "table" && event.table === "ai_responses" && event.operation === "insert"
+  );
+  const firstStageIndex = result.events.findIndex((event) =>
+    event.kind === "rpc" && event.name === "stage_tracking_candidate_rows"
+  );
+  const promotionIndex = result.events.findIndex((event) =>
+    event.kind === "rpc" && event.name === "promote_tracking_run_candidate"
+  );
   const completionIndex = result.events.findIndex((event) => event.kind === "table" && event.table === "tracking_runs" &&
     event.operation === "update" && (event.payload as Record<string, unknown>)?.status === "completed");
+  assertEquals(rawInsertIndex >= 0 && firstStageIndex > rawInsertIndex, true);
   assertEquals(completionIndex >= 0 && promotionIndex > completionIndex, true);
+  assertEquals(requiredTables.every((table) => {
+    const index = result.events.findIndex((event) =>
+      event.kind === "rpc" && event.name === "stage_tracking_candidate_rows" && event.args?.p_table_key === table
+    );
+    return index >= 0 && index < promotionIndex;
+  }), true);
   assertEquals(result.events.some((event) => event.kind === "table" && event.operation === "delete"), false);
 });
 
