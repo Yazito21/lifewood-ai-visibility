@@ -21,26 +21,35 @@ function json(body: unknown, status = 200) {
     headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
-function getConfiguredKey(primary: string, jsonEnv: string, legacy?: string) {
-  const direct = Deno.env.get(primary);
+function getConfiguredKey(
+  primary: string,
+  jsonEnv: string,
+  legacy?: string,
+  getEnv: (name: string) => string | undefined = (name) => Deno.env.get(name),
+) {
+  const direct = getEnv(primary);
   if (direct) return direct;
   if (legacy) {
-    const legacyValue = Deno.env.get(legacy);
+    const legacyValue = getEnv(legacy);
     if (legacyValue) return legacyValue;
   }
-  const raw = Deno.env.get(jsonEnv);
+  const raw = getEnv(jsonEnv);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
-    return parsed?.default ? (Deno.env.get(parsed.default) ?? null) : null;
+    return parsed?.default ? (getEnv(parsed.default) ?? null) : null;
   } catch { return null; }
 }
 function fromB64(value: string) {
   const binary = atob(value);
   return Uint8Array.from(binary, (c) => c.charCodeAt(0));
 }
-async function decrypt(ciphertext: string, aad: string) {
-  const secret = getConfiguredKey("SUPABASE_SECRET_KEY", "SUPABASE_SECRET_KEYS", "SUPABASE_SERVICE_ROLE_KEY");
+async function decrypt(
+  ciphertext: string,
+  aad: string,
+  getEnv: (name: string) => string | undefined = (name) => Deno.env.get(name),
+) {
+  const secret = getConfiguredKey("SUPABASE_SECRET_KEY", "SUPABASE_SECRET_KEYS", "SUPABASE_SERVICE_ROLE_KEY", getEnv);
   if (!secret) throw new Error("SERVER_SECRET_UNAVAILABLE");
   const [ivText, encryptedText] = ciphertext.split(".");
   if (!ivText || !encryptedText) throw new Error("INVALID_STORED_SECRET");
@@ -177,7 +186,7 @@ function searchMarketFor(countryCode: string): SearchMarket | null {
   return { type: "approximate", country, ...(timezoneByCountry[country] ? { timezone: timezoneByCountry[country] } : {}) };
 }
 
-async function callChatGPT(apiKey: string, prompt: string, project: Record<string, unknown>) {
+async function callChatGPT(apiKey: string, prompt: string, project: Record<string, unknown>, fetcher: typeof fetch = fetch) {
   const brand = String(project.brand_name ?? "");
   const description = String(project.brand_description ?? "");
   const domains = Array.isArray(project.brand_domains) ? project.brand_domains.join(", ") : "";
@@ -185,7 +194,7 @@ async function callChatGPT(apiKey: string, prompt: string, project: Record<strin
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 65000);
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetcher("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
       signal: controller.signal,
@@ -252,7 +261,7 @@ async function classifyDirectCompetitors(
   for (let i = 0; i < unique.length; i += 100) chunks.push(unique.slice(i, i + 100));
   const accepted: ClassifiedCompetitor[] = [];
   for (const chunk of chunks) {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetcher("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
       body: JSON.stringify({
@@ -303,7 +312,7 @@ async function classifyDirectCompetitors(
   return [...new Map(accepted.map((item) => [item.domain, item])).values()];
 }
 
-async function processPrompts(prompts: Array<Record<string, unknown>>, providers: string[], project: Record<string, unknown>, apiKeys: Record<string,string>, trackingLocations: string[]) {
+async function processPrompts(prompts: Array<Record<string, unknown>>, providers: string[], project: Record<string, unknown>, apiKeys: Record<string,string>, trackingLocations: string[], fetcher: typeof fetch = fetch) {
   const tasks: Array<{ provider: string; prompt: Record<string,unknown>; trackingLocation: string }> = [];
   for (const provider of providers) {
     if (provider !== "chatgpt") throw new Error("Only ChatGPT is enabled in this first tracking stage. Configure ChatGPT in Settings.");
@@ -322,7 +331,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
       const started = new Date().toISOString();
       try {
         const projectForLocation = { ...project, tracking_market: trackingLocation, tracking_location: trackingLocation };
-        const answer = await callWithRetry(() => callChatGPT(apiKeys[provider], String(prompt.prompt ?? ""), projectForLocation), retryState);
+        const answer = await callWithRetry(() => callChatGPT(apiKeys[provider], String(prompt.prompt ?? ""), projectForLocation, fetcher), retryState);
         const text = answer.text;
         if (answer.providerError) {
           results[index] = {
@@ -512,11 +521,24 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
 const MAX_TRACKING_PROMPTS = 50;
 const MIN_PROMPTS_PER_CATEGORY = 5;
 
-Deno.serve(async (req: Request) => {
+export type VisibilityTrackingHandlerDependencies = {
+  getEnv?: (name: string) => string | undefined;
+  fetcher?: typeof fetch;
+  createAdminClient?: typeof createClient;
+};
+
+export function createVisibilityTrackingHandler(
+  dependencies: VisibilityTrackingHandlerDependencies = {},
+) {
+  const getEnv = dependencies.getEnv ?? ((name: string) => Deno.env.get(name));
+  const fetcher = dependencies.fetcher ?? fetch;
+  const createAdminClient = dependencies.createAdminClient ?? createClient;
+
+  return async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   // Emergency stop for tracking writes. This check precedes auth, DB access,
   // run creation, provider calls, staging and promotion.
-  if (isTrackingPaused(Deno.env.get("TRACKING_REPLACEMENT_PAUSED"))) {
+  if (isTrackingPaused(getEnv("TRACKING_REPLACEMENT_PAUSED"))) {
     return json({
       error: "TRACKING_TEMPORARILY_PAUSED",
       message: "Tracking is temporarily paused by an administrator. No run was started.",
@@ -526,18 +548,18 @@ Deno.serve(async (req: Request) => {
   let activeStageKey: string | null = null;
   let activeAdmin: any = null;
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const publicKey = getConfiguredKey("SUPABASE_PUBLISHABLE_KEY", "SUPABASE_PUBLISHABLE_KEYS") ?? Deno.env.get("SUPABASE_ANON_KEY");
-    const adminKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? getConfiguredKey("SUPABASE_SECRET_KEY", "SUPABASE_SECRET_KEYS");
+    const supabaseUrl = getEnv("SUPABASE_URL");
+    const publicKey = getConfiguredKey("SUPABASE_PUBLISHABLE_KEY", "SUPABASE_PUBLISHABLE_KEYS", undefined, getEnv) ?? getEnv("SUPABASE_ANON_KEY");
+    const adminKey = getEnv("SUPABASE_SERVICE_ROLE_KEY") ?? getConfiguredKey("SUPABASE_SECRET_KEY", "SUPABASE_SECRET_KEYS", undefined, getEnv);
     if (!supabaseUrl || !publicKey || !adminKey) return json({ error: "SUPABASE_SERVER_CONFIG_MISSING" }, 500);
     const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
     if (!token) return json({ error: "AUTHORIZATION_TOKEN_MISSING" }, 401);
-    const auth = await fetch(supabaseUrl + "/auth/v1/user", { headers: { apikey: publicKey, Authorization: "Bearer " + token } });
+    const auth = await fetcher(supabaseUrl + "/auth/v1/user", { headers: { apikey: publicKey, Authorization: "Bearer " + token } });
     if (!auth.ok) return json({ error: "AUTH_VALIDATION_FAILED" }, 401);
     const user = await auth.json();
     const userId = user?.id;
     if (!userId) return json({ error: "AUTH_USER_MISSING" }, 401);
-    const admin = createClient(supabaseUrl, adminKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const admin = createAdminClient(supabaseUrl, adminKey, { auth: { persistSession: false, autoRefreshToken: false } });
     activeAdmin = admin;
     const startStage = async (stageKey: string, metadata: Record<string, unknown> = {}) => {
       if (!activeRunId) return;
@@ -657,7 +679,7 @@ Deno.serve(async (req: Request) => {
     const { data: secret, error: secretError } = await admin.from("llm_secrets").select("ciphertext").eq("project_id", projectId).eq("provider", "chatgpt").maybeSingle();
     if (secretError) return json({ error: "API_KEY_LOOKUP_FAILED" }, 500);
     if (!secret?.ciphertext) return json({ error: "CHATGPT_API_KEY_NOT_CONFIGURED" }, 400);
-    const apiKey = await decrypt(secret.ciphertext, projectId + ":chatgpt");
+    const apiKey = await decrypt(secret.ciphertext, projectId + ":chatgpt", getEnv);
     const trackingLocationsForRun = resolveTrackingCountryCodes(project as Record<string, unknown>);
     if (!trackingLocationsForRun.length) return json({ error: "NO_VALID_TRACKING_LOCATIONS" }, 400);
     let runId: string | null = null;
@@ -868,7 +890,7 @@ Deno.serve(async (req: Request) => {
       }
       activeRunId = runId;
     }
-    const results = await processPrompts(prompts as Array<Record<string,unknown>>, providerIds, project as Record<string,unknown>, { chatgpt: apiKey }, trackingLocationsForRun);
+    const results = await processPrompts(prompts as Array<Record<string,unknown>>, providerIds, project as Record<string,unknown>, { chatgpt: apiKey }, trackingLocationsForRun, fetcher);
     const succeeded = results.filter((r) => r.status === "completed");
     const failed = results.filter((r) => r.status === "failed");
 
@@ -1511,4 +1533,9 @@ Deno.serve(async (req: Request) => {
     }
     return json({ error: message || "Unexpected tracking error." }, 500);
   }
-});
+  };
+}
+
+if (import.meta.main) {
+  Deno.serve(createVisibilityTrackingHandler());
+}
