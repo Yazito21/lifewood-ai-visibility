@@ -1812,3 +1812,65 @@ Verification status:
 - The migration and regression test are committed to the feature branch.
 - A fresh disposable-database CI run is required before considering this fix verified.
 - No hosted Supabase rehearsal, Production migration, Edge Function deployment, Vercel Production deployment, unpause, or historical deletion was performed.
+
+---
+
+## Development update - 2026-11-17 (latest verified implementation state)
+
+This section supersedes earlier verification notes in this document where they describe the same tests as pending. The latest branch state and workflow result are authoritative.
+
+### Verified feature-branch state
+
+- Branch: `feat/replace-rerun-data`
+- Verified commit: `7eaad3c4bc2d7bd7e0ae666ac915abcbfa5bd3d8`
+- GitHub Actions run: [44023851092](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44023851092)
+- Workflow conclusion: **success**
+
+The successful workflow covered:
+
+- Application TypeScript check.
+- Visibility-tracking Edge Function Deno check and unit tests.
+- Disposable local Supabase schema restoration.
+- All eleven replacement migrations applied in chronological order.
+- RPC, staging access, and privilege contract checks.
+- Candidate validation, including raw-response scope and project-owned brand references.
+- First publication, exact-scope replacement, rollback, scope isolation, and source-run foreign-key behaviour.
+- Overall rebuild/invalidation and run-owned derived-data replacement.
+- Concurrent same-scope replacement.
+- Multi-provider Overall aggregation, including shared ChatGPT/Gemini source-run lineage.
+
+This is isolated disposable-database CI evidence only. It is not a hosted Supabase rehearsal and does not verify Production.
+
+### Current implementation boundaries
+
+- Candidate writes remain isolated from published date-grain derived tables until promotion.
+- Promotion is gated on a completed candidate and the database validation/promotion RPC.
+- Replacement is scoped to the exact supported project, Malaysia-local date, category, provider, and single configured tracking location.
+- The shared Overall pool is rebuilt across providers when multiple providers have published runs for the same date/location.
+- The emergency pause gate and tracked-brand configuration read-only validation remain in place.
+- Direct competitor configuration and direct competitor observations are preserved by replacement.
+- Full-run/multi-category atomic promotion and multi-location candidates remain unsupported.
+- No Production migration, Edge Function deployment, Vercel Production deployment, unpause, hosted rerun, or historical deletion has occurred.
+
+### Next-stage audit - competitor recomputation and historical compatibility
+
+Reviewed the coordinated competitor recomputation function in `20261117110000_coordinate_competitor_recompute_with_tracking_replacements.sql`, its original implementation in `20261027090100_recompute_competitor_metrics_function.sql`, and the recompute queue/trigger migration.
+
+Confirmed:
+
+1. `recompute_competitor_metrics` and candidate promotion acquire the same project-scoped transaction advisory lock (`__TRACKING_REPLACEMENT_RECOMPUTE__`). This serializes a project's competitor recomputation against replacement promotion and prevents the worker from publishing an Overall snapshot from a concurrently changing replacement scope.
+2. The recompute worker builds its units only from completed, published, non-superseded topic runs for the requested project and optional Malaysia-local date range. It does not intentionally process unrelated projects or unpublished candidates.
+3. Legacy all-category runs are handled through synthetic category slices only when the stored tracked-brand score can be reproduced from the source run's raw responses. The synthetic slice points to the original run through `source_run_id`.
+4. Imported `profound_import` runs use stored tracked-brand response evidence rather than assuming the imported response text contains the brand name. This preserves the source's tracked-brand flag semantics.
+5. The worker archives competitor observations that no longer belong to the current competitor set before removing those active observation rows. It does not delete the source `ai_responses`, competitor registry/configuration, or the separate direct-competitor registry/observations.
+6. Competitor evidence and citation-occurrence rows for brands removed from the current competitor set are not comprehensively pruned by the recompute function. They remain attached to their source responses. This is currently treated as retained source-level evidence, not as proof that those brands remain active competitors; the active observation set is rebuilt separately. Before changing this behaviour, downstream consumers and historical audit expectations must be checked so that imported/source evidence is not destructively discarded.
+
+### Remaining next-stage work
+
+- [ ] Add explicit regression coverage for competitor recomputation against a synthetic legacy/imported dataset and a replacement-published dataset.
+- [ ] Verify recompute queue retry/failure behaviour and confirm the shared lock is exercised in the test workflow.
+- [ ] Trace every consumer of retained response evidence and citation occurrences to confirm that removed competitor evidence cannot leak into active leaderboards, citation summaries, or Overall metrics.
+- [ ] Prepare a read-only historical lineage inventory covering project/date/category/provider/location, candidate predecessor IDs, source-run lineage, and row counts. Do not execute any historical deletion.
+- [ ] Review the inventory output and obtain separate approval before any historical deletion.
+
+No Production or hosted environment was changed during this audit.
