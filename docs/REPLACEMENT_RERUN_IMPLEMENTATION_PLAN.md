@@ -2031,3 +2031,10 @@ The per-run dependency query was also executed read-only against the connected P
 - The Production replacement-audit table is not deployed yet. Deleting historical superseded rows before that audit mechanism exists would lose predecessor-to-successor lineage because the live `supersedes_run_id` FK is `ON DELETE SET NULL`.
 
 No Production data or schema was changed. No historical rows were deleted. The next safe step is to prepare the deployment and historical cleanup decision pack, with separate approvals for Production migrations/deployment and any historical deletion.
+
+
+### Release decision pack updated
+
+Updated `docs/REPLACEMENT_RERUN_DEPLOYMENT_RUNBOOK.md` to include the twelfth migration, `20261117150000_exclude_superseded_runs_from_leaderboard_lookup.sql`, and to record the current Production preflight state. The runbook now distinguishes the read-only checks already completed (migration history, key columns, FK dependencies, historical run inventory) from remaining release checks (triggers, grants, RLS, and hosted function definitions).
+
+The Production migration history currently ends at the November 12, 2026 report-template migrations, so all twelve replacement migrations remain pending. The runbook remains **prepared, not executed**. A separate sandbox rehearsal and explicit approval for each Production deployment surface remain mandatory.

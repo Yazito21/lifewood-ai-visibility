@@ -11,7 +11,7 @@ This runbook is a controlled release plan only. It does not authorize Production
 
 The replacement-rerun branch changes three deployment surfaces:
 
-1. **Supabase database:** eleven migrations listed below.
+1. **Supabase database:** twelve migrations listed below.
 2. **Supabase Edge Function:** `visibility-tracking`, including candidate staging, atomic promotion, and the emergency pause gate.
 3. **Vercel application:** `app/platform/[projectId]/dashboard/page.tsx`, which runs and resumes category batches and retains failed candidate IDs.
 
@@ -24,7 +24,7 @@ Do not begin a hosted release until all of the following are satisfied:
 - A separate non-Production Supabase project is available for a hosted integration rehearsal. Current CI uses a disposable local database only.
 - Handler-level mocked lifecycle tests now cover provider failures, entity-extraction failures/retries, raw response persistence, all six candidate staging tables, promotion success/failure, and fail-closed promotion responses. The tests are committed but must pass in CI before any hosted rehearsal.
 - The tracked-brand registry bootstrap write side effect has been removed. Tracking now performs a read-only registry/category-assignment preflight and fails before provider calls or run creation when configuration is incomplete.
-- A fresh read-only audit confirms the live schema, triggers, foreign keys, grants, RLS, function definitions, and migration history still match the assumptions in the implementation.
+- A fresh read-only audit confirms the live schema, triggers, foreign keys, grants, RLS, function definitions, and migration history still match the assumptions in the implementation. The read-only Production preflight has confirmed the migration history, required columns, and tracking-run foreign keys; the remaining trigger/grant/RLS/function-definition checks are still release preconditions.
 - A current database backup/PITR recovery point is confirmed, and the operational owner is available during the release.
 - The exact intended pending migration set has been reconciled against the hosted migration history. **Do not run a generic `supabase db push` until this comparison proves it will apply only the reviewed changes.** Stop if any unrelated migration is pending or the migration history is inconsistent.
 - The user explicitly approves the exact Production migrations, Edge Function deployment, and Vercel Production deployment. Historical deletion requires separate explicit approval.
@@ -46,8 +46,9 @@ Apply only this reviewed sequence, after the live migration-history reconciliati
 9. `20261117120000_harden_candidate_raw_response_scope_validation.sql`
 10. `20261117130000_validate_staged_brand_project_ownership.sql`
 11. `20261117140000_rebuild_cross_provider_overall_after_replacement.sql`
+12. `20261117150000_exclude_superseded_runs_from_leaderboard_lookup.sql`
 
-These migrations add candidate staging/audit structures and define or update the validation, preview, promotion, metric-finalization, and recompute-coordination functions. They do not authorize historical cleanup. Do not manually delete rows from canonical metric tables or legacy competitor tables as part of this release.
+These migrations add candidate staging/audit structures and define or update the validation, preview, promotion, metric-finalization, recompute-coordination, cross-provider Overall rebuild, and active published-run lookup functions. The final migration ensures superseded runs are not selected as current leaderboard data. They do not authorize historical cleanup. Do not manually delete rows from canonical metric tables or legacy competitor tables as part of this release.
 
 ## 4. Controlled rollout sequence
 
@@ -70,7 +71,7 @@ The pause gate is checked before authentication, database access, run creation, 
 
 ### C. Apply database migrations
 
-1. Apply the eleven migrations in the order above using the approved migration procedure.
+1. Apply the twelve migrations in the order above using the approved migration procedure.
 2. Re-run the schema/security contract and read-only function-definition checks against the hosted target.
 3. Confirm the promotion RPC, candidate staging RPC, validation/preview RPCs, and advisory-lock coordination are present with the intended service-role-only grants.
 4. Stop if any migration or post-migration contract check fails. Keep tracking paused.
@@ -108,7 +109,13 @@ If a deployment or smoke test fails:
 
 The pause secret is an operational stop control, not a substitute for database backups or a tested recovery plan.
 
-## 6. Explicitly out of scope
+## 6. Current Production preflight findings
+
+The connected Production project is active and healthy. Its applied migration history currently ends at the November 12, 2026 report-template migrations; none of the twelve replacement migrations above has been applied. The replacement audit table is therefore not present in Production. The live read-only inventory also confirmed legacy source-run dependencies and failed/partial unpublished attempts that must be retained unless a separate historical cleanup plan is approved.
+
+No Production schema or data changes were made during the preflight. This section is informational and does not authorize a release.
+
+## 7. Explicitly out of scope
 
 - No Production migration, Edge Function deployment, or Vercel Production deployment has been performed by preparing this runbook.
 - No Production historical predecessor inventory or deletion has been performed.
