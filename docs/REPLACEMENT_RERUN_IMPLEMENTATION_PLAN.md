@@ -2014,3 +2014,20 @@ Added `supabase/diagnostics/replacement_rerun_run_dependency_detail.sql`, a read
 - Failed and partial unpublished runs.
 
 For each run it reports direct and source-shared raw response counts, response evidence, citation occurrences, third-party mentions, run-owned competitor and visibility rows, source/supersedes child references, stage rows, daily claims, batch-category references, and the not-yet-deployed replacement audit count. The query is included in CI for schema validation. It has not yet been executed against Production.
+
+
+### Per-run dependency audit verified
+
+The latest full feature-branch workflow passed on commit `a12fba1aee51c9fdea09a238a464d3df22ab8508`:
+[GitHub Actions run 44029030755](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44029030755)
+
+All checks passed, including the new queue failure/retry fixture, imported/legacy/replacement competitor recomputation fixture, the historical inventory query, the tracking-run FK inventory query, and the per-run dependency query.
+
+The per-run dependency query was also executed read-only against the connected Production database. It confirmed:
+- Superseded published topic runs still retain their raw responses, response-brand evidence, run-stage rows, and batch-category references, while active competitor observations and visibility metrics point to the current runs.
+- Superseded aggregate runs have no raw-response/evidence payload, but replacement-chain references remain.
+- Completed-unpublished legacy full runs are still parents of synthetic category slices and must be retained while those `source_run_id` references exist.
+- Failed and partial candidate runs remain unpublished; their `supersedes_run_id` fields point to still-active published predecessors. They must not be mistaken for published predecessors or allowed to displace them.
+- The Production replacement-audit table is not deployed yet. Deleting historical superseded rows before that audit mechanism exists would lose predecessor-to-successor lineage because the live `supersedes_run_id` FK is `ON DELETE SET NULL`.
+
+No Production data or schema was changed. No historical rows were deleted. The next safe step is to prepare the deployment and historical cleanup decision pack, with separate approvals for Production migrations/deployment and any historical deletion.
