@@ -631,6 +631,11 @@ export function createVisibilityTrackingHandler(
     if (!prompts?.length) return json({ error: "NO_ACTIVE_PROMPTS" }, 400);
     if (mode === "sample" && prompts.length > 25) return json({ error: "SAMPLE_LIMIT_25_PROMPTS" }, 400);
 
+    // Keep validated comparison configuration available to the later evidence stage.
+    // It is loaded and checked before a run is created or any provider is called.
+    let preloadedBrandAssignments: Array<Record<string, unknown>> | null = null;
+    let preloadedBrandDirectory: Array<Record<string, unknown>> | null = null;
+
     // Persistent category runs validate only their selected category. A full request remains supported for backwards compatibility.
     if (mode !== "sample") {
       const configuredCategories = [...new Set((Array.isArray(project.categories) ? project.categories.map(String) : []).filter(Boolean))];
@@ -659,12 +664,43 @@ export function createVisibilityTrackingHandler(
         }, 409);
       }
 
-      // Validate the brand comparison set (one tracked brand, up to 99 competitors) only for categories included in this run.
-      const { data: setupAssignments, error: setupAssignmentError } = await admin.from("category_brand_assignments")
-        .select("category,brand_id,role,include_in_metrics").eq("project_id", projectId).eq("include_in_metrics", true);
-      if (setupAssignmentError) return json({ error: "BRAND_REGISTRY_VALIDATION_FAILED", message: setupAssignmentError.message }, 500);
+      // Load the complete configured comparison set once and validate both the
+      // assignment shape and tracked-brand registry before creating a candidate.
+      const [
+        { data: setupAssignments, error: setupAssignmentError },
+        { data: setupDirectory, error: setupDirectoryError },
+      ] = await Promise.all([
+        admin.from("category_brand_assignments")
+          .select("project_id,category,brand_id,role,aliases,websites,include_in_metrics")
+          .eq("project_id", projectId).eq("include_in_metrics", true),
+        admin.from("brand_registry")
+          .select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_tracked_brand,is_active")
+          .eq("project_id", projectId).eq("is_active", true),
+      ]);
+      if (setupAssignmentError || setupDirectoryError) return json({
+        error: "BRAND_REGISTRY_VALIDATION_FAILED",
+        message: setupAssignmentError?.message ?? setupDirectoryError?.message,
+      }, 500);
+      preloadedBrandAssignments = (setupAssignments ?? []) as Array<Record<string, unknown>>;
+      preloadedBrandDirectory = (setupDirectory ?? []) as Array<Record<string, unknown>>;
+
+      const trackedSetup = validateTrackedBrandConfiguration(
+        String(project.brand_name ?? "Brand"),
+        validatedCategories,
+        preloadedBrandAssignments,
+        preloadedBrandDirectory,
+      );
+      if (!trackedSetup.ok) return json({
+        error: trackedSetup.code,
+        message: trackedSetup.missingCategories.length
+          ? "Complete the tracked-brand registry and assignments in project Settings for: " + trackedSetup.missingCategories.join(", ")
+          : "Complete the tracked-brand registry in project Settings before running tracking.",
+        missing_categories: trackedSetup.missingCategories,
+      }, 409);
+
+      // Validate one tracked brand and at most 99 competitors for each included category.
       const invalidCategories = validatedCategories.map((category) => {
-        const rows = (setupAssignments ?? []).filter((row: Record<string, unknown>) => String(row.category) === category);
+        const rows = preloadedBrandAssignments!.filter((row: Record<string, unknown>) => String(row.category) === category);
         const total = new Set(rows.map((row: Record<string, unknown>) => String(row.brand_id))).size;
         const tracked = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "tracked_brand").map((row: Record<string, unknown>) => String(row.brand_id))).size;
         const competitors = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "competitor").map((row: Record<string, unknown>) => String(row.brand_id))).size;
@@ -1026,20 +1062,11 @@ export function createVisibilityTrackingHandler(
     // Canonical, explicitly configured comparison set. No response-discovered
     // entity is automatically promoted to competitor status.
     const classificationFailures: string[] = [];
-    const { data: allAssignments, error: assignmentError } = await admin
-      .from("category_brand_assignments")
-      .select("project_id,category,brand_id,role,aliases,websites,include_in_metrics")
-      .eq("project_id", projectId)
-      .eq("include_in_metrics", true);
-    if (assignmentError) throw new Error("CATEGORY_BRAND_ASSIGNMENT_READ_FAILED: " + assignmentError.message);
-
-    const assignedBrandIds = [...new Set((allAssignments ?? []).map((row: Record<string, unknown>) => String(row.brand_id)))];
-    let { data: directoryRows, error: directoryError } = await admin
-      .from("brand_registry")
-      .select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_tracked_brand,is_active")
-      .eq("project_id", projectId)
-      .eq("is_active", true);
-    if (directoryError) throw new Error("BRAND_REGISTRY_READ_FAILED: " + directoryError.message);
+    // Reuse the read-only configuration already validated before run creation.
+    // Sample requests return above and do not need persistent candidate configuration.
+    const allAssignments = preloadedBrandAssignments ?? [];
+    const assignedBrandIds = [...new Set(allAssignments.map((row: Record<string, unknown>) => String(row.brand_id)))];
+    const directoryRows = preloadedBrandDirectory ?? [];
 
     // Validate the preconfigured tracked-brand registry. Tracking is read-only
     // with respect to project configuration: no registry or assignment upserts
@@ -1047,8 +1074,8 @@ export function createVisibilityTrackingHandler(
     const trackedConfiguration = validateTrackedBrandConfiguration(
       String(project.brand_name ?? "Brand"),
       categoryNames,
-      (allAssignments ?? []) as Array<Record<string, unknown>>,
-      (directoryRows ?? []) as Array<Record<string, unknown>>,
+      allAssignments,
+      directoryRows,
     );
     if (!trackedConfiguration.ok) {
       throw new Error(
