@@ -17,6 +17,7 @@ declare
   v_other_category_prompt uuid;
   v_other_project uuid;
   v_bad_project_run uuid;
+  v_bad_location_run uuid;
   v_result jsonb;
   v_metric_date date := (now() at time zone 'Asia/Kuala_Lumpur')::date;
 begin
@@ -184,6 +185,46 @@ begin
   v_result := public.validate_tracking_run_candidate(v_bad_project_run);
   if not (v_result->'errors' ? 'raw_response_project_provider_prompt_or_location_scope_mismatch') then
     raise exception 'candidate validation accepted a raw response from another project: %', v_result;
+  end if;
+
+  -- A candidate must not widen replacement to a second, unconfigured location.
+  insert into public.tracking_runs (
+    project_id, provider, status, total_prompts, completed_prompts,
+    started_at, completed_at, tracking_location, category, run_kind
+  ) values (
+    v_project, 'chatgpt', 'running', 2, 0,
+    now(), null, 'MY', 'Skin', 'topic'
+  ) returning id into v_bad_location_run;
+
+  insert into public.ai_responses (
+    project_id, prompt_id, llm_provider, captured_at, prompt_snapshot,
+    raw_response, response_text, response_status, run_id, tracking_location
+  ) values
+    (v_project, v_prompt, 'chatgpt', now(), 'Synthetic test prompt',
+     '{}'::jsonb, 'Malaysia response', 'completed', v_bad_location_run, 'MY'),
+    (v_project, v_prompt, 'chatgpt', now(), 'Synthetic test prompt',
+     '{}'::jsonb, 'Foreign location response', 'completed', v_bad_location_run, 'SG');
+
+  perform public.stage_tracking_candidate_rows(v_bad_location_run, 'visibility_daily',
+    jsonb_build_array(
+      jsonb_build_object(
+        'project_id', v_project, 'metric_date', v_metric_date, 'category', 'Skin',
+        'llm_provider', 'chatgpt', 'tracking_location', 'MY', 'run_id', v_bad_location_run,
+        'visibility_score', 1, 'citation_count', 0, 'presence_count', 0, 'response_count', 1
+      ),
+      jsonb_build_object(
+        'project_id', v_project, 'metric_date', v_metric_date, 'category', 'Skin',
+        'llm_provider', 'chatgpt', 'tracking_location', 'SG', 'run_id', v_bad_location_run,
+        'visibility_score', 1, 'citation_count', 0, 'presence_count', 0, 'response_count', 1
+      )
+    ));
+  update public.tracking_runs
+  set status = 'completed', completed_prompts = 2, completed_at = now()
+  where id = v_bad_location_run;
+
+  v_result := public.validate_tracking_run_candidate(v_bad_location_run);
+  if not (v_result->'errors' ? 'candidate_tracking_location_does_not_match_single_project_location') then
+    raise exception 'candidate validation accepted an unconfigured second tracking location: %', v_result;
   end if;
 end
 $$;
