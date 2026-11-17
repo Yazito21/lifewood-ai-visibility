@@ -3,6 +3,7 @@ import { rankAgainstEligiblePopulation } from "./rank-population.ts";
 import { calculateEntityVisibility } from "./visibility-score.ts";
 import { buildCitationOccurrenceRows } from "./citation-occurrences.ts";
 import { callWithRetry, describeProviderFailures, newRetryState, sleepMs } from "./provider-retry.ts";
+import { validateCategoryBrandAssignments } from "./category-brand-config.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -626,17 +627,18 @@ Deno.serve(async (req: Request) => {
       const { data: setupAssignments, error: setupAssignmentError } = await admin.from("category_brand_assignments")
         .select("category,brand_id,role,include_in_metrics").eq("project_id", projectId).eq("include_in_metrics", true);
       if (setupAssignmentError) return json({ error: "BRAND_REGISTRY_VALIDATION_FAILED", message: setupAssignmentError.message }, 500);
-      const invalidCategories = validatedCategories.map((category) => {
-        const rows = (setupAssignments ?? []).filter((row: Record<string, unknown>) => String(row.category) === category);
-        const total = new Set(rows.map((row: Record<string, unknown>) => String(row.brand_id))).size;
-        const tracked = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "tracked_brand").map((row: Record<string, unknown>) => String(row.brand_id))).size;
-        const competitors = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "competitor").map((row: Record<string, unknown>) => String(row.brand_id))).size;
-        return { category, total, tracked, competitors };
-      }).filter((item) => item.tracked !== 1 || item.competitors > 99);
-      if (invalidCategories.length) return json({
+      const validation = validateCategoryBrandAssignments(
+        validatedCategories,
+        (setupAssignments ?? []).map((row: Record<string, unknown>) => ({
+          category: String(row.category ?? ""),
+          brand_id: String(row.brand_id ?? ""),
+          role: String(row.role ?? ""),
+        })),
+      );
+      if (!validation.ok) return json({
         error: "BRAND_REGISTRY_INCOMPLETE",
-        message: "Each tracking category must contain one tracked brand and at most 99 competitors. Update the project’s brand registry in Settings before running tracking.",
-        categories: invalidCategories,
+        message: "Each tracking category must have exactly one tracked brand and no more than 99 competitors. The competitor count may vary by category. Update the project’s brand registry in Settings before running tracking.",
+        categories: validation.invalidCategories,
       }, 409);
     }
 
