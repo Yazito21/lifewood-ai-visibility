@@ -1535,3 +1535,13 @@ Commits:
 Validation status:
 - No Deno test, Deno check, or TypeScript CI result has yet been verified for these commits. Vercel checks are not a substitute for Edge Function CI.
 - The complete mocked Edge Function request-flow test remains outstanding. No hosted sandbox or Production deployment was performed.
+
+Additional handler-level authorization coverage:
+
+- Added a lightweight Supabase query-builder fake for the three initial access lookups.
+- Verified an authenticated project member with a non-admin role is denied persistent tracking before prompt reads or provider calls.
+- Verified a user without project membership is denied sample access before prompt reads.
+- These tests exercise the actual exported handler and its authorization branch, but do not yet execute prompt loading, candidate creation, raw-response persistence, six-table staging, or promotion.
+
+Commit:
+- `f70168cb75cbca37a87b8f21ad55324b01dc67a3` - test project authorization through the handler.
