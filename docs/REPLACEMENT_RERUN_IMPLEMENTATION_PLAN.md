@@ -1622,3 +1622,28 @@ Next development focus:
 1. Add the complementary successful-provider path through the handler, including deterministic citation/evidence/mention staging and the promotion RPC boundary.
 2. Extend the fake database to retain inserted response IDs and verify the staged response-linked data, not just the RPC invocation.
 3. Obtain and inspect the branch-push CI run. Fix any TypeScript/Deno failures before proceeding to the successful lifecycle test.
+
+
+## Development update - 2026-11-17 (successful-provider lifecycle and promotion-failure tests)
+
+Added complementary request-flow coverage through the real exported Edge Function handler:
+
+- The mocked provider returns a completed answer with a Lifewood citation and a web-search source.
+- The second provider request performs entity extraction and returns a grounded Lifewood entity.
+- The scripted Supabase client retains the inserted raw response and makes it available to the handler's subsequent response-ID lookup.
+- The test asserts that all six candidate-derived tables are staged: `citations`, `citation_occurrences`, `response_brand_evidence`, `third_party_mentions`, `category_brand_observations`, and `visibility_daily`.
+- It verifies the run is marked completed before the promotion RPC is called, and the handler reports publication only when the promotion RPC confirms `status = published`.
+- A separate promotion-RPC-error scenario verifies the handler returns `CANDIDATE_PROMOTION_FAILED`, leaves the candidate `completed_unpublished`, and does not issue table deletes.
+
+Commit:
+- `e1c71926f4f785e93aa38f4d0ab403bc42169da9` - test successful candidate lifecycle and promotion failure through handler.
+
+Validation status:
+- The latest commit's combined status currently exposes only a pending Vercel check. This is not the replacement database/Deno workflow and does not establish that these new tests pass.
+- The handler tests have been added but have not yet been executed in a confirmed Deno CI run. Do not treat the assertions as verified runtime results until the branch-push workflow completes.
+- No hosted Supabase rehearsal, Production migration, Edge Function deployment, Vercel Production promotion, unpause, or historical deletion was performed.
+
+Next steps:
+1. Obtain the branch-push workflow result and inspect any failing job logs. Fix Deno/type/test failures before adding more handler scenarios.
+2. If the successful lifecycle test passes, extend coverage for unexpected promotion status and provider retry exhaustion as useful.
+3. Keep all hosted/Production actions behind the existing explicit approval gates.
