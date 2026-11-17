@@ -19,7 +19,7 @@ declare
   v_count integer;
 begin
   insert into public.projects (brand_name, categories, tracking_market, tracking_locations)
-  values ('Synthetic Scope Isolation Brand', array['Skin','Mind'], 'MY', array['MY','SG'])
+  values ('Synthetic Scope Isolation Brand', array['Skin','Mind'], 'MY', array['MY'])
   returning id into v_project;
 
   insert into public.projects (brand_name, categories, tracking_market, tracking_locations)
@@ -31,12 +31,12 @@ begin
   returning id into v_prompt;
 
   -- Neighbouring published scopes that must survive the Skin/chatgpt/MY replacement.
+  -- The schema-only CI baseline intentionally models one location per project;
   for v_scope in
     select * from (values
       ('Mind'::text, 'chatgpt'::text, 'MY'::text, v_date, v_project),
       ('Skin'::text, 'chatgpt'::text, 'MY'::text, v_other_date, v_project),
       ('Skin'::text, 'gemini'::text, 'MY'::text, v_date, v_project),
-      ('Skin'::text, 'chatgpt'::text, 'SG'::text, v_date, v_project),
       ('Skin'::text, 'chatgpt'::text, 'MY'::text, v_date, v_other_project)
     ) as scopes(category, provider, location, metric_date, project_id)
   loop
@@ -101,7 +101,6 @@ begin
       ('Mind'::text, 'chatgpt'::text, 'MY'::text, v_date, v_project),
       ('Skin'::text, 'chatgpt'::text, 'MY'::text, v_other_date, v_project),
       ('Skin'::text, 'gemini'::text, 'MY'::text, v_date, v_project),
-      ('Skin'::text, 'chatgpt'::text, 'SG'::text, v_date, v_project),
       ('Skin'::text, 'chatgpt'::text, 'MY'::text, v_date, v_other_project)
     ) as scopes(category, provider, location, metric_date, project_id)
   loop
