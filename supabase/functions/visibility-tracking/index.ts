@@ -439,7 +439,10 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
             await sleepMs(2000 * (attempt + 1));
             continue;
           }
-          throw new Error(apiMessage);
+          // This is a definitive HTTP response, not a network exception. Stop
+          // here so provider error text cannot accidentally trigger a retry.
+          lastError = new Error(apiMessage);
+          break;
         }
         const output = (Array.isArray(payload?.output) ? payload.output : [])
           .flatMap((item: Record<string, unknown>) => item.type === "message" && Array.isArray(item.content)
