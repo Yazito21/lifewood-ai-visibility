@@ -43,7 +43,7 @@ begin
   end if;
 
   if v_run.category is null or v_run.run_kind is distinct from 'category' then
-    raise exception 'only_category_scoped_topic_candidates_can_be_promoted';
+    raise exception 'only_category_candidates_can_be_promoted';
   end if;
 
   v_validation := public.validate_tracking_run_candidate(p_run_id);
@@ -156,7 +156,7 @@ begin
     raise exception 'existing_canonical_metric_has_missing_or_unpublished_run_lineage';
   end if;
 
-  -- A category replacement must never delete a full run or a topic slice whose
+  -- A category replacement must never delete a full run or a category slice whose
   -- raw responses are owned by a shared source run. Those require a separate
   -- migration/slicing workflow and are rejected rather than partially deleted.
   if exists (
