@@ -1225,3 +1225,39 @@ A schema-contract assertion is added to enforce that the advisory lock occurs be
 - Decide and implement full-run behaviour before deploying the updated Edge Function generally.
 - Run lint/type checks and Edge Function tests.
 - No hosted migration, Edge Function deployment, Vercel deployment, or Production data deletion has been performed. Dr D Signature Clinic, MDLand and unrelated projects remain out of scope.
+
+
+### 2026-11-17 continuation: app consumer audit and passing lock-order hardening CI
+
+The lock-order and staging-key hardening commit `c8c58a02120d4b1b6081d5b22f44c3588863b3f5` passed GitHub Actions run [#32](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44006273262). All existing isolated steps passed: schema-only baseline restore, feature migrations, schema/security contract, candidate validation, first publication, exact-scope replacement, forced rollback and scope isolation.
+
+### Feature-branch frontend/API consumer audit
+
+Traversed all 58 TypeScript/TSX files under `app/`, `components/` and `lib/` on the feature branch.
+
+Findings:
+- No frontend query or component reads `tracking_runs`, `tracking_run_replacements`, or `tracking_run_candidate_rows` directly. Candidate staging and replacement audit remain server-side.
+- Dashboard reads `visibility_daily` and uses `tracking_batches` / `tracking_batch_categories` for category orchestration and resumable batch status. The existing replacement test confirms a deleted predecessor's batch-category FK detaches to NULL while preserving the batch row.
+- Responses reads `ai_responses`; after replacement it will naturally expose only the surviving raw responses for the replaced run scope.
+- Citations uses `get_cumulative_citations` and `get_third_party_mentions` RPCs. Reports use `visibility_daily`, `third_party_mentions`, `brand_registry`, and report RPCs.
+- Analytics and leaderboards use canonical `visibility_daily` and `category_brand_observations` rows.
+- The Competitors page uses the configured brand registry and direct-competitor metrics workflow. The live `get_direct_competitor_metrics_for_period` function consumes `direct_competitors` and `direct_competitor_observations`; these must remain untouched by visibility reruns.
+- No `public.competitors` table consumer was found in the 58 frontend files or in the current live public SQL function definitions. This is not proof that external scripts or untracked clients do not consume the legacy table, so it remains preserved.
+
+### Overall aggregation test added
+
+A new disposable SQL behaviour test covers:
+1. A complete single-category candidate creates a published Overall aggregate whose `source_run_ids` points to the candidate.
+2. When all configured categories have valid runs, replacing one category rebuilds Overall using the replacement plus the latest surviving sibling category run.
+3. When a configured category is missing, the previous Overall rows are invalidated rather than left stale.
+
+This test is wired into the feature-branch GitHub Actions workflow. Its result is pending until the next CI run completes.
+
+### Still outstanding
+
+- The lock-order contract is passing, but an actual two-session concurrency test is still required.
+- Add a multi-location promotion test if/when the project schema supports multiple configured locations; the current `projects.tracking_locations` constraint enforces exactly one configured location.
+- Complete a controlled category rerun in an isolated hosted test environment before Production deployment.
+- Resolve the full-run limitation and decide how to isolate the tracked-brand registry bootstrap side effects.
+- Run Deno/TypeScript lint and Edge Function tests; current CI is database-focused.
+- No hosted migration, Supabase Edge Function deployment, Vercel deployment, or Production data deletion has been performed.
