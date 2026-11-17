@@ -227,6 +227,40 @@ function createScriptedQueryClient(
   };
 }
 
+Deno.test("persistent full-run request is rejected before prompt loading or run creation", async () => {
+  const values: Record<string, string> = {
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "public-key",
+    SUPABASE_SERVICE_ROLE_KEY: "service-key",
+  };
+  const events: Array<{ table: string; operation: string; payload?: unknown }> = [];
+  const fixtures: Record<string, unknown> = {
+    profiles: { role: "admin" },
+    project_members: { role: "admin" },
+    projects: { id: "lifewood-project", categories: ["General"], tracking_market: "MY", tracking_locations: ["MY"] },
+    prompts: [{ id: "prompt-1", prompt_number: 1, prompt: "Test prompt", category: "General", language: "English", active: true }],
+  };
+  const handler = createVisibilityTrackingHandler({
+    getEnv: (name) => values[name],
+    fetcher: async (input) => String(input).endsWith("/auth/v1/user")
+      ? new Response(JSON.stringify({ id: "admin-1" }), { status: 200 })
+      : new Response("provider must not be called", { status: 500 }),
+    createAdminClient: (() => createScriptedQueryClient(fixtures, events)) as never,
+  });
+
+  const response = await handler(new Request("https://edge.test/visibility-tracking", {
+    method: "POST",
+    headers: { Authorization: "Bearer valid-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: "lifewood-project" }),
+  }));
+  const payload = await response.json();
+
+  assertEquals(response.status, 409);
+  assertEquals(payload.error, "FULL_RUN_REPLACEMENT_NOT_SUPPORTED");
+  assertEquals(events.some((event) => event.table === "tracking_runs" && event.operation !== "select"), false);
+  assertEquals(events.some((event) => event.table === "prompts" && event.operation !== "select"), false);
+});
+
 Deno.test("persistent tracking rejects a missing tracked-brand registry row before creating a run", async () => {
   const values: Record<string, string> = {
     SUPABASE_URL: "https://project.supabase.co",
