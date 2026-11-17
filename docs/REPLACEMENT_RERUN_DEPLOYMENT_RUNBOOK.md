@@ -47,6 +47,7 @@ Apply only this reviewed sequence, after the live migration-history reconciliati
 10. `20261117130000_validate_staged_brand_project_ownership.sql`
 11. `20261117140000_rebuild_cross_provider_overall_after_replacement.sql`
 12. `20261117150000_exclude_superseded_runs_from_leaderboard_lookup.sql`
+13. `20261117160000_standardise_category_run_kind.sql`
 
 These migrations add candidate staging/audit structures and define or update the validation, preview, promotion, metric-finalization, recompute-coordination, cross-provider Overall rebuild, and active published-run lookup functions. The final migration ensures superseded runs are not selected as current leaderboard data. They do not authorize historical cleanup. Do not manually delete rows from canonical metric tables or legacy competitor tables as part of this release.
 
