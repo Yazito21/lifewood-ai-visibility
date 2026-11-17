@@ -1420,3 +1420,50 @@ Current feature-branch head before this handover-only update: `4b98160868f59dcfc
 - Dr D Signature Clinic, MDLand, and unrelated projects were not used as test targets or modified.
 - Legacy `competitors`, `direct_competitors`, and `direct_competitor_observations` remain preserved.
 - No Production historical data has been deleted.
+
+
+---
+
+# Latest Verification Update - 2026-11-17
+
+**This section supersedes earlier status statements where they conflict.**
+
+## Current status
+
+- Feature branch: `feat/replace-rerun-data`
+- Branch comparison: 114 commits ahead of `main`, 0 behind; main SHA at comparison: `2b7f94c65aa8ab1d7168f341eb11dc260129337a`.
+- Latest fully verified CI: [run #45](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44009915868), commit `2b3ffc9dca3d687b8de2142efd362bd297bbe828`; both jobs passed.
+- The database job passed the disposable schema restore, replacement migrations, schema/security contract, candidate validation, first publication, exact replacement, rollback, scope isolation, Overall rebuild/invalidation, six-table derived replacement, source-run FK rejection, and two-session concurrent replacement tests.
+- The app/Edge job passed `npx tsc --noEmit`, Deno type-checking and all visibility-tracking Deno unit tests.
+
+## Fresh hosted Supabase check
+
+A read-only check of project `jhauufmrxpsbfrahgclv` found:
+
+- Hosted migration history still ends at `20261112032011`; none of the eight replacement migrations is applied.
+- Hosted `visibility-tracking` remains version 67.
+- Retrieved deployed source does not include candidate staging, `TRACKING_REPLACEMENT_PAUSED`, or `promote_tracking_run_candidate`.
+
+A Vercel deployment does not apply Supabase migrations or deploy the Edge Function. The exact current Vercel release commit was not independently verified. The replacement rerun is therefore not live in hosted Production.
+
+## Edge Function audit: tracked-brand bootstrap
+
+The candidate-processing path contains persistent upserts to `brand_registry` and `category_brand_assignments` when a tracked-brand row or category assignment is missing. These are configuration writes, not candidate metric writes, but they can persist even if a candidate later fails. Removing the fallback outright may break older projects without registry setup. This behaviour must be resolved explicitly before release: either move bootstrap into a controlled setup/promotion boundary or fail clearly and require setup before tracking. Add tests proving failed candidates do not leave unintended configuration mutations.
+
+## Constraints
+
+- Promotion supports category-scoped candidates only; full-run (`category = null`) promotion is not supported.
+- Dashboard batches run categories sequentially. Each category replacement plus Overall refresh is atomic; the entire batch is not.
+- The current project schema enforces one configured tracking location. Multi-location candidate runs are not supported/proven.
+- Preserve `competitors`, `direct_competitors`, and `direct_competitor_observations`.
+- Historical Production deletion remains a separate task requiring a read-only inventory and separate explicit approval.
+
+## Next steps
+
+1. Build a mocked end-to-end request-flow test for the actual Edge Function handler: auth/validation, provider retries, raw response persistence, all six staging paths, completion without publication, promotion only on success, promotion failure preservation, and pause-gate early exit.
+2. Resolve and test the tracked-brand bootstrap side effect.
+3. Arrange an isolated hosted Supabase rehearsal. Do not create a paid branch/resource without cost disclosure and required confirmation.
+4. Re-audit live schema/FKs/triggers/grants/RLS/migration history, confirm backup/PITR, review exact release commit, then seek explicit approval before Production migrations, Edge Function deployment, or Vercel Production promotion.
+5. Only after sandbox acceptance, consider unpausing and a controlled first replacement.
+
+No Production replacement migrations, Edge Function deployment, Vercel Production promotion, or historical deletion is authorised by this update.
