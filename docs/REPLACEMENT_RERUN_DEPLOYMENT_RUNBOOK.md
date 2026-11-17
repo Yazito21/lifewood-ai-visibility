@@ -11,7 +11,7 @@ This runbook is a controlled release plan only. It does not authorize Production
 
 The replacement-rerun branch changes three deployment surfaces:
 
-1. **Supabase database:** twelve migrations listed below.
+1. **Supabase database:** thirteen migrations listed below.
 2. **Supabase Edge Function:** `visibility-tracking`, including candidate staging, atomic promotion, and the emergency pause gate.
 3. **Vercel application:** `app/platform/[projectId]/dashboard/page.tsx`, which runs and resumes category batches and retains failed candidate IDs.
 
@@ -72,7 +72,7 @@ The pause gate is checked before authentication, database access, run creation, 
 
 ### C. Apply database migrations
 
-1. Apply the twelve migrations in the order above using the approved migration procedure.
+1. Apply the thirteen migrations in the order above using the approved migration procedure.
 2. Re-run the schema/security contract and read-only function-definition checks against the hosted target.
 3. Confirm the promotion RPC, candidate staging RPC, validation/preview RPCs, and advisory-lock coordination are present with the intended service-role-only grants.
 4. Stop if any migration or post-migration contract check fails. Keep tracking paused.
@@ -112,7 +112,7 @@ The pause secret is an operational stop control, not a substitute for database b
 
 ## 6. Current Production preflight findings
 
-The connected Production project is active and healthy. Its applied migration history currently ends at the November 12, 2026 report-template migrations; none of the twelve replacement migrations above has been applied. The replacement audit table is therefore not present in Production. The live read-only inventory also confirmed legacy source-run dependencies and failed/partial unpublished attempts that must be retained unless a separate historical cleanup plan is approved.
+The connected Production project is active and healthy. Its applied migration history currently ends at the November 12, 2026 report-template migrations; none of the thirteen replacement migrations above has been applied. The replacement audit table is therefore not present in Production. The live read-only inventory also confirmed legacy source-run dependencies and failed/partial unpublished attempts that must be retained unless a separate historical cleanup plan is approved.
 
 No Production schema or data changes were made during the preflight. This section is informational and does not authorize a release.
 
