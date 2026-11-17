@@ -26,7 +26,7 @@ begin
   insert into public.tracking_runs (
     id, project_id, provider, status, total_prompts, completed_prompts,
     started_at, tracking_location, category, run_kind
-  ) values ('$OLD_RUN_ID', '$PROJECT_ID', 'chatgpt', 'running', 1, 0, now(), 'MY', 'Skin', 'topic');
+  ) values ('$OLD_RUN_ID', '$PROJECT_ID', 'chatgpt', 'running', 1, 0, now(), 'MY', 'Skin', 'category');
 
   insert into public.ai_responses (
     project_id, prompt_id, llm_provider, captured_at, prompt_snapshot,
@@ -52,8 +52,8 @@ begin
     id, project_id, provider, status, total_prompts, completed_prompts,
     started_at, tracking_location, category, run_kind
   ) values
-    ('$FIRST_RUN_ID', '$PROJECT_ID', 'chatgpt', 'running', 1, 0, now(), 'MY', 'Skin', 'topic'),
-    ('$SECOND_RUN_ID', '$PROJECT_ID', 'chatgpt', 'running', 1, 0, now(), 'MY', 'Skin', 'topic');
+    ('$FIRST_RUN_ID', '$PROJECT_ID', 'chatgpt', 'running', 1, 0, now(), 'MY', 'Skin', 'category'),
+    ('$SECOND_RUN_ID', '$PROJECT_ID', 'chatgpt', 'running', 1, 0, now(), 'MY', 'Skin', 'category');
 
   insert into public.ai_responses (
     project_id, prompt_id, llm_provider, captured_at, prompt_snapshot,
