@@ -25,7 +25,7 @@ with run_scope as (
     tr.failed_prompts
   from public.tracking_runs tr
   join public.projects p on p.id = tr.project_id
-  where tr.run_kind in ('topic', 'full', 'overall_aggregate')
+  where tr.run_kind in ('category', 'full', 'overall_aggregate')
 ),
 scope_summary as (
   select
@@ -91,7 +91,7 @@ scope_counts as (
         and rs.category is not distinct from s.category and rs.provider = s.provider
         and rs.tracking_location = s.tracking_location and rs.run_kind = s.run_kind
         and (s.category is null or e.category = s.category)) as response_evidence_rows,
-    case when s.run_kind = 'topic' then (select count(*)::integer
+    case when s.run_kind = 'category' then (select count(*)::integer
        from public.citation_occurrences co
       where co.project_id = s.project_id and co.metric_date = s.metric_date
         and co.category is not distinct from s.category and co.provider = s.provider
