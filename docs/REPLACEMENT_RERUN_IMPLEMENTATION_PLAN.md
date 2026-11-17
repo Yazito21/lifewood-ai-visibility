@@ -1971,3 +1971,14 @@ For synthetic category slices, raw-response and evidence counts now filter the s
 
 
 The live inventory exposed a historical data-model nuance: some legacy full-run source responses have `prompt_id IS NULL` after the historical prompt reset. The diagnostic now distinguishes shared source-run raw response rows from the subset still linked to category prompts, and counts retained response evidence by its own category field. This prevents reporting zero source responses solely because the prompt foreign keys were cleared.
+
+
+### Queue failure/retry test passed
+
+The queue failure/retry fixture passed in GitHub Actions run `44027361771` on commit `c48b8f3ba096fd81fc3cfcdac615f41bf116ac78`. The test forces a recomputation exception, verifies the job is retained as failed with its error, then explicitly enqueues a new job and verifies successful completion.
+
+### Historical inventory expanded to include incomplete runs
+
+The live read-only inventory showed Dr D Signature Clinic has historical failed and partial runs in addition to published and completed-unpublished runs. The diagnostic now includes every run status for `topic`, `full`, and `overall_aggregate`, and reports failed, partial, in-progress, superseded, and completed-unpublished IDs separately. Citation occurrence counts are now restricted to the current run or its source-run lineage rather than every occurrence in the same scope.
+
+This is important for cleanup planning: a failed or partial run is not a published predecessor, and a completed-unpublished legacy full run may still be the source of category-level synthetic slices. No deletion is authorised or performed.
