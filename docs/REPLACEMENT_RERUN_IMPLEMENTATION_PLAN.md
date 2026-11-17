@@ -1515,3 +1515,23 @@ Validation status:
 - GitHub's commit-workflow-runs endpoint returned no workflow runs for the earlier tracked-brand commits; only Vercel status checks were visible. Do not interpret Vercel success as Deno/SQL CI success.
 - The full mocked Edge Function request-flow test remains outstanding. The current handler is a single large `Deno.serve` closure with direct environment, fetch, and Supabase client dependencies. A safe end-to-end harness will require a deliberate handler/dependency-injection refactor rather than a brittle source-text test.
 - No hosted sandbox or Production deployment was performed.
+
+## Development update - 2026-11-17 (handler runtime injection)
+
+Implemented on `feat/replace-rerun-data`:
+
+- Extracted the Edge Function entry point into exported `createVisibilityTrackingHandler(dependencies)`. Production entry remains `Deno.serve(createVisibilityTrackingHandler())` when the module is the Deno main module.
+- Added injectable environment lookup, HTTP fetch, and Supabase admin-client creation dependencies. Defaults preserve the existing Deno runtime behaviour.
+- Routed authentication requests, primary provider requests, and entity-extraction requests through the injected fetch function. Secret lookup/decryption now accepts the injected environment lookup.
+- Added handler-level tests for: emergency pause returning 503 before auth/fetch/database creation; OPTIONS preflight preceding the pause check; missing bearer token rejection before network/database work; and invalid bearer token rejection before database client creation.
+- This is the first seam for a true request-flow harness, not yet the full mocked end-to-end test. The remaining challenge is a deterministic Supabase query-builder mock and fixture setup for access checks, prompt/configuration reads, raw response inserts, candidate staging, and final promotion.
+
+Commits:
+- `8ddb8bc5ae708e864bb5725442983825f445db38` - introduce injectable handler dependencies.
+- `7a88e1d81cf4bf2c855f8501a0438920eeadb698` - route all provider requests through injected fetch.
+- `ded06d3c0671474521df1f24fe4ca309960fb343` - add handler early-exit tests.
+- `4d6e046901974b6971f77a9223c0317c4995294d` - harden auth request assertions.
+
+Validation status:
+- No Deno test, Deno check, or TypeScript CI result has yet been verified for these commits. Vercel checks are not a substitute for Edge Function CI.
+- The complete mocked Edge Function request-flow test remains outstanding. No hosted sandbox or Production deployment was performed.
