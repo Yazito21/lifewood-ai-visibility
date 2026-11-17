@@ -10,6 +10,7 @@ as $$
 declare
   v_run public.tracking_runs%rowtype;
   v_project_categories text[];
+  v_project_locations text[];
   v_expected_categories text[];
   v_actual_categories text[];
   v_expected_locations text[];
@@ -51,7 +52,7 @@ begin
     v_errors := array_append(v_errors, 'overall_aggregate_cannot_be_candidate');
   end if;
 
-  select p.categories into v_project_categories
+  select p.categories, p.tracking_locations into v_project_categories, v_project_locations
   from public.projects p where p.id = v_run.project_id;
 
   if v_run.category is not null then
@@ -101,6 +102,15 @@ begin
   end if;
   if coalesce(cardinality(v_expected_locations), 0) = 0 then
     v_errors := array_append(v_errors, 'candidate_has_no_tracking_locations');
+  end if;
+
+  -- The current project configuration supports one tracking location per run.
+  -- Reject extra/mismatched response locations rather than silently widening the
+  -- replacement scope beyond the project's configured market.
+  if coalesce(cardinality(v_project_locations), 0) <> 1
+     or v_expected_locations is distinct from v_project_locations
+     or v_run.tracking_location is distinct from v_project_locations[1] then
+    v_errors := array_append(v_errors, 'candidate_tracking_location_does_not_match_single_project_location');
   end if;
 
   select coalesce(array_agg(distinct row_data->>'category' order by row_data->>'category'), array[]::text[]),
