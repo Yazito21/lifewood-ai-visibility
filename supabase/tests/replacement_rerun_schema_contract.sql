@@ -113,6 +113,20 @@ begin
     end if;
   end;
 
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.tracking_runs'::regclass
+      and conname = 'tracking_runs_run_kind_check'
+      and pg_get_constraintdef(oid) like '%category%'
+      and pg_get_constraintdef(oid) not like '%topic%'
+  ) then
+    raise exception 'replacement rerun contract: tracking_runs must use category run_kind terminology';
+  end if;
+
+  if exists (select 1 from public.tracking_runs where run_kind = 'topic') then
+    raise exception 'replacement rerun contract: legacy topic run_kind values remain';
+  end if;
+
   -- All RPCs that read or mutate candidate state must run with a fixed safe search_path.
   if exists (
     select 1
