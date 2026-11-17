@@ -6,6 +6,7 @@ import { callWithRetry, describeProviderFailures, newRetryState, sleepMs } from 
 import { stageTrackingCandidateRows } from "./candidate-staging.ts";
 import { isTrackingPaused } from "./tracking-pause.ts";
 import { validateTrackedBrandConfiguration } from "./tracked-brand-config.ts";
+import { promoteCompletedTrackingCandidate } from "./candidate-promotion.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -1467,18 +1468,18 @@ Deno.serve(async (req: Request) => {
     // A successful candidate becomes canonical only through the atomic promotion RPC.
     // If promotion fails, retain this completed unpublished candidate for diagnosis
     // and leave the currently published dataset untouched.
-    const { data: promotion, error: promotionError } = await admin.rpc("promote_tracking_run_candidate", {
-      p_run_id: runId,
-      p_actor_id: userId,
-    });
-    if (promotionError || promotion?.status !== "published") {
+    const promotionResult = await promoteCompletedTrackingCandidate(admin, runId, userId, status);
+    if (!promotionResult.published) {
       return json({
         error: "CANDIDATE_PROMOTION_FAILED",
         run_id: runId,
         status: "completed_unpublished",
-        message: promotionError?.message || "The promotion RPC did not confirm publication.",
+        message: promotionResult.skipped
+          ? "The candidate was not complete and was not submitted for publication."
+          : promotionResult.message,
       }, 500);
     }
+    const promotion = promotionResult.promotion;
 
     return json({
       mode, run_id: runId, status, published: true, promotion,
