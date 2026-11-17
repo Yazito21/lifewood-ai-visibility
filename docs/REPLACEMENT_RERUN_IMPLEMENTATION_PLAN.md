@@ -1570,3 +1570,22 @@ Updated next steps:
 3. Verify all Deno tests and `deno check`, then obtain a confirmed database smoke-test result from the isolated CI workflow.
 4. Only after those checks, plan the isolated hosted Supabase rehearsal. Disclose any potential cost and obtain confirmation before creating a paid resource.
 5. Keep Production migrations, Edge Function deployment, Vercel Production promotion, unpausing, and historical deletion gated behind separate explicit approval.
+
+
+## Development update - 2026-11-17 (tracked-brand validation moved before execution)
+
+A follow-up audit found that the read-only tracked-brand validator, although it prevented configuration writes, was still being called after provider processing and raw-response persistence. That meant invalid registry setup could consume API credits and leave a failed candidate run before the configuration problem was reported.
+
+Corrected on `feat/replace-rerun-data`:
+
+- Persistent tracking now loads the complete active brand registry and category assignments during preflight.
+- The tracked-brand registry and per-category tracked-brand assignment are validated before the API secret is decrypted, before a `tracking_runs` row is created, and before any provider request.
+- The same preloaded configuration is reused by the later evidence/mentions stage, avoiding a second read of mutable project configuration.
+- Added a handler-level regression test with a valid tracked-brand assignment but a missing registry row. It asserts HTTP 409 with `TRACKED_BRAND_REGISTRY_INCOMPLETE`, zero tracking-run writes, and zero provider requests.
+
+Commits:
+- `6928bdf47575438ff5389b50589adc63e1567d01` - move tracked-brand preflight ahead of candidate execution.
+- `325cad3c264c1fa4f09979241bafa581d1883935` - test missing registry rejection before provider calls.
+
+Validation status:
+- The latest combined commit status reports a pending Vercel check only. No Deno test/type-check or database smoke-test result is confirmed. No hosted or Production deployment was performed.
