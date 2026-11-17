@@ -315,6 +315,7 @@ async function encryptStoredSecret(secret: string, aad: string, plaintext: strin
 function createLifecycleQueryClient(
   fixtures: Record<string, unknown>,
   events: Array<{ kind: string; table?: string; operation?: string; payload?: unknown; name?: string; args?: Record<string, unknown> }>,
+  promotionResult: { data: unknown; error: unknown } = { data: { status: "published" }, error: null },
 ) {
   return {
     from(table: string) {
@@ -332,6 +333,13 @@ function createLifecycleQueryClient(
           operation = "insert";
           payload = value;
           events.push({ kind: "table", table, operation, payload });
+          if (table === "ai_responses") {
+            const rows = Array.isArray(value) ? value : [value];
+            fixtures.ai_responses = [
+              ...(Array.isArray(fixtures.ai_responses) ? fixtures.ai_responses : []),
+              ...rows.map((row, index) => ({ ...(row as Record<string, unknown>), id: "response-" + (index + 1) })),
+            ];
+          }
           return builder;
         },
         upsert(value: unknown) {
@@ -367,7 +375,7 @@ function createLifecycleQueryClient(
         return { data: null, error: null };
       }
       if (name === "promote_tracking_run_candidate") {
-        return { data: { status: "published" }, error: null };
+        return promotionResult;
       }
       return { data: null, error: null };
     },
@@ -473,4 +481,197 @@ Deno.test("provider failure finalizes an unpublished candidate and never calls p
   assertEquals(events.some((event) => event.kind === "table" && event.operation === "delete"), false);
   assertEquals(events.some((event) => event.kind === "rpc" && event.name === "stage_tracking_candidate_rows" &&
     event.args?.p_table_key === "visibility_daily"), true);
+});
+
+
+async function runSuccessfulLifecycle(
+  promotionResult: { data: unknown; error: unknown } = { data: { status: "published" }, error: null },
+) {
+  const serviceSecret = "test-service-role-secret";
+  const ciphertext = await encryptStoredSecret(serviceSecret, "lifewood-project:chatgpt", "test-openai-key");
+  const values: Record<string, string> = {
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "public-key",
+    SUPABASE_SERVICE_ROLE_KEY: serviceSecret,
+  };
+  const events: Array<{ kind: string; table?: string; operation?: string; payload?: unknown; name?: string; args?: Record<string, unknown> }> = [];
+  let providerRequests = 0;
+  let extractionRequests = 0;
+  const trackedBrand = {
+    id: "brand-lifewood",
+    canonical_name: "Lifewood",
+    normalized_key: "lifewood",
+    aliases: ["Lifewood"],
+    primary_website: "https://lifewood.ai",
+    additional_websites: [],
+    is_tracked_brand: true,
+    is_active: true,
+  };
+  const competitor = {
+    id: "brand-competitor",
+    canonical_name: "Example Data",
+    normalized_key: "exampledata",
+    aliases: ["Example Data"],
+    primary_website: "https://exampledata.test",
+    additional_websites: [],
+    is_tracked_brand: false,
+    is_active: true,
+  };
+  const fixtures: Record<string, unknown> = {
+    profiles: { role: "admin" },
+    project_members: { role: "admin" },
+    projects: {
+      id: "lifewood-project",
+      brand_name: "Lifewood",
+      brand_domains: ["lifewood.ai"],
+      brand_terms: ["Lifewood"],
+      categories: ["General"],
+      tracking_market: "MY",
+      tracking_locations: ["MY"],
+    },
+    prompts: [{
+      id: "prompt-1",
+      prompt_number: 1,
+      prompt: "Which companies provide multilingual AI data services?",
+      category: "General",
+      language: "English",
+      active: true,
+    }],
+    category_brand_assignments: [
+      { project_id: "lifewood-project", category: "General", brand_id: trackedBrand.id, role: "tracked_brand", aliases: ["Lifewood"], websites: ["lifewood.ai"], include_in_metrics: true },
+      { project_id: "lifewood-project", category: "General", brand_id: competitor.id, role: "competitor", aliases: ["Example Data"], websites: ["exampledata.test"], include_in_metrics: true },
+    ],
+    brand_registry: [trackedBrand, competitor],
+    llm_secrets: { ciphertext },
+    tracking_run_stages: null,
+    ai_responses: [],
+  };
+  const handler = createVisibilityTrackingHandler({
+    getEnv: (name) => values[name],
+    fetcher: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/auth/v1/user")) {
+        return new Response(JSON.stringify({ id: "admin-1" }), { status: 200 });
+      }
+      if (url === "https://api.openai.com/v1/responses") {
+        const requestBody = JSON.parse(String(init?.body ?? "{}"));
+        const inputText = JSON.stringify(requestBody.input ?? []);
+        if (inputText.includes("Extract explicitly mentioned real-world organizations")) {
+          extractionRequests += 1;
+          return new Response(JSON.stringify({
+            model: "gpt-4o-mini",
+            output: [{
+              type: "message",
+              content: [{
+                type: "output_text",
+                text: JSON.stringify([{
+                  response_id: "prompt-1|MY",
+                  entities: [{
+                    name: "Lifewood",
+                    aliases: ["Lifewood"],
+                    entity_type: "company",
+                    evidence: "Lifewood provides multilingual AI data services.",
+                  }],
+                }]),
+              }],
+            }],
+          }), { status: 200 });
+        }
+        providerRequests += 1;
+        return new Response(JSON.stringify({
+          id: "provider-response-1",
+          status: "completed",
+          model: "gpt-4o-mini",
+          output: [
+            {
+              type: "message",
+              content: [{
+                type: "output_text",
+                text: "Lifewood provides multilingual AI data services. Example Data is another provider.",
+                annotations: [{
+                  type: "url_citation",
+                  url: "https://lifewood.ai/services",
+                  title: "Lifewood Services",
+                }],
+              }],
+            },
+            {
+              type: "web_search_call",
+              action: { sources: [{ url: "https://lifewood.ai/services", title: "Lifewood Services" }] },
+            },
+          ],
+          usage: { input_tokens: 10, output_tokens: 20 },
+        }), { status: 200 });
+      }
+      throw new Error("Unexpected external request: " + url);
+    },
+    createAdminClient: (() => createLifecycleQueryClient(fixtures, events, promotionResult)) as never,
+  });
+
+  const response = await handler(new Request("https://edge.test/visibility-tracking", {
+    method: "POST",
+    headers: { Authorization: "Bearer valid-token", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project_id: "lifewood-project",
+      category: "General",
+      prompt_ids: ["prompt-1"],
+    }),
+  }));
+
+  return {
+    response,
+    payload: await response.json(),
+    events,
+    providerRequests,
+    extractionRequests,
+    fixtures,
+  };
+}
+
+Deno.test("successful provider response stages all candidate data before confirmed promotion", async () => {
+  const result = await runSuccessfulLifecycle();
+
+  assertEquals(result.response.status, 200);
+  assertEquals(result.payload.status, "completed");
+  assertEquals(result.payload.published, true);
+  assertEquals(result.providerRequests, 1);
+  assertEquals(result.extractionRequests, 1);
+  assertEquals((result.fixtures.ai_responses as Array<Record<string, unknown>>).length, 1);
+  assertEquals(result.events.some((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate"), true);
+
+  const stagedTables = new Set(result.events
+    .filter((event) => event.kind === "rpc" && event.name === "stage_tracking_candidate_rows")
+    .map((event) => String(event.args?.p_table_key)));
+  for (const table of [
+    "citations",
+    "citation_occurrences",
+    "response_brand_evidence",
+    "third_party_mentions",
+    "category_brand_observations",
+    "visibility_daily",
+  ]) {
+    assertEquals(stagedTables.has(table), true, "expected staged candidate table: " + table);
+  }
+
+  const promotionIndex = result.events.findIndex((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate");
+  const completionIndex = result.events.findIndex((event) => event.kind === "table" && event.table === "tracking_runs" &&
+    event.operation === "update" && (event.payload as Record<string, unknown>)?.status === "completed");
+  assertEquals(completionIndex >= 0 && promotionIndex > completionIndex, true);
+  assertEquals(result.events.some((event) => event.kind === "table" && event.operation === "delete"), false);
+});
+
+Deno.test("promotion RPC error leaves a completed candidate unpublished", async () => {
+  const result = await runSuccessfulLifecycle({
+    data: null,
+    error: { message: "simulated promotion failure" },
+  });
+
+  assertEquals(result.response.status, 500);
+  assertEquals(result.payload.error, "CANDIDATE_PROMOTION_FAILED");
+  assertEquals(result.payload.status, "completed_unpublished");
+  assertEquals(result.events.some((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate"), true);
+  assertEquals(result.events.some((event) => event.kind === "table" && event.operation === "delete"), false);
+  assertEquals(result.events.some((event) => event.kind === "table" &&
+    ["citations", "citation_occurrences", "response_brand_evidence", "third_party_mentions", "category_brand_observations", "visibility_daily"].includes(String(event.table)) &&
+    event.operation === "delete"), false);
 });
