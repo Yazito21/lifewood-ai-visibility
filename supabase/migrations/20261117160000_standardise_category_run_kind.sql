@@ -31,6 +31,7 @@ begin
     v_updated := replace(v_updated, 'run_kind <> ''topic''', 'run_kind <> ''category''');
     v_updated := replace(v_updated, 'run_kind in (''topic'',', 'run_kind in (''category'',');
     v_updated := replace(v_updated, 'run_kind = ''topic''::text', 'run_kind = ''category''::text');
+    v_updated := replace(v_updated, 'else ''topic'' end', 'else ''category'' end');
     v_updated := replace(v_updated, 'then ''topic'' end', 'then ''category'' end');
     v_updated := replace(v_updated, 'run_kind := ''topic''', 'run_kind := ''category''');
     v_updated := replace(v_updated, 'fr.completed_at, ''topic'', fr.id', 'fr.completed_at, ''category'', fr.id');
