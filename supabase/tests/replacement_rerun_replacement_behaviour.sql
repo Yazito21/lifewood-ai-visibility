@@ -141,10 +141,10 @@ begin
   end if;
 
   if not exists (
-    select 1 from public.tracking_batch_topics
+    select 1 from public.tracking_batch_categories
     where batch_id = v_batch and category = 'Skin' and tracking_run_id is null
   ) then
-    raise exception 'historical batch topic FK did not safely detach deleted predecessor';
+    raise exception 'historical batch category FK did not safely detach deleted predecessor';
   end if;
   if not exists (
     select 1 from public.tracking_run_replacements
