@@ -30,6 +30,12 @@ declare
   v_legacy_slice uuid;
 
   v_result jsonb;
+  v_job_id uuid;
+  v_retry_job_id uuid;
+  v_job_status text;
+  v_job_error text;
+  v_retry_summary jsonb;
+  v_worker_count integer;
   v_today date := (now() at time zone 'Asia/Kuala_Lumpur')::date;
   v_import_date date := (now() at time zone 'Asia/Kuala_Lumpur')::date - 1;
   v_legacy_date date := (now() at time zone 'Asia/Kuala_Lumpur')::date - 2;
@@ -338,6 +344,65 @@ begin
     where id = v_new_run and published_at is not null and superseded_at is null
   ) then
     raise exception 'replacement predecessor/current publication lineage is inconsistent';
+  end if;
+
+  -- Exercise the durable recompute queue's failure and explicit retry path.
+  -- The injected trigger forces a deterministic worker failure after it starts.
+  drop table if exists pg_temp._cm_units, pg_temp._cm_resp, pg_temp._cm_entities,
+    pg_temp._cm_hits, pg_temp._cm_cit_entities, pg_temp._cm_tracked_missing, pg_temp._cm_cit;
+
+  execute $ddl$
+    create or replace function public.replacement_rerun_test_fail_competitor_observation()
+    returns trigger language plpgsql as $function$
+    begin
+      raise exception 'synthetic competitor recompute queue failure';
+    end;
+    $function$;
+  $ddl$;
+
+  execute 'create trigger replacement_rerun_test_fail_competitor_observation
+    before insert or update on public.category_brand_observations
+    for each row execute function public.replacement_rerun_test_fail_competitor_observation()';
+
+  delete from public.competitor_recompute_jobs where project_id = v_project;
+  insert into public.competitor_recompute_jobs (project_id, status, reason, requested_at)
+  values (v_project, 'queued', 'synthetic_failure_test', now() - interval '30 seconds')
+  returning id into v_job_id;
+
+  v_worker_count := public.process_competitor_recompute_jobs();
+  select status, error_message into v_job_status, v_job_error
+  from public.competitor_recompute_jobs where id = v_job_id;
+
+  if v_worker_count <> 1 or v_job_status <> 'failed'
+     or v_job_error not like '%synthetic competitor recompute queue failure%' then
+    raise exception 'recompute worker did not record the injected failure: count %, status %, error %',
+      v_worker_count, v_job_status, v_job_error;
+  end if;
+
+  execute 'drop trigger replacement_rerun_test_fail_competitor_observation on public.category_brand_observations';
+  execute 'drop function public.replacement_rerun_test_fail_competitor_observation()';
+
+  -- A failed job is retained for audit; explicit re-enqueue creates a new queued job.
+  v_retry_job_id := public.enqueue_competitor_recompute(v_project, 'synthetic_manual_retry');
+  if v_retry_job_id is null or v_retry_job_id = v_job_id then
+    raise exception 'explicit retry did not create a fresh queue job after failure';
+  end if;
+
+  update public.competitor_recompute_jobs
+  set requested_at = now() - interval '30 seconds'
+  where id = v_retry_job_id;
+
+  drop table if exists pg_temp._cm_units, pg_temp._cm_resp, pg_temp._cm_entities,
+    pg_temp._cm_hits, pg_temp._cm_cit_entities, pg_temp._cm_tracked_missing, pg_temp._cm_cit;
+
+  v_worker_count := public.process_competitor_recompute_jobs();
+  select status, summary into v_job_status, v_retry_summary
+  from public.competitor_recompute_jobs where id = v_retry_job_id;
+
+  if v_worker_count <> 1 or v_job_status <> 'completed'
+     or v_retry_summary->>'status' <> 'completed' then
+    raise exception 'explicit retry did not complete successfully: count %, status %, summary %',
+      v_worker_count, v_job_status, v_retry_summary;
   end if;
 end
 $competitor_recompute_behaviour$;

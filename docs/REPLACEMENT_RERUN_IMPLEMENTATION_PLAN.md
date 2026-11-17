@@ -1926,3 +1926,29 @@ The failing run was `44026470833`; application and Edge checks passed, and the d
 
 
 The read-only inventory query is now also executed by the disposable database workflow as a syntax/schema compatibility check. The CI check runs against the empty schema fixture only; it does not inspect hosted historical records.
+
+
+### Verified historical recomputation and active-run lookup
+
+The complete workflow passed on commit `6205e9701992efd8b7e53c3ff5d15e353ccf9c33`:
+[GitHub Actions run 44027055471](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44027055471)
+
+This included:
+- Application type-check and Edge Function checks/tests.
+- All replacement migrations, including the new active-run lookup patch.
+- The imported/legacy/replacement competitor recomputation behavioural fixture.
+- All existing replacement, rollback, isolation, Overall, source-FK, and concurrency tests.
+- Execution of the read-only historical inventory SQL against the disposable schema.
+
+### Consumer audit findings
+
+- The Leaderboards page reads `category_brand_observations` and `visibility_daily`, then filters rows against run IDs returned by `get_published_run_ids_for_leaderboard`. That lookup now explicitly excludes superseded runs.
+- The Citations page reads the aggregated `citations` table through `get_cumulative_citations`; the replacement promotion path owns exact-scope replacement of those aggregate rows.
+- The third-party citation page reads `third_party_mentions`; replacement promotion also owns exact-scope replacement of those rows.
+- The pages inspected do not directly consume retained `response_brand_evidence` or `citation_occurrences` as active leaderboard rows. Those remain source/derived evidence for recomputation and attribution; active competitor rankings are based on run-scoped category observations.
+
+### Recompute queue failure and retry coverage
+
+Added a deterministic worker-failure scenario to the competitor recomputation behavioural fixture. It injects a transaction-local test trigger to force the queue worker to fail, verifies the job is marked `failed` with the error retained, then explicitly re-enqueues the project and verifies the fresh job completes after the injected failure is removed.
+
+The current queue design does not automatically retry a failed job. It preserves the failed job for audit and allows a new job to be enqueued by a subsequent competitor change or manual recompute request. This fixture verifies that explicit retry path. The new queue test requires a fresh CI run.
