@@ -5,6 +5,7 @@ import { buildCitationOccurrenceRows } from "./citation-occurrences.ts";
 import { callWithRetry, describeProviderFailures, newRetryState, sleepMs } from "./provider-retry.ts";
 import { stageTrackingCandidateRows } from "./candidate-staging.ts";
 import { isTrackingPaused } from "./tracking-pause.ts";
+import { validateTrackedBrandConfiguration } from "./tracked-brand-config.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -1016,63 +1017,30 @@ Deno.serve(async (req: Request) => {
       .eq("is_active", true);
     if (directoryError) throw new Error("BRAND_REGISTRY_READ_FAILED: " + directoryError.message);
 
-    // Safety bootstrap for a project created before the registry UI was used.
-    // This adds the tracked identity only; it never guesses competitor brands.
-    const trackedKey = String(project.brand_name ?? "Brand").trim().toLocaleLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "");
-    let trackedRecord = (directoryRows ?? []).find((row: Record<string, unknown>) =>
-      row.is_tracked_brand === true || String(row.normalized_key ?? "") === trackedKey
-    ) as Record<string, unknown> | undefined;
-    if (!trackedRecord) {
-      const { data: trackedRows, error: trackedError } = await admin.from("brand_registry").upsert({
-        project_id: projectId,
-        canonical_name: String(project.brand_name ?? "Brand"),
-        normalized_key: trackedKey,
-        aliases: Array.isArray(project.brand_terms) ? project.brand_terms : [],
-        primary_website: Array.isArray(project.brand_domains) ? String((project.brand_domains as unknown[])[0] ?? "") : null,
-        additional_websites: Array.isArray(project.brand_domains) ? (project.brand_domains as unknown[]).slice(1).map(String) : [],
-        is_tracked_brand: true,
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "project_id,normalized_key" }).select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_tracked_brand,is_active");
-      if (trackedError) throw new Error("TRACKED_BRAND_BOOTSTRAP_FAILED: " + trackedError.message);
-      trackedRecord = (trackedRows ?? [])[0] as Record<string, unknown> | undefined;
-      const { data: assignmentRows, error: trackedAssignmentError } = await admin.from("category_brand_assignments").upsert(
-        categoryNames.map((category) => ({
-          project_id: projectId, category, brand_id: String(trackedRecord?.id ?? ""),
-          role: "tracked_brand", aliases: Array.isArray(project.brand_terms) ? project.brand_terms : [],
-          websites: Array.isArray(project.brand_domains) ? (project.brand_domains as unknown[]).map(String) : [],
-          include_in_metrics: true,
-        })), { onConflict: "project_id,category,brand_id" }
-      ).select("project_id");
-      if (trackedAssignmentError) throw new Error("TRACKED_BRAND_ASSIGNMENT_BOOTSTRAP_FAILED: " + trackedAssignmentError.message);
-      void assignmentRows;
-      const refreshed = await admin.from("brand_registry")
-        .select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_tracked_brand,is_active")
-        .eq("project_id", projectId).eq("is_active", true);
-      if (refreshed.error) throw new Error("BRAND_REGISTRY_READ_FAILED: " + refreshed.error.message);
-      directoryRows = refreshed.data ?? [];
-    }
-
-    const directoryById = new Map<string, Record<string, unknown>>(
-      (directoryRows ?? []).map((row: Record<string, unknown>) => [String(row.id), row])
+    // Validate the preconfigured tracked-brand registry. Tracking is read-only
+    // with respect to project configuration: no registry or assignment upserts
+    // are permitted during candidate processing.
+    const trackedConfiguration = validateTrackedBrandConfiguration(
+      String(project.brand_name ?? "Brand"),
+      categoryNames,
+      (allAssignments ?? []) as Array<Record<string, unknown>>,
+      (directoryRows ?? []) as Array<Record<string, unknown>>,
     );
-    const validAssignments = (allAssignments ?? []).filter((row: Record<string, unknown>) => directoryById.has(String(row.brand_id)));
-    const fixedTrackedId = String(trackedRecord?.id ?? (directoryRows ?? []).find((row: Record<string, unknown>) => row.is_tracked_brand === true)?.id ?? "");
-    const assignedTrackedCategories = new Set(validAssignments
-      .filter((row: Record<string, unknown>) => String(row.brand_id) === fixedTrackedId && String(row.role) === "tracked_brand")
-      .map((row: Record<string, unknown>) => String(row.category)));
-    const missingTrackedCategories = categoryNames.filter((category) => !assignedTrackedCategories.has(category));
-    if (missingTrackedCategories.length && fixedTrackedId) {
-      const { error: trackedAssignmentError } = await admin.from("category_brand_assignments").upsert(
-        missingTrackedCategories.map((category) => ({
-          project_id: projectId, category, brand_id: fixedTrackedId, role: "tracked_brand",
-          aliases: Array.isArray(project.brand_terms) ? project.brand_terms : [],
-          websites: Array.isArray(project.brand_domains) ? (project.brand_domains as unknown[]).map(String) : [],
-          include_in_metrics: true,
-        })), { onConflict: "project_id,category,brand_id" }
+    if (!trackedConfiguration.ok) {
+      throw new Error(
+        trackedConfiguration.code + ": " +
+        (trackedConfiguration.missingCategories.length
+          ? "Complete the tracked-brand registry and assignments in project Settings for: " +
+            trackedConfiguration.missingCategories.join(", ")
+          : "Complete the tracked-brand registry in project Settings."),
       );
-      if (trackedAssignmentError) throw new Error("TRACKED_BRAND_ASSIGNMENT_BOOTSTRAP_FAILED: " + trackedAssignmentError.message);
     }
+    const {
+      trackedRecord,
+      fixedTrackedId,
+      directoryById,
+      validAssignments,
+    } = trackedConfiguration;
 
     type FixedBrandEntity = { id: string; key: string; domain: string; website: string; websites: string[]; brand_name: string; aliases: string[] };
     function siteHost(value: string) { return normalizedHostLabel(value).replace(/^www\./, "").toLocaleLowerCase(); }
