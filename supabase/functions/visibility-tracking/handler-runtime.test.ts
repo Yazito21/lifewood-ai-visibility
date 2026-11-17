@@ -227,7 +227,7 @@ function createScriptedQueryClient(
   };
 }
 
-Deno.test("persistent tracking rejects an incomplete tracked-brand assignment before creating a run", async () => {
+Deno.test("persistent tracking rejects a missing tracked-brand registry row before creating a run", async () => {
   const values: Record<string, string> = {
     SUPABASE_URL: "https://project.supabase.co",
     SUPABASE_PUBLISHABLE_KEY: "public-key",
@@ -253,7 +253,17 @@ Deno.test("persistent tracking rejects an incomplete tracked-brand assignment be
       language: "English",
       active: true,
     }],
-    category_brand_assignments: [],
+    category_brand_assignments: [{
+      project_id: "lifewood-project",
+      category: "General",
+      brand_id: "tracked-brand-1",
+      role: "tracked_brand",
+      aliases: ["Lifewood"],
+      websites: ["lifewood.ai"],
+      include_in_metrics: true,
+    }],
+    // Deliberately missing the corresponding brand_registry row.
+    brand_registry: [],
   };
   const handler = createVisibilityTrackingHandler({
     getEnv: (name) => values[name],
@@ -278,7 +288,7 @@ Deno.test("persistent tracking rejects an incomplete tracked-brand assignment be
   }));
 
   assertEquals(response.status, 409);
-  assertEquals((await response.json()).error, "BRAND_REGISTRY_INCOMPLETE");
+  assertEquals((await response.json()).error, "TRACKED_BRAND_REGISTRY_INCOMPLETE");
   assertEquals(events.some((event) => event.table === "tracking_runs" && event.operation !== "select"), false);
   assertEquals(providerRequests, 0);
 });
