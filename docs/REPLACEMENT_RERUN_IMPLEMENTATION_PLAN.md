@@ -1448,7 +1448,13 @@ A Vercel deployment does not apply Supabase migrations or deploy the Edge Functi
 
 ## Edge Function audit: tracked-brand bootstrap
 
-The candidate-processing path contains persistent upserts to `brand_registry` and `category_brand_assignments` when a tracked-brand row or category assignment is missing. These are configuration writes, not candidate metric writes, but they can persist even if a candidate later fails. Removing the fallback outright may break older projects without registry setup. This behaviour must be resolved explicitly before release: either move bootstrap into a controlled setup/promotion boundary or fail clearly and require setup before tracking. Add tests proving failed candidates do not leave unintended configuration mutations.
+Resolved on `feat/replace-rerun-data`:
+
+- Tracking-time writes to `brand_registry` and `category_brand_assignments` were removed.
+- A pure read-only validator now requires the tracked-brand registry row and each configured category's tracked-brand assignment to exist before processing.
+- Missing setup fails clearly and directs the operator to correct project Settings. No tracking request silently creates or changes brand configuration.
+- Five unit tests cover valid setup, missing registry, missing category assignment, legacy normalized-key recognition, and competitor-vs-tracked-brand role separation.
+- The handler was re-scanned: no insert/upsert/update/delete calls remain against either configuration table.
 
 ## Constraints
 
@@ -1488,3 +1494,24 @@ Validation status:
 - The new tests have been committed, but no passing CI result for these commits has yet been verified. The Vercel status was pending at the last check; this does not establish Supabase deployment or replacement readiness.
 - The mocked end-to-end request-flow test remains outstanding. It must exercise the actual handler, including authentication, provider retries, raw response persistence, all six staging tables, successful promotion, promotion failure, and pause-gate early exit.
 - No Production migration, Edge Function deployment, or historical deletion was performed.
+
+## Development update - 2026-11-17 (candidate promotion gate)
+
+Implemented on `feat/replace-rerun-data`:
+
+- Extracted the final publication call into `candidate-promotion.ts`.
+- The helper invokes `promote_tracking_run_candidate` only for a candidate whose status is exactly `completed`.
+- A candidate is reported as published only when the RPC returns `status = published` with no error. RPC errors, null responses, and unexpected statuses fail closed.
+- Updated the Edge Function to use the helper, retaining the existing HTTP 500 response and unpublished-candidate diagnostic behaviour when promotion is not confirmed.
+- Added four unit tests: incomplete candidate does not invoke the RPC; completed candidate invokes the exact RPC arguments; RPC error remains unpublished; unexpected RPC status remains unpublished.
+
+Commits:
+- `4157ed77ee77e7efac0ebf3f45c883014dcfd543` - extract candidate promotion gate.
+- `1ca9fc9ac71a86cc79715e31d871f5dbae38a231` - add promotion gate tests.
+- `a63c10c302faf493adc904014d45becf03bb37bd` - wire the tested gate into the Edge Function.
+
+Validation status:
+- The Vercel checks for the two new test commits and the handler update have not yet been checked at the time of this document update.
+- GitHub's commit-workflow-runs endpoint returned no workflow runs for the earlier tracked-brand commits; only Vercel status checks were visible. Do not interpret Vercel success as Deno/SQL CI success.
+- The full mocked Edge Function request-flow test remains outstanding. The current handler is a single large `Deno.serve` closure with direct environment, fetch, and Supabase client dependencies. A safe end-to-end harness will require a deliberate handler/dependency-injection refactor rather than a brittle source-text test.
+- No hosted sandbox or Production deployment was performed.
