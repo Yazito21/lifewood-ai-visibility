@@ -1647,3 +1647,10 @@ Next steps:
 1. Obtain the branch-push workflow result and inspect any failing job logs. Fix Deno/type/test failures before adding more handler scenarios.
 2. If the successful lifecycle test passes, extend coverage for unexpected promotion status and provider retry exhaustion as useful.
 3. Keep all hosted/Production actions behind the existing explicit approval gates.
+
+
+Additional fail-closed coverage:
+- Added a handler-level test where the promotion RPC returns an unexpected non-error status. The response remains `completed_unpublished` with HTTP 500; the handler does not claim publication or issue deletes.
+- Commit: `8478b0be52247fd3cc095024f332fa6d4e2521c3` - test unexpected candidate promotion status fails closed.
+
+The Deno/SQL workflow result remains unverified for these latest commits. The combined commit status still reports only a Vercel check, which is not the Edge Function or database test workflow.
