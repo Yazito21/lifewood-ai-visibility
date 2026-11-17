@@ -80,9 +80,9 @@ begin
     jsonb_build_array(jsonb_build_object(
       'project_id', v_project, 'metric_date', v_date,
       'category', 'Skin', 'llm_provider', 'chatgpt', 'tracking_location', 'MY',
-      'run_id', v_candidate, 'visibility_score', 0.91, 'visibility_rank', null,
+      'run_id', v_candidate, 'visibility_score', 0.0, 'visibility_rank', null,
       'rank_population_count', null, 'rank_population_status', 'unverified',
-      'citation_count', 9, 'presence_count', 1, 'response_count', 1
+      'citation_count', 0, 'presence_count', 0, 'response_count', 1
     ))
   );
 
@@ -128,7 +128,7 @@ begin
     where project_id = v_project and metric_date = v_date
       and category = 'Skin' and llm_provider = 'chatgpt'
       and tracking_location = 'MY' and run_id = v_candidate
-      and visibility_score = 0.91
+      and visibility_score = 0.0
   ) then
     raise exception 'target replacement metric missing';
   end if;
