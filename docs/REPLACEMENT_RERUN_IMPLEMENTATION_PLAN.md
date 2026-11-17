@@ -2004,3 +2004,13 @@ The Production foreign-key review confirmed:
 - `tracking_run_daily_claims.run_id` and `tracking_run_stages.run_id` use **CASCADE**.
 
 Added a reusable read-only FK diagnostic and included it in CI. The live Production result and individual run IDs are not written into the repository. No historical deletion, migration, Edge Function deployment, or application deployment was performed.
+
+
+### Per-run historical dependency detail added
+
+Added `supabase/diagnostics/replacement_rerun_run_dependency_detail.sql`, a read-only report for:
+- Superseded published runs.
+- Completed-unpublished legacy full source runs.
+- Failed and partial unpublished runs.
+
+For each run it reports direct and source-shared raw response counts, response evidence, citation occurrences, third-party mentions, run-owned competitor and visibility rows, source/supersedes child references, stage rows, daily claims, batch-category references, and the not-yet-deployed replacement audit count. The query is included in CI for schema validation. It has not yet been executed against Production.
