@@ -1467,3 +1467,24 @@ The candidate-processing path contains persistent upserts to `brand_registry` an
 5. Only after sandbox acceptance, consider unpausing and a controlled first replacement.
 
 No Production replacement migrations, Edge Function deployment, Vercel Production promotion, or historical deletion is authorised by this update.
+
+
+## Development update - 2026-11-17 (tracked-brand configuration safety)
+
+Implemented on `feat/replace-rerun-data`:
+
+- Added `tracked-brand-config.ts` with a pure, read-only validator for the tracked-brand registry and per-category assignments.
+- Replaced the tracking-time fallback upserts to `brand_registry` and `category_brand_assignments` with fail-closed validation.
+- Tracking now returns a clear failure if the tracked-brand registry row or category assignment is missing. Project setup must be corrected in Settings; tracking does not silently mutate it.
+- Added five Deno tests covering valid configuration, missing registry row, missing category assignment, legacy normalized-key recognition, and rejection of a competitor assignment as the tracked brand.
+- Re-scanned the Edge Function source after the change: no `insert`, `upsert`, `update`, or `delete` calls remain against `brand_registry` or `category_brand_assignments` in the tracking handler.
+
+Commits:
+- `848d50db886e0f29568168faabfda576d0063511` - remove tracking-time configuration writes.
+- `4eda689afa897ab05daff5fcba269e7b3bb99b89` - add read-only validation helper.
+- `17c52a54441086eb9f06a3ff714530f536c16ae5` - add validation tests.
+
+Validation status:
+- The new tests have been committed, but no passing CI result for these commits has yet been verified. The Vercel status was pending at the last check; this does not establish Supabase deployment or replacement readiness.
+- The mocked end-to-end request-flow test remains outstanding. It must exercise the actual handler, including authentication, provider retries, raw response persistence, all six staging tables, successful promotion, promotion failure, and pause-gate early exit.
+- No Production migration, Edge Function deployment, or historical deletion was performed.
