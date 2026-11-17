@@ -404,7 +404,7 @@ No Production migration or Edge Function deployment has occurred.
 
 Commit: `713b0b9a2f91377d6bf556ba160f957add8007f5`
 
-The Edge Function emits an additional `Overall` visibility row for full-run candidates, alongside the topic/category rows. The validation gate is intended to validate topic/category coverage; Overall is a derived aggregate and is recalculated after category publication. The coverage query now excludes `category = 'Overall'` when comparing staged visibility rows to the project's configured categories. It still requires provider-specific rows for every expected category/location pair.
+The Edge Function emits an additional `Overall` visibility row for full-run candidates, alongside the category rows. The validation gate is intended to validate category coverage; Overall is a derived aggregate and is recalculated after category publication. The coverage query now excludes `category = 'Overall'` when comparing staged visibility rows to the project's configured categories. It still requires provider-specific rows for every expected category/location pair.
 
 This prevents a valid full-run candidate from being rejected simply because its staged payload also contains the Overall row.
 
@@ -614,7 +614,7 @@ The two-argument helper intentionally remains available for compatibility, but i
 
 The Edge Function creates category runs with `tracking_runs.category = selectedCategory`. A full run has `category = null` and the insert trigger assigns `run_kind = 'full'`. The candidate validator supports both shapes by expecting either the selected category or all configured project categories.
 
-However, the existing `publish_engine_overall_metrics` function selects published `run_kind = 'topic'` runs only. A full candidate's daily rows are associated with a `run_kind = 'full'` run, so the promotion design must not assume that simply publishing a full run will make it eligible for the existing topic-based Overall aggregation. Existing full-run category slicing/backfill logic must be understood and the replacement transaction must define whether it creates topic slices, uses a dedicated full-run aggregate path, or rejects full-run promotion until supported.
+However, the existing `publish_engine_overall_metrics` function selects published `run_kind = 'category'` runs only. A full candidate's daily rows are associated with a `run_kind = 'full'` run, so the promotion design must not assume that simply publishing a full run will make it eligible for the existing category-based Overall aggregation. Existing full-run category slicing/backfill logic must be understood and the replacement transaction must define whether it creates category slices, uses a dedicated full-run aggregate path, or rejects full-run promotion until supported.
 
 The safer first implementation may be category-scoped promotion only, provided the Edge Function/UI explicitly route supported replacements through that path and full-run candidates remain unpublished until a separately tested implementation is ready. Do not silently publish a full-run candidate with incomplete Overall semantics.
 
@@ -634,7 +634,7 @@ Findings:
 1. [ ] Fix exact-date predecessor selection in the Edge Function and ensure promotion owns supersession lineage.
 2. [ ] Restrict preview lineage recursion to the exact replacement scope; add cross-date regression coverage.
 3. [ ] Update all relevant SQL consumers of `run_tracked_presence` to use the location-aware helper where location is known.
-4. [ ] Decide and test category-only promotion first versus full-run promotion with topic-slice semantics.
+4. [ ] Decide and test category-only promotion first versus full-run promotion with category-slice semantics.
 5. [ ] Complete repository-wide application scan for legacy `competitors` usage, including RPCs and report code.
 6. [ ] Only then design and implement the atomic promotion RPC.
 
@@ -693,7 +693,7 @@ The promotion design must not blindly reassign every daily claim to every replac
 
 ### Full-run path remains separate
 
-The Edge Function still supports a full Superadmin request with `tracking_runs.category = null` and `run_kind = 'full'`. The dashboard's standard category batch is a sequence of topic/category runs. The existing Overall aggregation functions select `run_kind = 'topic'` members, so full-run publication cannot be treated as equivalent to a batch of topic runs without an explicit conversion/slicing strategy.
+The Edge Function still supports a full Superadmin request with `tracking_runs.category = null` and `run_kind = 'full'`. The dashboard's standard category batch is a sequence of category runs. The existing Overall aggregation functions select `run_kind = 'category'` members, so full-run publication cannot be treated as equivalent to a batch of category runs without an explicit conversion/slicing strategy.
 
 Recommended first safe release:
 - Support category-scoped candidate promotion only.
@@ -730,7 +730,7 @@ The Dashboard now passes the actual `tracking_batches.id` on each category invoc
 
 This removes the fragile dependency on `tracking_runs.error_message = 'CATEGORY_BATCH:...'`. The new category run is created only after these durable checks pass.
 
-The first category in the batch (ordinal 0) obtains the daily entitlement using `claim_daily_tracking_run`, then updates that newly created run with the actual category and first tracking location. This is necessary because the legacy claim RPC creates a category-null run by default; without the scope update, the first category would be treated as a full run. Later categories create their own topic-scoped run rows.
+The first category in the batch (ordinal 0) obtains the daily entitlement using `claim_daily_tracking_run`, then updates that newly created run with the actual category and first tracking location. This is necessary because the legacy claim RPC creates a category-null run by default; without the scope update, the first category would be treated as a full run. Later categories create their own category-scoped run rows.
 
 The Dashboard already stores each returned run ID on its corresponding `tracking_batch_categories` row, so the next invocation can validate the preceding category through durable state. No new batch schema was required.
 
@@ -747,7 +747,7 @@ The new migration is additive to the earlier location-aware `finalize_run_metric
 ### Important validation still outstanding
 
 These changes are committed to the feature branch only. The SQL migration has not been applied to Supabase, and the Edge Function has not been deployed. The category-batch changes still require a controlled integration test against an isolated database, especially:
-- First category creates a category-scoped `topic` run while claiming the daily entitlement.
+- First category creates a category-scoped `category` run while claiming the daily entitlement.
 - Second and later categories are accepted only after the prior batch category is marked completed and linked to a completed run.
 - Failed categories do not permit the next ordinal to start.
 - Batch ownership and project scope are enforced.
@@ -774,11 +774,11 @@ Commits:
 
 New migration `20261113150000_promote_tracking_run_candidate_atomically.sql` adds service-role-only `promote_tracking_run_candidate(p_run_id, p_actor_id)`.
 
-It is deliberately limited to completed, unpublished, category-scoped `topic` candidates. It:
+It is deliberately limited to completed, unpublished, category-scoped `category` candidates. It:
 1. Locks the candidate and serializes the project/date/category/provider scope.
 2. Runs the candidate validator and read-only replacement preview.
 3. Confirms every staged row matches the candidate project, date, category, provider and allowed locations.
-4. Rejects orphaned/unpublished canonical metrics, full-run predecessors, shared-source topic slices, cross-category predecessors and predecessor runs referenced by another source run.
+4. Rejects orphaned/unpublished canonical metrics, full-run predecessors, shared-source category slices, cross-category predecessors and predecessor runs referenced by another source run.
 5. Preserves daily entitlement by reassigning a same-date claim if it points to a predecessor being replaced.
 6. Writes durable per-location predecessor snapshots and row counts to `tracking_run_replacements`.
 7. Removes predecessor raw responses and exact-scope derived rows, while preserving direct competitor registry/observations and the legacy `competitors` table.
@@ -787,13 +787,13 @@ It is deliberately limited to completed, unpublished, category-scoped `topic` ca
 10. Rebuilds the engine Overall aggregate independently for every affected location. If the category set is incomplete, it invalidates the stale Overall snapshot instead of leaving metrics that still include the replaced run.
 11. Deletes the candidate staging rows after successful publication.
 
-All operations run in the same PostgreSQL transaction. An exception rolls back the entire promotion, including predecessor deletion and canonical inserts. Full-run candidates and topic slices backed by shared source runs are rejected rather than partially removed.
+All operations run in the same PostgreSQL transaction. An exception rolls back the entire promotion, including predecessor deletion and canonical inserts. Full-run candidates and category slices backed by shared source runs are rejected rather than partially removed.
 
 ### Edge Function and batch integration
 
 The Edge Function now calls the promotion RPC only after it has completed response processing and written a completed, unpublished candidate. If promotion fails, it returns `CANDIDATE_PROMOTION_FAILED` with the candidate run ID and leaves the existing published dataset untouched. The Dashboard records that candidate ID for diagnosis/retry.
 
-The category batch workflow now uses durable `tracking_batches` and `tracking_batch_categories` rows for continuation. It passes the actual batch ID, verifies ownership and prior category completion, and no longer relies on the `CATEGORY_BATCH:` error-message marker. The first category's daily-claim-created run is updated to the correct category and tracking location so it becomes a topic run rather than a category-null full run. A failed batch can be resumed by restoring its batch status to running. If the first category already published but the client did not receive the success response, the Edge Function recognises the existing published claim and avoids rerunning it.
+The category batch workflow now uses durable `tracking_batches` and `tracking_batch_categories` rows for continuation. It passes the actual batch ID, verifies ownership and prior category completion, and no longer relies on the `CATEGORY_BATCH:` error-message marker. The first category's daily-claim-created run is updated to the correct category and tracking location so it becomes a category run rather than a category-null full run. A failed batch can be resumed by restoring its batch status to running. If the first category already published but the client did not receive the success response, the Edge Function recognises the existing published claim and avoids rerunning it.
 
 ### New validation guard
 
@@ -824,15 +824,15 @@ Only after these tests pass should the migration be applied to the intended Supa
 ## 2026-11-13: multi-location aggregate selection and retry hardening
 
 Additional commits:
-- `13e70990a2c4396d28ff5971039eca7fdf5f7da8` — update Overall/cross-engine aggregation to select topic runs by their per-location `visibility_daily` rows rather than the run row's single `tracking_location`.
+- `13e70990a2c4396d28ff5971039eca7fdf5f7da8` — update Overall/cross-engine aggregation to select category runs by their per-location `visibility_daily` rows rather than the run row's single `tracking_location`.
 - `8b46bbc4c1bb24b897b18ab59ba83deb0c20fbf6` — retain candidate run IDs parsed from Edge Function HTTP error responses.
 - `5e988fc2dc5c924667e133f5bc9b5ac47050dbd3` — require the candidate's primary tracking location to be present in its staged metric locations.
 
 ### Multi-location correction
 
-A `tracking_runs` row has one `tracking_location`, while its raw responses and `visibility_daily` rows may cover multiple locations. The location-aware finalizer already uses each metric row's own location, but the existing Overall and cross-engine aggregators selected topic runs using only `tracking_runs.tracking_location`. That would omit secondary locations for a multi-location candidate.
+A `tracking_runs` row has one `tracking_location`, while its raw responses and `visibility_daily` rows may cover multiple locations. The location-aware finalizer already uses each metric row's own location, but the existing Overall and cross-engine aggregators selected category runs using only `tracking_runs.tracking_location`. That would omit secondary locations for a multi-location candidate.
 
-The location-helper migration now also updates those two aggregators to select topic runs through matching `visibility_daily` rows for the requested project/date/category/provider/location. The promotion RPC still explicitly supersedes exact-scope predecessor IDs for every location before publication. It also checks that the run row's primary location is one of the candidate's staged locations.
+The location-helper migration now also updates those two aggregators to select category runs through matching `visibility_daily` rows for the requested project/date/category/provider/location. The promotion RPC still explicitly supersedes exact-scope predecessor IDs for every location before publication. It also checks that the run row's primary location is one of the candidate's staged locations.
 
 ### Batch retry correction
 
@@ -849,7 +849,7 @@ These paths remain feature-branch-only and require isolated database integration
 - The category-scoped atomic promotion migration is present:
   `supabase/migrations/20261113150000_promote_tracking_run_candidate_atomically.sql`.
 - The Edge Function calls `promote_tracking_run_candidate` only after a candidate is completed. Promotion failure returns `CANDIDATE_PROMOTION_FAILED` and leaves the candidate completed but unpublished.
-- This promotion path is limited to category-scoped `topic` runs. Full-run replacement is deliberately not implemented and must not be represented as supported.
+- This promotion path is limited to category-scoped `category` runs. Full-run replacement is deliberately not implemented and must not be represented as supported.
 
 ### Work completed in this continuation
 
@@ -1198,7 +1198,7 @@ The function no longer directly deletes or writes canonical derived citation/evi
 
 Important non-candidate configuration side effects found: a compatibility bootstrap can upsert the tracked brand into `brand_registry` and create missing `category_brand_assignments` while a candidate is processing. These are configuration/registry writes, not published run metrics, but they can persist even if the candidate later fails. Review whether to remove this bootstrap from the tracking request or isolate it as an explicit setup action before deployment.
 
-Important deployment limitation: the Edge Function calls the category-only `promote_tracking_run_candidate` for every completed non-sample run. Direct full-run candidates with a null category are rejected by the RPC. The current Dashboard's normal Run Tracking flow avoids this path: it iterates the selected categories and invokes the Edge Function once per category, so each call is a category-scoped `topic` candidate and the batch publishes categories sequentially. Full-batch atomic replacement is not implemented; any other caller that submits a null-category full run must be gated or supported before deployment.
+Important deployment limitation: the Edge Function calls the category-only `promote_tracking_run_candidate` for every completed non-sample run. Direct full-run candidates with a null category are rejected by the RPC. The current Dashboard's normal Run Tracking flow avoids this path: it iterates the selected categories and invokes the Edge Function once per category, so each call is a category-scoped `category` candidate and the batch publishes categories sequentially. Full-batch atomic replacement is not implemented; any other caller that submits a null-category full run must be gated or supported before deployment.
 
 ### Correctness issue identified and hardened on the feature branch
 
@@ -1859,7 +1859,7 @@ Reviewed the coordinated competitor recomputation function in `20261117110000_co
 Confirmed:
 
 1. `recompute_competitor_metrics` and candidate promotion acquire the same project-scoped transaction advisory lock (`__TRACKING_REPLACEMENT_RECOMPUTE__`). This serializes a project's competitor recomputation against replacement promotion and prevents the worker from publishing an Overall snapshot from a concurrently changing replacement scope.
-2. The recompute worker builds its units only from completed, published, non-superseded topic runs for the requested project and optional Malaysia-local date range. It does not intentionally process unrelated projects or unpublished candidates.
+2. The recompute worker builds its units only from completed, published, non-superseded category runs for the requested project and optional Malaysia-local date range. It does not intentionally process unrelated projects or unpublished candidates.
 3. Legacy all-category runs are handled through synthetic category slices only when the stored tracked-brand score can be reproduced from the source run's raw responses. The synthetic slice points to the original run through `source_run_id`.
 4. Imported `profound_import` runs use stored tracked-brand response evidence rather than assuming the imported response text contains the brand name. This preserves the source's tracked-brand flag semantics.
 5. The worker archives competitor observations that no longer belong to the current competitor set before removing those active observation rows. It does not delete the source `ai_responses`, competitor registry/configuration, or the separate direct-competitor registry/observations.
@@ -1965,7 +1965,7 @@ The hosted inventory itself remains a SELECT-only operation. No schema changes, 
 
 ### Historical inventory query refined after Production read-only review
 
-The first hosted inventory execution revealed that grouping all run kinds together obscures the distinction between legacy `full` source runs, category-level `topic` runs, and `overall_aggregate` records. The diagnostic is now grouped by `run_kind` and reports completed-but-unpublished runs separately.
+The first hosted inventory execution revealed that grouping all run kinds together obscures the distinction between legacy `full` source runs, category-level `category` runs, and `overall_aggregate` records. The diagnostic is now grouped by `run_kind` and reports completed-but-unpublished runs separately.
 
 For synthetic category slices, raw-response and evidence counts now filter the source run's responses by the prompt's category. This avoids counting every response from a shared legacy full run in every synthetic category slice. The query still makes no changes and treats the not-yet-deployed replacement audit table as unavailable rather than reporting a misleading zero.
 
@@ -1979,7 +1979,7 @@ The queue failure/retry fixture passed in GitHub Actions run `44027361771` on co
 
 ### Historical inventory expanded to include incomplete runs
 
-The live read-only inventory showed Dr D Signature Clinic has historical failed and partial runs in addition to published and completed-unpublished runs. The diagnostic now includes every run status for `topic`, `full`, and `overall_aggregate`, and reports failed, partial, in-progress, superseded, and completed-unpublished IDs separately. Citation occurrence counts are now restricted to the current run or its source-run lineage rather than every occurrence in the same scope.
+The live read-only inventory showed Dr D Signature Clinic has historical failed and partial runs in addition to published and completed-unpublished runs. The diagnostic now includes every run status for `category`, `full`, and `overall_aggregate`, and reports failed, partial, in-progress, superseded, and completed-unpublished IDs separately. Citation occurrence counts are now restricted to the current run or its source-run lineage rather than every occurrence in the same scope.
 
 This is important for cleanup planning: a failed or partial run is not a published predecessor, and a completed-unpublished legacy full run may still be the source of category-level synthetic slices. No deletion is authorised or performed.
 
@@ -1989,14 +1989,14 @@ This is important for cleanup planning: a failed or partial run is not a publish
 A read-only historical inventory was executed against the connected Production Supabase project. The result includes two projects: Dr D Signature Clinic and Lifewood. No data was modified.
 
 The Dr D history contains:
-- 130 topic runs: 93 active published, 26 superseded published, 5 failed, and 6 partial.
+- 130 category runs: 93 active published, 26 superseded published, 5 failed, and 6 partial.
 - 25 legacy full runs: 8 completed-unpublished source runs, 15 failed, and 2 partial.
 - 42 Overall aggregate runs: 31 active published and 11 superseded published.
 - 18 synthetic category slices linked to 8 completed legacy full source runs.
 - Failed and partial runs still have raw responses; they are not published predecessors and must not be treated as replacement targets.
 - The 8 completed-unpublished full source runs must be preserved while the 18 synthetic category slices retain their `source_run_id` references.
 
-The Lifewood history contains 4 active published topic runs and 1 active published Overall aggregate, with no superseded or legacy full runs in the inventory window.
+The Lifewood history contains 4 active published category runs and 1 active published Overall aggregate, with no superseded or legacy full runs in the inventory window.
 
 The Production foreign-key review confirmed:
 - `tracking_runs.source_run_id` references `tracking_runs.id` with **NO ACTION** on delete. Source runs cannot be deleted while synthetic category slices still reference them.
@@ -2024,7 +2024,7 @@ The latest full feature-branch workflow passed on commit `a12fba1aee51c9fdea09a2
 All checks passed, including the new queue failure/retry fixture, imported/legacy/replacement competitor recomputation fixture, the historical inventory query, the tracking-run FK inventory query, and the per-run dependency query.
 
 The per-run dependency query was also executed read-only against the connected Production database. It confirmed:
-- Superseded published topic runs still retain their raw responses, response-brand evidence, run-stage rows, and batch-category references, while active competitor observations and visibility metrics point to the current runs.
+- Superseded published category runs still retain their raw responses, response-brand evidence, run-stage rows, and batch-category references, while active competitor observations and visibility metrics point to the current runs.
 - Superseded aggregate runs have no raw-response/evidence payload, but replacement-chain references remain.
 - Completed-unpublished legacy full runs are still parents of synthetic category slices and must be retained while those `source_run_id` references exist.
 - Failed and partial candidate runs remain unpublished; their `supersedes_run_id` fields point to still-active published predecessors. They must not be mistaken for published predecessors or allowed to displace them.
@@ -2061,3 +2061,8 @@ Vercel's GitHub integration created a Preview deployment for the PR commit. At t
 The preview must be treated as frontend/build validation only until its Supabase environment is independently confirmed to be isolated and no-cost. Do not trigger tracking runs or mutate records through it while that is unknown. The deployment runbook has been clarified accordingly.
 
 The PR explicitly records that no additional Supabase spend is authorised, that hosted rehearsal is deferred, and that Production deployment/data cleanup are not authorised by the PR.
+
+
+### Category terminology standardisation
+
+The persisted `tracking_runs.run_kind` value for a single-category run is standardised as `category`. Existing rows previously stored as `topic` are converted by migration `20261117160000_standardise_category_run_kind.sql`. The legacy `tracking_run_stages.metadata` JSON key `topic` is retained for backward compatibility when reading historical stage journals; it is not the `run_kind` value.
