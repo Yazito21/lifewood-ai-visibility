@@ -1323,3 +1323,28 @@ Added a shared project-scoped transaction advisory lock (`__TRACKING_REPLACEMENT
 This intentionally serializes a project's replacement promotion with its competitor recompute. The exact category/location locks and shared Overall lock remain in place. The new migration applies the same lock to the current live function definitions using guarded source replacement; it fails closed if the expected function anchors are absent. The schema contract checks that all three paths contain the shared lock and that promotion acquires it before preview.
 
 This is an additional migration dependency and is not yet applied to hosted Supabase. CI must replay the new migration and rerun the behavioural suite before this coordination is considered verified.
+
+
+### 2026-11-17: project-wide recompute coordination CI passed
+
+GitHub Actions run [#39](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44008031362), commit `4f24e54938085d4e832c33a209788ea345078953`, **passed both jobs**:
+- Database job: restored the schema-only baseline, applied all replacement migrations including the new competitor-recompute coordination migration, passed schema/security contract, candidate validation, first publication, exact replacement, rollback, scope isolation, Overall rebuild/invalidation, six-table derived replacement, source-run FK rejection, and two-session same-scope concurrency.
+- Application/Edge quality job: `tsc --noEmit`, `deno check` for the tracking Edge Function, and all visibility-tracking Deno unit tests passed.
+
+The application audit was completed across all 58 TypeScript/TSX files under `app/`, `components/` and `lib/`. The normal Dashboard Run Tracking flow creates a batch and invokes `visibility-tracking` once per category, in order. It updates the current batch-category row with the newly promoted run ID; when a later rerun deletes a predecessor, older batch rows detach their FK and retain their completed status. The Dashboard does not query `tracking_runs` for historical run presentation.
+
+The active competitor recompute path is now explicitly coordinated: the Competitors status component calls `request_competitor_recompute`, which enqueues a worker that invokes `recompute_competitor_metrics`. That worker rebuilds evidence, citation occurrences, category observations and Overall, so it shares the same project lock as replacement promotion and direct Overall publication.
+
+The current CI evidence covers category-scoped per-category replacement, not an all-categories atomic batch. The Dashboard's batch is sequential: each category replacement plus its Overall refresh is atomic, but the entire batch may show intermediate Overall snapshots while later categories are still running.
+
+Exact continuation commits:
+- `c8c58a02120d4b1b6081d5b22f44c3588863b3f5` — refresh predecessor preview under scope locks; harden deterministic staging keys.
+- `95a2a1025c32195322f6acbc30273b08f9df4bac` — add Overall rebuild/invalidation test.
+- `a85bb53340acf97984aba182a35b88b7dbae84f9` — serialize shared Overall refresh across categories.
+- `429c9ab085f58f9f8dedd1b905f675f6525cfbf3` — derived-data and source-run FK behavioural tests.
+- `0fda8b5c274bc4a6022d59d663df6d818ce151a9` — two-session concurrency test and quality workflow.
+- `91557c16e19a5e9a351e7032f866cc1e8b0e2aae` — application/Edge quality job.
+- `19fa05615eaa141bdccf930c5ecb68e3817d898e` — fix concurrency-test teardown; CI run #38 passed.
+- `4f24e54938085d4e832c33a209788ea345078953` — coordinate competitor recompute and Overall publication with replacement locks; CI run #39 passed.
+
+The schema contract is further tightened to assert the executable advisory-lock key expressions, not merely the sentinel comments.
