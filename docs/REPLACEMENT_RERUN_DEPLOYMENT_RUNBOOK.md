@@ -11,7 +11,7 @@ This runbook is a controlled release plan only. It does not authorize Production
 
 The replacement-rerun branch changes three deployment surfaces:
 
-1. **Supabase database:** eight migrations listed below.
+1. **Supabase database:** nine migrations listed below.
 2. **Supabase Edge Function:** `visibility-tracking`, including candidate staging, atomic promotion, and the emergency pause gate.
 3. **Vercel application:** `app/platform/[projectId]/dashboard/page.tsx`, which runs and resumes category batches and retains failed candidate IDs.
 
@@ -22,8 +22,8 @@ The branch also adds CI fixtures/tests and this operational documentation. No ot
 Do not begin a hosted release until all of the following are satisfied:
 
 - A separate non-Production Supabase project is available for a hosted integration rehearsal. Current CI uses a disposable local database only.
-- A full mocked Edge Function request-flow test covers provider/retry handling, raw response persistence, candidate staging, and promotion failure. Current checks include Deno type-checking and focused unit tests, not a complete request-flow test.
-- The tracked-brand registry bootstrap side effect in the Edge Function has been reviewed and accepted or removed.
+- Handler-level mocked lifecycle tests now cover provider failures, entity-extraction failures/retries, raw response persistence, all six candidate staging tables, promotion success/failure, and fail-closed promotion responses. The tests are committed but must pass in CI before any hosted rehearsal.
+- The tracked-brand registry bootstrap write side effect has been removed. Tracking now performs a read-only registry/category-assignment preflight and fails before provider calls or run creation when configuration is incomplete.
 - A fresh read-only audit confirms the live schema, triggers, foreign keys, grants, RLS, function definitions, and migration history still match the assumptions in the implementation.
 - A current database backup/PITR recovery point is confirmed, and the operational owner is available during the release.
 - The exact intended pending migration set has been reconciled against the hosted migration history. **Do not run a generic `supabase db push` until this comparison proves it will apply only the reviewed changes.** Stop if any unrelated migration is pending or the migration history is inconsistent.
@@ -43,6 +43,7 @@ Apply only this reviewed sequence, after the live migration-history reconciliati
 6. `20261113140000_use_location_scoped_presence_helpers.sql`
 7. `20261113150000_promote_tracking_run_candidate_atomically.sql`
 8. `20261117110000_coordinate_competitor_recompute_with_tracking_replacements.sql`
+9. `20261117120000_harden_candidate_raw_response_scope_validation.sql`
 
 These migrations add candidate staging/audit structures and define or update the validation, preview, promotion, metric-finalization, and recompute-coordination functions. They do not authorize historical cleanup. Do not manually delete rows from canonical metric tables or legacy competitor tables as part of this release.
 
@@ -67,7 +68,7 @@ The pause gate is checked before authentication, database access, run creation, 
 
 ### C. Apply database migrations
 
-1. Apply the eight migrations in the order above using the approved migration procedure.
+1. Apply the nine migrations in the order above using the approved migration procedure.
 2. Re-run the schema/security contract and read-only function-definition checks against the hosted target.
 3. Confirm the promotion RPC, candidate staging RPC, validation/preview RPCs, and advisory-lock coordination are present with the intended service-role-only grants.
 4. Stop if any migration or post-migration contract check fails. Keep tracking paused.
