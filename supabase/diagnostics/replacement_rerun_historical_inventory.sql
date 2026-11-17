@@ -13,6 +13,7 @@ with run_scope as (
     tr.run_kind,
     tr.status,
     tr.published_at,
+    tr.started_at,
     tr.completed_at,
     tr.superseded_at,
     tr.source_run_id,
