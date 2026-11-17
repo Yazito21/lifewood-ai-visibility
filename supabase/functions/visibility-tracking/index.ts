@@ -254,6 +254,7 @@ async function classifyDirectCompetitors(
   project: Record<string, unknown>,
   category: string,
   candidates: Array<{ domain: string; brand_name: string; page_name: string; citations: number }>,
+  fetcher: typeof fetch = fetch,
 ): Promise<ClassifiedCompetitor[]> {
   if (!candidates.length) return [];
   const unique = [...new Map(candidates.map((item) => [item.domain, item])).values()];
@@ -408,7 +409,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
       const extractionController = new AbortController();
       const extractionTimeout = setTimeout(() => extractionController.abort(), 25000);
       try {
-        const response = await fetch("https://api.openai.com/v1/responses", {
+        const response = await fetcher("https://api.openai.com/v1/responses", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKeys.chatgpt },
           signal: extractionController.signal,
