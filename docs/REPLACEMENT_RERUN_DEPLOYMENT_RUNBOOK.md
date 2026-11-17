@@ -11,7 +11,7 @@ This runbook is a controlled release plan only. It does not authorize Production
 
 The replacement-rerun branch changes three deployment surfaces:
 
-1. **Supabase database:** ten migrations listed below.
+1. **Supabase database:** eleven migrations listed below.
 2. **Supabase Edge Function:** `visibility-tracking`, including candidate staging, atomic promotion, and the emergency pause gate.
 3. **Vercel application:** `app/platform/[projectId]/dashboard/page.tsx`, which runs and resumes category batches and retains failed candidate IDs.
 
@@ -45,6 +45,7 @@ Apply only this reviewed sequence, after the live migration-history reconciliati
 8. `20261117110000_coordinate_competitor_recompute_with_tracking_replacements.sql`
 9. `20261117120000_harden_candidate_raw_response_scope_validation.sql`
 10. `20261117130000_validate_staged_brand_project_ownership.sql`
+11. `20261117140000_rebuild_cross_provider_overall_after_replacement.sql`
 
 These migrations add candidate staging/audit structures and define or update the validation, preview, promotion, metric-finalization, and recompute-coordination functions. They do not authorize historical cleanup. Do not manually delete rows from canonical metric tables or legacy competitor tables as part of this release.
 
@@ -69,7 +70,7 @@ The pause gate is checked before authentication, database access, run creation, 
 
 ### C. Apply database migrations
 
-1. Apply the nine migrations in the order above using the approved migration procedure.
+1. Apply the eleven migrations in the order above using the approved migration procedure.
 2. Re-run the schema/security contract and read-only function-definition checks against the hosted target.
 3. Confirm the promotion RPC, candidate staging RPC, validation/preview RPCs, and advisory-lock coordination are present with the intended service-role-only grants.
 4. Stop if any migration or post-migration contract check fails. Keep tracking paused.

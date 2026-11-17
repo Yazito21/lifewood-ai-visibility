@@ -1793,3 +1793,22 @@ Verification status:
 - Added to the disposable-database regression suite.
 - The prior full workflow passed before this additional assertion; this latest assertion still needs a fresh CI run.
 - No hosted Supabase rehearsal or Production deployment/migration has been performed.
+
+
+## Development update - 2026-11-17 (multi-provider Overall preservation)
+
+A review found that candidate promotion always asked the per-provider Overall builder to write the shared `Overall` provider row. On dates where more than one provider has a published category run, this could overwrite the cross-provider pool with a single-provider aggregate.
+
+Added migration `20261117140000_rebuild_cross_provider_overall_after_replacement.sql`:
+
+- Detects whether another provider has a completed, published category run for the same project, Malaysia date, and location.
+- For single-provider dates, retains the existing per-provider Overall rebuild.
+- For multi-provider dates, rebuilds the provider-specific aggregate without writing the shared `Overall` provider row, then rebuilds the shared pool through `publish_cross_engine_metrics`.
+- If shared Overall category coverage is incomplete, invalidates only the shared Overall aggregate and its matching Overall rows. It does not supersede valid per-category cross-provider aggregates.
+
+Added a synthetic multi-provider regression case with one Gemini run and a ChatGPT replacement. It asserts the shared Overall score, citation count, and source-run lineage pool both providers rather than reporting ChatGPT alone.
+
+Verification status:
+- The migration and regression test are committed to the feature branch.
+- A fresh disposable-database CI run is required before considering this fix verified.
+- No hosted Supabase rehearsal, Production migration, Edge Function deployment, Vercel Production deployment, unpause, or historical deletion was performed.
