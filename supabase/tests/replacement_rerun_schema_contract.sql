@@ -99,8 +99,8 @@ begin
     if position('v_run.project_id::text || ''|__TRACKING_REPLACEMENT_RECOMPUTE__''' in promotion_definition) = 0
        or position('v_run.project_id::text || ''|__TRACKING_REPLACEMENT_RECOMPUTE__''' in promotion_definition)
           > position('preview_tracking_run_replacement' in promotion_definition)
-       or position('v_run.project_id::text || ''|__OVERALL_REFRESH__'' || v_run.provider' in promotion_definition) = 0
-       or position('v_run.project_id::text || ''|__OVERALL_REFRESH__'' || v_run.provider' in promotion_definition)
+       or position('v_run.project_id::text || ''|'' || v_date::text || ''|__OVERALL_REFRESH__|'' || v_run.provider || ''|'' || v_location' in promotion_definition) = 0
+       or position('v_run.project_id::text || ''|'' || v_date::text || ''|__OVERALL_REFRESH__|'' || v_run.provider || ''|'' || v_location' in promotion_definition)
           > position('preview_tracking_run_replacement' in promotion_definition) then
       raise exception 'replacement rerun contract: executable project and shared Overall locks must precede predecessor preview';
     end if;
