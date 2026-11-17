@@ -1348,3 +1348,34 @@ Exact continuation commits:
 - `4f24e54938085d4e832c33a209788ea345078953` — coordinate competitor recompute and Overall publication with replacement locks; CI run #39 passed.
 
 The schema contract is further tightened to assert the executable advisory-lock key expressions, not merely the sentinel comments.
+
+
+### 2026-11-17: executable lock contract correction and final CI verification
+
+The first strengthened lock-contract attempt in commit `ed7e555c062dcdea8381bf797b00bb848f8748bb` failed in CI run [#40](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44008575836) because the test expected an abbreviated Overall lock-key expression that did not match the complete project/date/provider/location key in the function. No migration or application code failed in that run; the assertion itself was incorrect.
+
+Corrected the contract to match the full executable SQL expressions and reran CI in commit `4b98160868f59dcfc02d6dbd9c2da5c0a6583120`.
+
+GitHub Actions run [#41](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44008604915): **SUCCESS**. Both jobs passed:
+- Database job: complete schema-only baseline restore, all migrations including competitor-recompute coordination, executable lock contract, all replacement SQL behavioural tests, and concurrent same-scope promotion test.
+- Application/Edge job: TypeScript type-check, Deno Edge Function type-check, and all visibility-tracking Deno unit tests.
+
+Current feature-branch head before this handover-only update: `4b98160868f59dcfc02d6dbd9c2da5c0a6583120`.
+
+### Remaining work after CI #41
+
+1. **Edge Function integration audit/testing:** the complete 1,553-line function has been reviewed and Deno type/unit tests pass, but a mocked end-to-end request test should still prove all provider/retry/error paths reach candidate staging and promotion correctly. The tracked-brand registry bootstrap remains a configuration side effect outside candidate staging and should be reviewed before deployment.
+2. **Multi-location limitation:** the current project schema enforces exactly one configured tracking location. Location isolation is tested, but one candidate spanning multiple locations is not supported or proven. Do not claim multi-location candidate support.
+3. **Full-run limitation:** the Dashboard's normal Run Tracking flow invokes one category at a time, so its normal batch path uses category-scoped candidates. A direct null-category full-run candidate is not supported by the promotion RPC. Full-batch atomicity is not implemented.
+4. **Lint:** the repository has no checked-in ESLint configuration. TypeScript and Deno checks pass; ESLint has not been claimed as passing.
+5. **Hosted controlled test:** no separate hosted non-Production Supabase test project is available in this workflow. CI tests use disposable local Supabase only.
+6. **Deployment:** no hosted Supabase migration, Supabase Edge Function deployment, Vercel deployment, merge to `main`, or Production data change has been performed. Before any hosted deployment, re-audit the live function/schema versions and present the exact migration and Edge Function changes for approval.
+7. **Historical cleanup:** no inventory or deletion has been performed. A read-only inventory and exact deletion scope must be presented for approval before any Production historical deletion.
+
+### Current safety status
+
+- All replacement implementation and test changes remain on `feat/replace-rerun-data`.
+- CI #41 passed on the disposable local database and GitHub runner.
+- Dr D Signature Clinic, MDLand, and unrelated projects were not used as test targets or modified.
+- Legacy `competitors`, `direct_competitors`, and `direct_competitor_observations` remain preserved.
+- No Production historical data has been deleted.
