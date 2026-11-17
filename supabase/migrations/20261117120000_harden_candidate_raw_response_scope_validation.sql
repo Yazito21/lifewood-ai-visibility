@@ -95,6 +95,7 @@ begin
       or ar.tracking_location is null
       or pr.id is null
       or pr.project_id is distinct from v_run.project_id
+      or pr.category is null
       or not (pr.category = any(v_expected_categories))
     );
   if v_response_scope_mismatch > 0 then
