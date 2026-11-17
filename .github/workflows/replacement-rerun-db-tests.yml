@@ -99,6 +99,18 @@ jobs:
             -v ON_ERROR_STOP=1 \
             -f supabase/tests/replacement_rerun_overall_behaviour.sql
 
+      - name: Run run-owned derived-data replacement behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_derived_data_behaviour.sql
+
+      - name: Run source-run foreign-key rejection behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_source_fk_behaviour.sql
+
       - name: Stop local Supabase stack
         if: always()
         run: supabase stop --no-backup

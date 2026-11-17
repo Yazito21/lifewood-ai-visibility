@@ -1272,3 +1272,14 @@ The schema/security contract now verifies that both lock types precede predecess
 The first run of the new Overall behaviour test reached the test step and failed due to a fixture statement returning two prompt IDs into one scalar variable. The fixture has been corrected to insert the Skin and Mind prompts separately. The CI run's database migration, schema/security, candidate validation, first-publication, exact replacement, rollback and scope-isolation steps all passed before that fixture failure.
 
 The shared Overall lock and fixture correction are committed together; the next CI run must pass before Overall rebuild/invalidation is marked verified.
+
+
+### 2026-11-17: derived-data and source-run FK behavioural coverage added
+
+Added disposable SQL behavioural tests for the full six-table candidate staging/promotion path and the `tracking_runs.source_run_id` NO ACTION dependency.
+
+The derived-data test creates a synthetic predecessor and replacement candidate with citations, citation occurrences, response-brand evidence, third-party mentions, category observations and visibility metrics. It verifies that predecessor raw/derived rows are removed, candidate staged rows become canonical, and the legacy `competitors` sentinel plus `direct_competitors` / `direct_competitor_observations` remain unchanged.
+
+The source-run FK test creates a child run referencing the predecessor through `source_run_id`. Promotion must reject with `predecessor_is_referenced_as_source_run` and preserve the published predecessor, its raw response and metric, the completed unpublished candidate, its staged rows, and the source provenance row.
+
+Both tests are wired into the isolated GitHub Actions workflow. Their results are pending the next CI run.
