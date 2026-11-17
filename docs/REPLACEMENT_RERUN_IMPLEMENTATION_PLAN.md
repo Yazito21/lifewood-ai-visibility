@@ -1982,3 +1982,25 @@ The queue failure/retry fixture passed in GitHub Actions run `44027361771` on co
 The live read-only inventory showed Dr D Signature Clinic has historical failed and partial runs in addition to published and completed-unpublished runs. The diagnostic now includes every run status for `topic`, `full`, and `overall_aggregate`, and reports failed, partial, in-progress, superseded, and completed-unpublished IDs separately. Citation occurrence counts are now restricted to the current run or its source-run lineage rather than every occurrence in the same scope.
 
 This is important for cleanup planning: a failed or partial run is not a published predecessor, and a completed-unpublished legacy full run may still be the source of category-level synthetic slices. No deletion is authorised or performed.
+
+
+### Production historical inventory and foreign-key review
+
+A read-only historical inventory was executed against the connected Production Supabase project. The result includes two projects: Dr D Signature Clinic and Lifewood. No data was modified.
+
+The Dr D history contains:
+- 130 topic runs: 93 active published, 26 superseded published, 5 failed, and 6 partial.
+- 25 legacy full runs: 8 completed-unpublished source runs, 15 failed, and 2 partial.
+- 42 Overall aggregate runs: 31 active published and 11 superseded published.
+- 18 synthetic category slices linked to 8 completed legacy full source runs.
+- Failed and partial runs still have raw responses; they are not published predecessors and must not be treated as replacement targets.
+- The 8 completed-unpublished full source runs must be preserved while the 18 synthetic category slices retain their `source_run_id` references.
+
+The Lifewood history contains 4 active published topic runs and 1 active published Overall aggregate, with no superseded or legacy full runs in the inventory window.
+
+The Production foreign-key review confirmed:
+- `tracking_runs.source_run_id` references `tracking_runs.id` with **NO ACTION** on delete. Source runs cannot be deleted while synthetic category slices still reference them.
+- `tracking_runs.supersedes_run_id`, `category_brand_observations.run_id`, `visibility_daily.run_id`, and `tracking_batch_categories.tracking_run_id` use **SET NULL**.
+- `tracking_run_daily_claims.run_id` and `tracking_run_stages.run_id` use **CASCADE**.
+
+Added a reusable read-only FK diagnostic and included it in CI. The live Production result and individual run IDs are not written into the repository. No historical deletion, migration, Edge Function deployment, or application deployment was performed.

@@ -139,6 +139,12 @@ jobs:
             -v ON_ERROR_STOP=1 \
             -f supabase/diagnostics/replacement_rerun_historical_inventory.sql
 
+      - name: Validate read-only tracking-run foreign-key inventory query
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/diagnostics/replacement_rerun_fk_reference_inventory.sql
+
       - name: Stop local Supabase stack
         if: always()
         run: supabase stop --no-backup
