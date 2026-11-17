@@ -19,7 +19,7 @@ with candidate_runs as (
     coalesce(tr.source_run_id, tr.id) as response_owner_run_id
   from public.tracking_runs tr
   join public.projects p on p.id = tr.project_id
-  where tr.run_kind in ('topic', 'full', 'overall_aggregate')
+  where tr.run_kind in ('category', 'full', 'overall_aggregate')
     and (
       tr.superseded_at is not null
       or (tr.run_kind = 'full' and tr.status = 'completed' and tr.published_at is null)
