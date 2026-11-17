@@ -1729,3 +1729,9 @@ Commits:
 - `34d05d255a9aa4155cf9e33bc775303f63816709` - test unconfigured location rejection.
 
 Verification remains pending: these SQL behavioural tests have not yet been executed against a local disposable Supabase database or confirmed CI run. No hosted or Production resources were changed.
+
+
+CI integration follow-up:
+- Added the new hardening migration to `.github/workflows/replacement-rerun-db-tests.yml` after the existing 2026-11-17 coordination migration, preserving chronological application order.
+- This ensures the disposable database behavioural suite actually exercises the new validator rather than testing only the earlier function definition.
+- Commits: `501c74cd6300748445925d4e67fc0341820e168a` (include migration), `f1af618e3296d5585402f9308a655bb2f1e9579e` (chronological order).
