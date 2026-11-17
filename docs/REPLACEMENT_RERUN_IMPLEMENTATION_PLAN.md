@@ -2049,3 +2049,15 @@ The next validation work will continue in the disposable local Supabase stack us
 This is not equivalent to a hosted integration rehearsal. The hosted Edge Function deployment, hosted database configuration, and live Vercel-to-Supabase flow remain unverified. Production must not be used as a substitute test environment. Any later Production release decision must explicitly acknowledge this remaining limitation and require separate approval for each deployment surface.
 
 The deployment runbook now records this no-additional-cost constraint and the local-CI-only validation path.
+
+
+### Draft review PR opened; no-cost preview validation started
+
+Opened draft PR [#99](https://github.com/Yazito21/lifewood-ai-visibility/pull/99) from `feat/replace-rerun-data` to `main`. It is intentionally a draft and has not been merged.
+
+Vercel's GitHub integration created a Preview deployment for the PR commit. At the latest check it was still **Building**. The preview URL is:
+`https://lifewood-ai-visibility-git-feat-repla-77b243-yazito21s-projects.vercel.app`
+
+The preview must be treated as frontend/build validation only until its Supabase environment is independently confirmed to be isolated and no-cost. Do not trigger tracking runs or mutate records through it while that is unknown. The deployment runbook has been clarified accordingly.
+
+The PR explicitly records that no additional Supabase spend is authorised, that hosted rehearsal is deferred, and that Production deployment/data cleanup are not authorised by the PR.
