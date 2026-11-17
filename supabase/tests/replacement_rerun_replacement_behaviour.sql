@@ -89,7 +89,7 @@ begin
   insert into public.tracking_batches (project_id, requested_by, status, category_order)
   values (v_project, v_actor, 'completed', '["Skin"]'::jsonb)
   returning id into v_batch;
-  insert into public.tracking_batch_topics (batch_id, topic, ordinal, status, tracking_run_id)
+  insert into public.tracking_batch_categories (batch_id, category, ordinal, status, tracking_run_id)
   values (v_batch, 'Skin', 0, 'completed', v_old_run);
 
   -- The daily entitlement must follow the published replacement, not point to a deleted run.
@@ -142,7 +142,7 @@ begin
 
   if not exists (
     select 1 from public.tracking_batch_topics
-    where batch_id = v_batch and topic = 'Skin' and tracking_run_id is null
+    where batch_id = v_batch and category = 'Skin' and tracking_run_id is null
   ) then
     raise exception 'historical batch topic FK did not safely detach deleted predecessor';
   end if;
