@@ -58,7 +58,7 @@ These migrations add candidate staging/audit structures and define or update the
 2. Confirm the Production backup/PITR recovery point.
 3. Re-run the live read-only schema/function/trigger/FK audit and compare the remote migration history.
 4. Confirm the exact migration list to be applied. Stop on any unexpected pending migration.
-5. Confirm the dedicated sandbox project is isolated from Production data and credentials.
+5. If a no-additional-cost hosted sandbox already exists, confirm it is isolated from Production data and credentials. Do not create or pay for one. If none exists, record hosted rehearsal as not performed and keep the Production release blocked unless a separate release decision explicitly accepts that limitation.
 
 ### B. Deploy the Edge Function in paused mode
 
@@ -79,8 +79,8 @@ The pause gate is checked before authentication, database access, run creation, 
 ### D. Deploy the Vercel application
 
 1. Create/review the pull request from `feat/replace-rerun-data`.
-2. Verify the Vercel Preview deployment against the same release commit.
-3. Confirm the Dashboard category batch, failed-candidate retention, and resume flow behave as expected against the sandbox.
+2. Verify that the Vercel Preview build completes against the same release commit.
+3. Do not use the Preview UI to run tracking or mutate data unless its Supabase environment is independently verified as an isolated, no-additional-cost sandbox. A Preview deployment alone does not establish backend isolation or replace hosted integration testing.
 4. Promote the same reviewed commit to Vercel Production only after explicit approval and successful sandbox rehearsal.
 
 ### E. Sandbox acceptance
