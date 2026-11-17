@@ -2071,3 +2071,62 @@ The persisted `tracking_runs.run_kind` value for a single-category run is standa
 ### Category terminology migration and regression coverage
 
 Added migration `20261117160000_standardise_category_run_kind.sql` as the thirteenth replacement migration. It updates the legacy publication trigger and existing SQL functions before converting stored `tracking_runs.run_kind = 'topic'` values to `category`, then replaces the allowed-value constraint. The legacy stage-journal JSON metadata key `topic` is deliberately retained for historical compatibility. The Edge Function, promotion/recompute SQL, diagnostics, behavioural fixtures, schema contract, and deployment runbook now use `category` as the run-kind terminology. CI applies the new migration after the existing replacement migrations and asserts that no legacy `topic` run-kind values remain.
+
+## 2026-11-17 progress update: terminology migration and full CI validation passed
+
+**Current branch:** `feat/replace-rerun-data`  
+**Current commit:** `8f2158df637b23e5f9f9822c26eed1c0ba8b3a72`  
+**Review PR:** [#99](https://github.com/Yazito21/lifewood-ai-visibility/pull/99)  
+**PR status:** Open, draft, not merged.
+
+### Category terminology correction
+
+The user clarified that the earlier change from "topic" to "category" was intended as a terminology-only standardisation. The replacement implementation was audited and corrected so the persisted `tracking_runs.run_kind` for a single configured category is `category`, not `topic`.
+
+Added the thirteenth migration:
+
+`supabase/migrations/20261117160000_standardise_category_run_kind.sql`
+
+It:
+- Updates existing SQL functions/publication-trigger logic that assign or check the legacy `topic` run kind.
+- Converts existing `tracking_runs.run_kind = 'topic'` rows to `category`.
+- Replaces the allowed-value constraint with `category`, `full`, and `overall_aggregate`.
+- Preserves `full` and `overall_aggregate` semantics.
+- Retains the historical `tracking_run_stages.metadata` JSON key `topic` for compatibility; this is not a run-kind value and is intentionally not renamed.
+
+The Edge Function, promotion/recomputation SQL, diagnostics, behavioural fixtures, schema contract and runbook were updated to use category terminology.
+
+### Latest automated validation
+
+GitHub Actions completed successfully for commit `8f2158df637b23e5f9f9822c26eed1c0ba8b3a72`:
+
+- [Replacement Rerun Database Smoke Tests](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44048850962) — passed.
+- Application type-check — passed.
+- Edge Function type-check and unit tests — passed.
+- Build Check — passed.
+- Replacement database suite — passed, including the legacy run-kind conversion fixture, migration/schema contracts, candidate validation, first publication, exact-scope replacement, forced rollback, scope isolation, Overall aggregation, derived-data replacement, source-run FK rejection, concurrency, and read-only inventory query validation.
+- Vercel Preview deployment — Ready for this commit. This is a Preview deployment, not a Production deployment.
+
+### Current release position
+
+The implementation and automated regression suite are ready for final review, but the feature is **not yet complete in Production**.
+
+- PR #99 remains a draft and has not been merged.
+- No additional Supabase spending is authorised. No hosted Supabase branch or extra project will be created.
+- Local disposable Supabase CI is the validated zero-additional-cost test environment. It is not equivalent to a hosted end-to-end rehearsal.
+- Hosted Supabase integration and the live Vercel-to-Supabase flow remain unverified.
+- Production database migrations have not been applied.
+- The `visibility-tracking` Edge Function has not been deployed to Production as part of this release.
+- No Production historical data has been deleted or modified.
+- The Vercel Preview must not be used to trigger tracking or mutate data unless its Supabase environment is independently confirmed to be safe and isolated.
+
+### Remaining stages
+
+1. Complete the final code and migration review; then mark PR #99 ready and merge only after review.
+2. Perform Production release preflight: reconcile the exact pending migration list, verify live schema/function/trigger/grant/RLS assumptions, confirm a recovery point, and review deployment/rollback steps. Hosted rehearsal remains unavailable under the no-additional-cost constraint and must be disclosed.
+3. Obtain explicit approval for the exact Production database migrations, Edge Function deployment, and Vercel Production deployment. These are not authorised by this progress update.
+4. Deploy in the approved order, keep the replacement pause gate enabled during rollout, and verify deployment health before enabling replacement tracking.
+5. After separate approval, perform controlled Production verification of successful replacement, failed/incomplete reruns, retries, rollback, category/project/provider/date/location isolation, competitor recomputation, Overall aggregation, Dashboard and run-history consistency.
+6. Historical predecessor cleanup remains a separate decision and requires a read-only inventory review plus separate explicit approval. Do not infer approval from approval to deploy the replacement workflow.
+
+**Safety status:** No Production changes or historical deletion have been performed. The implementation is CI-validated on the feature branch; Production rollout and live operational verification remain outstanding.
