@@ -4,6 +4,7 @@ do $competitor_recompute_contract$
 declare
   v_promote text := pg_get_functiondef('public.promote_tracking_run_candidate(uuid,uuid)'::regprocedure);
   v_recompute text := pg_get_functiondef('public.recompute_competitor_metrics(uuid,date,date)'::regprocedure);
+  v_leaderboard text := pg_get_functiondef('public.get_published_run_ids_for_leaderboard(uuid,date,date,text,text,text)'::regprocedure);
   v_lock text := '__TRACKING_REPLACEMENT_RECOMPUTE__';
 begin
   if position(v_lock in v_promote) = 0 or position(v_lock in v_recompute) = 0 then
@@ -24,6 +25,10 @@ begin
      or position('delete from public.direct_competitors' in lower(v_recompute)) > 0
      or position('delete from public.direct_competitor_observations' in lower(v_recompute)) > 0 then
     raise exception 'competitor recomputation must not delete source responses or direct-competitor configuration/observations';
+  end if;
+
+  if position('superseded_at' in lower(v_leaderboard)) = 0 then
+    raise exception 'leaderboard run lookup must exclude superseded runs';
   end if;
 
   if position('tr.project_id = p_project_id' in v_recompute) = 0

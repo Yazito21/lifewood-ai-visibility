@@ -1903,3 +1903,16 @@ Added `supabase/tests/replacement_rerun_competitor_recompute_behaviour.sql` and 
 Also added `supabase/diagnostics/replacement_rerun_historical_inventory.sql`. It is a SELECT-only report that groups historical runs by project, Malaysia-local date, category, provider, and tracking location and reports run lineage plus raw response, evidence, citation occurrence, competitor observation, visibility metric, and replacement audit row counts. It does not modify or delete any records.
 
 The new behavioural fixture must pass in CI before it is considered verified. The inventory query has not been run against hosted data; it is provided for a later, separately approved read-only review. No historical deletion is included.
+
+
+### Active-run selection hardened for leaderboard consumers
+
+The consumer audit traced the Leaderboards page through `lib/leaderboard.ts`. It loads category competitor observations and tracked-brand metrics, then filters both by the run IDs returned from `get_published_run_ids_for_leaderboard`.
+
+The existing lookup selected the newest completed/published run by timestamp but did not explicitly exclude `superseded_at IS NOT NULL`. Replacement publication normally gives the new run the newer timestamp, but explicit active-run filtering is the correct invariant and protects against backfilled/imported timestamps.
+
+Added migration `20261117150000_exclude_superseded_runs_from_leaderboard_lookup.sql` to patch the lookup so superseded runs cannot be selected. Added a contract assertion and included the migration in the disposable database workflow.
+
+Also corrected the read-only inventory query to use the actual audit column `replaced_run_id` and distinct counts where source-run lineage can otherwise duplicate response/evidence joins.
+
+Verification is pending the next fresh CI run. No Production migration or hosted query was executed.

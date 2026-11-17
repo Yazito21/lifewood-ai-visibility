@@ -46,13 +46,13 @@ scope_counts as (
     s.project_id, s.brand_name, s.metric_date, s.category, s.provider, s.tracking_location,
     s.run_count, s.active_published_run_count, s.superseded_published_run_count,
     s.run_ids, s.superseded_run_ids, s.active_run_ids, s.source_run_ids,
-    (select count(*)::integer
+    (select count(distinct ar.id)::integer
        from public.ai_responses ar
        join run_scope rs on rs.run_id = ar.run_id or rs.source_run_id = ar.run_id
       where rs.project_id = s.project_id and rs.metric_date = s.metric_date
         and rs.category is not distinct from s.category and rs.provider = s.provider
         and rs.tracking_location = s.tracking_location) as raw_response_rows,
-    (select count(*)::integer
+    (select count(distinct e.id)::integer
        from public.response_brand_evidence e
        join public.ai_responses ar on ar.id = e.response_id
        join run_scope rs on rs.run_id = ar.run_id or rs.source_run_id = ar.run_id
@@ -74,9 +74,9 @@ scope_counts as (
       where v.project_id = s.project_id and v.metric_date = s.metric_date
         and v.category is not distinct from s.category and v.llm_provider = s.provider
         and v.tracking_location = s.tracking_location) as visibility_metric_rows,
-    (select count(*)::integer
+    (select count(distinct rr.id)::integer
        from public.tracking_run_replacements rr
-       join run_scope rs on rs.run_id = rr.predecessor_run_id or rs.run_id = rr.replacement_run_id
+       join run_scope rs on rs.run_id = rr.replaced_run_id or rs.run_id = rr.replacement_run_id
       where rs.project_id = s.project_id and rs.metric_date = s.metric_date
         and rs.category is not distinct from s.category and rs.provider = s.provider
         and rs.tracking_location = s.tracking_location) as replacement_audit_rows
