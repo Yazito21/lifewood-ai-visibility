@@ -111,6 +111,11 @@ jobs:
             -v ON_ERROR_STOP=1 \
             -f supabase/tests/replacement_rerun_source_fk_behaviour.sql
 
+      - name: Run concurrent same-scope replacement behavioural test
+        env:
+          DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: bash supabase/tests/replacement_rerun_concurrency_behaviour.sh
+
       - name: Stop local Supabase stack
         if: always()
         run: supabase stop --no-backup

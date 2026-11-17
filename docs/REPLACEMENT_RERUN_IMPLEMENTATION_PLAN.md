@@ -1283,3 +1283,10 @@ The derived-data test creates a synthetic predecessor and replacement candidate 
 The source-run FK test creates a child run referencing the predecessor through `source_run_id`. Promotion must reject with `predecessor_is_referenced_as_source_run` and preserve the published predecessor, its raw response and metric, the completed unpublished candidate, its staged rows, and the source provenance row.
 
 Both tests are wired into the isolated GitHub Actions workflow. Their results are pending the next CI run.
+
+
+### 2026-11-17: concurrent same-scope test added
+
+Added a two-session PostgreSQL behavioural test. It publishes an initial predecessor, prepares two completed candidates for the same exact scope, starts the first promotion and waits until both its category and shared Overall advisory locks are held, then starts the second promotion while the first transaction is still open. The second promotion must wait, refresh predecessor discovery after acquiring the lock, and replace the first candidate. Verification requires only the second candidate's run/raw response/metric to survive and both replacement audit edges to remain.
+
+The test runs only against the disposable local database and deletes its synthetic project after verification. Its result is pending the next CI run.
