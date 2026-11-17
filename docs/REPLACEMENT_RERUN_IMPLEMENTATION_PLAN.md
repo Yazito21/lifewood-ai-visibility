@@ -1760,3 +1760,20 @@ Commit:
 Verification status:
 - The migration and SQL regression test are committed, but no confirmed CI execution or local PostgreSQL run is available yet.
 - No hosted Supabase rehearsal, Production migration, Edge Function deployment, Vercel Production deployment, unpause, or historical deletion was performed.
+
+
+## Development update - 2026-11-17 (reduced derived-data replacement coverage)
+
+Extended `replacement_rerun_derived_data_behaviour.sql` to cover a replacement candidate that contains fewer competitor observations and citation occurrences than its predecessor:
+
+- The predecessor includes one configured competitor's category observation and citation occurrence.
+- The replacement candidate deliberately omits that competitor's observation and citation occurrence.
+- Assertions verify that the predecessor competitor evidence does not survive promotion, while the candidate's tracked-brand evidence remains.
+- Existing assertions continue to verify that the legacy `competitors` sentinel and the separate `direct_competitors` configuration and `direct_competitor_observations` sentinel remain untouched.
+
+This specifically guards against stale competitor rows remaining when a replacement has fewer derived observations, rather than only testing a one-for-one replacement.
+
+Verification status:
+- Regression coverage is committed to the disposable-database test suite.
+- It has not yet been executed in a confirmed local PostgreSQL or GitHub Actions run.
+- No hosted Supabase rehearsal, Production migration, Edge Function deployment, Vercel Production deployment, unpause, or historical deletion was performed.

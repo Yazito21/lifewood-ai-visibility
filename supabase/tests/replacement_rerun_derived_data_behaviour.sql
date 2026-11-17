@@ -11,6 +11,7 @@ declare
   v_project uuid;
   v_prompt uuid;
   v_brand uuid;
+  v_competitor_brand uuid;
   v_direct_competitor uuid;
   v_old_run uuid;
   v_new_run uuid;
@@ -38,6 +39,16 @@ begin
   insert into public.category_brand_assignments (
     project_id, category, brand_id, role, include_in_metrics
   ) values (v_project, 'Skin', v_brand, 'tracked_brand', true);
+
+  insert into public.brand_registry (
+    project_id, canonical_name, normalized_key, is_tracked_brand, is_active
+  ) values (
+    v_project, 'Synthetic Competitor One', 'syntheticcompetitorone', false, true
+  ) returning id into v_competitor_brand;
+
+  insert into public.category_brand_assignments (
+    project_id, category, brand_id, role, include_in_metrics
+  ) values (v_project, 'Skin', v_competitor_brand, 'competitor', true);
 
   -- Sentinel rows prove that this workflow leaves the legacy competitor summary
   -- and the separate direct-competitor registry/observations untouched.
@@ -88,12 +99,20 @@ begin
       'frequency', 1, 'prompt_id', v_prompt, 'tracking_location', 'MY'
     )));
   perform public.stage_tracking_candidate_rows(v_old_run, 'citation_occurrences',
-    jsonb_build_array(jsonb_build_object(
-      'project_id', v_project, 'response_id', v_old_response, 'entity_id', v_brand,
-      'category', 'Skin', 'metric_date', v_metric_date, 'provider', 'chatgpt',
-      'tracking_location', 'MY', 'run_id', v_old_run, 'citation_url', v_old_url,
-      'canonical_url', v_old_url, 'canonical_domain', 'old-source.example', 'citation_index', 1
-    )));
+    jsonb_build_array(
+      jsonb_build_object(
+        'project_id', v_project, 'response_id', v_old_response, 'entity_id', v_brand,
+        'category', 'Skin', 'metric_date', v_metric_date, 'provider', 'chatgpt',
+        'tracking_location', 'MY', 'run_id', v_old_run, 'citation_url', v_old_url,
+        'canonical_url', v_old_url, 'canonical_domain', 'old-source.example', 'citation_index', 1
+      ),
+      jsonb_build_object(
+        'project_id', v_project, 'response_id', v_old_response, 'entity_id', v_competitor_brand,
+        'category', 'Skin', 'metric_date', v_metric_date, 'provider', 'chatgpt',
+        'tracking_location', 'MY', 'run_id', v_old_run, 'citation_url', 'https://old-competitor.example/review',
+        'canonical_url', 'https://old-competitor.example/review', 'canonical_domain', 'old-competitor.example', 'citation_index', 2
+      )
+    ));
   perform public.stage_tracking_candidate_rows(v_old_run, 'response_brand_evidence',
     jsonb_build_array(jsonb_build_object(
       'project_id', v_project, 'response_id', v_old_response, 'brand_id', v_brand,
@@ -111,12 +130,20 @@ begin
       'association_status', 'inferred', 'frequency', 1
     )));
   perform public.stage_tracking_candidate_rows(v_old_run, 'category_brand_observations',
-    jsonb_build_array(jsonb_build_object(
-      'project_id', v_project, 'brand_id', v_brand, 'category', 'Skin',
-      'metric_date', v_metric_date, 'tracking_location', 'MY', 'llm_provider', 'chatgpt',
-      'presence_count', 0, 'response_count', 1, 'mention_count', 0, 'citation_count', 1,
-      'average_position', null, 'run_id', v_old_run
-    )));
+    jsonb_build_array(
+      jsonb_build_object(
+        'project_id', v_project, 'brand_id', v_brand, 'category', 'Skin',
+        'metric_date', v_metric_date, 'tracking_location', 'MY', 'llm_provider', 'chatgpt',
+        'presence_count', 0, 'response_count', 1, 'mention_count', 0, 'citation_count', 1,
+        'average_position', null, 'run_id', v_old_run
+      ),
+      jsonb_build_object(
+        'project_id', v_project, 'brand_id', v_competitor_brand, 'category', 'Skin',
+        'metric_date', v_metric_date, 'tracking_location', 'MY', 'llm_provider', 'chatgpt',
+        'presence_count', 1, 'response_count', 1, 'mention_count', 2, 'citation_count', 1,
+        'average_position', 2, 'run_id', v_old_run
+      )
+    ));
   perform public.stage_tracking_candidate_rows(v_old_run, 'visibility_daily',
     jsonb_build_array(jsonb_build_object(
       'project_id', v_project, 'metric_date', v_metric_date, 'category', 'Skin',
@@ -216,8 +243,9 @@ begin
   end if;
 
   if exists (select 1 from public.citation_occurrences where response_id = v_old_response)
-     or not exists (select 1 from public.citation_occurrences where response_id = v_new_response and run_id = v_new_run) then
-    raise exception 'citation_occurrences was not replaced with candidate-owned occurrences';
+     or not exists (select 1 from public.citation_occurrences where response_id = v_new_response and run_id = v_new_run and entity_id = v_brand)
+     or exists (select 1 from public.citation_occurrences where response_id = v_new_response and entity_id = v_competitor_brand) then
+    raise exception 'citation_occurrences retained predecessor evidence or competitor citations absent from the replacement';
   end if;
 
   if exists (select 1 from public.third_party_mentions where response_id = v_old_response)
@@ -248,9 +276,14 @@ begin
     select 1 from public.category_brand_observations
     where project_id = v_project and metric_date = v_metric_date
       and category = 'Skin' and llm_provider = 'chatgpt'
-      and tracking_location = 'MY' and run_id = v_new_run and citation_count = 2
+      and tracking_location = 'MY' and run_id = v_new_run and brand_id = v_brand and citation_count = 2
+  ) or exists (
+    select 1 from public.category_brand_observations
+    where project_id = v_project and metric_date = v_metric_date
+      and category = 'Skin' and llm_provider = 'chatgpt'
+      and tracking_location = 'MY' and brand_id = v_competitor_brand
   ) then
-    raise exception 'category_brand_observations was not replaced with candidate observations';
+    raise exception 'category_brand_observations retained a competitor row omitted by the replacement';
   end if;
 
   if not exists (
