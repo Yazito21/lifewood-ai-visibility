@@ -163,6 +163,9 @@ begin
 end
 \$\$;
 delete from public.tracking_run_replacements where project_id='$PROJECT_ID';
+-- ai_responses.project_id is SET NULL while prompts are project-cascaded; remove
+-- the synthetic responses first so their prompt FK cannot block project teardown.
+delete from public.ai_responses where project_id='$PROJECT_ID';
 delete from public.projects where id='$PROJECT_ID';
 SQL
 

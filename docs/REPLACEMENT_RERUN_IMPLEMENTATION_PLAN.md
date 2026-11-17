@@ -1198,7 +1198,7 @@ The function no longer directly deletes or writes canonical derived citation/evi
 
 Important non-candidate configuration side effects found: a compatibility bootstrap can upsert the tracked brand into `brand_registry` and create missing `category_brand_assignments` while a candidate is processing. These are configuration/registry writes, not published run metrics, but they can persist even if the candidate later fails. Review whether to remove this bootstrap from the tracking request or isolate it as an explicit setup action before deployment.
 
-Important deployment limitation: the Edge Function calls the category-only `promote_tracking_run_candidate` for every completed non-sample run. Full-run candidates have a null category and are rejected by the RPC. Therefore the current Edge Function must not be deployed as a general full-run replacement implementation. Either gate full-run requests before processing or complete an atomic full-batch promotion design first. The present implementation supports category-scoped `topic` candidates only.
+Important deployment limitation: the Edge Function calls the category-only `promote_tracking_run_candidate` for every completed non-sample run. Direct full-run candidates with a null category are rejected by the RPC. The current Dashboard's normal Run Tracking flow avoids this path: it iterates the selected categories and invokes the Edge Function once per category, so each call is a category-scoped `topic` candidate and the batch publishes categories sequentially. Full-batch atomic replacement is not implemented; any other caller that submits a null-category full run must be gated or supported before deployment.
 
 ### Correctness issue identified and hardened on the feature branch
 
@@ -1297,3 +1297,15 @@ The test runs only against the disposable local database and deletes its synthet
 The workflow now has a separate `app-edge-quality` job that installs the application dependencies, runs `tsc --noEmit`, type-checks `supabase/functions/visibility-tracking/index.ts` with Deno, and runs the visibility-tracking Deno unit tests. This keeps code-quality checks independent from the disposable database job.
 
 The repository has no checked-in ESLint configuration despite the `npm run lint` script, so ESLint has not been claimed as passing. A lint configuration decision remains separate from the current database/Edge Function correctness work.
+
+
+### 2026-11-17: CI results and concurrency-test teardown correction
+
+- Overall rebuild/invalidation test: **PASS** in run [#35](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44007142611).
+- Full derived-data replacement test (all six staged tables plus preservation of legacy/direct competitor data): **PASS** in run [#35](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44007142611).
+- `source_run_id` NO ACTION rejection and predecessor/candidate preservation: **PASS** in run [#35](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44007142611).
+- Application TypeScript check, Deno Edge Function type-check and all visibility-tracking Deno unit tests: **PASS** in the `app-edge-quality` job of run [#37](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44007343705).
+
+The first concurrency run [#36](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44007251627) successfully completed the concurrent-promotion assertions: the first and second candidate promotions serialized, the second candidate became canonical, both earlier runs/raw responses were removed, and two audit edges remained. The job then failed during synthetic-project teardown because deleting the project cascaded to prompts while `ai_responses` retained a prompt FK. The test script now deletes its synthetic `ai_responses` before deleting the project. This was a test cleanup defect after the assertions, not a replacement assertion failure; the corrected script must pass in a fresh CI run before concurrency is marked complete.
+
+The Dashboard uses sequential category-scoped Edge Function calls for its normal multi-category Run Tracking batch. Each category replacement and its Overall refresh are atomic; the batch as a whole is not atomic. Full-batch atomicity remains a separate capability.
