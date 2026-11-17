@@ -1290,3 +1290,10 @@ Both tests are wired into the isolated GitHub Actions workflow. Their results ar
 Added a two-session PostgreSQL behavioural test. It publishes an initial predecessor, prepares two completed candidates for the same exact scope, starts the first promotion and waits until both its category and shared Overall advisory locks are held, then starts the second promotion while the first transaction is still open. The second promotion must wait, refresh predecessor discovery after acquiring the lock, and replace the first candidate. Verification requires only the second candidate's run/raw response/metric to survive and both replacement audit edges to remain.
 
 The test runs only against the disposable local database and deletes its synthetic project after verification. Its result is pending the next CI run.
+
+
+### 2026-11-17: Edge Function and application quality checks wired into CI
+
+The workflow now has a separate `app-edge-quality` job that installs the application dependencies, runs `tsc --noEmit`, type-checks `supabase/functions/visibility-tracking/index.ts` with Deno, and runs the visibility-tracking Deno unit tests. This keeps code-quality checks independent from the disposable database job.
+
+The repository has no checked-in ESLint configuration despite the `npm run lint` script, so ESLint has not been claimed as passing. A lint configuration decision remains separate from the current database/Edge Function correctness work.

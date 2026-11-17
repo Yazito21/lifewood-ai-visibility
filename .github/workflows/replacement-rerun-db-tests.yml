@@ -119,3 +119,31 @@ jobs:
       - name: Stop local Supabase stack
         if: always()
         run: supabase stop --no-backup
+
+  app-edge-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install application dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+
+      - name: Type-check the application
+        run: npx tsc --noEmit
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check visibility tracking Edge Function
+        run: deno check supabase/functions/visibility-tracking/index.ts
+
+      - name: Run visibility tracking Edge Function unit tests
+        run: deno test --allow-net supabase/functions/visibility-tracking/*.test.ts
