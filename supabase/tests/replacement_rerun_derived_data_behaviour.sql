@@ -295,6 +295,27 @@ begin
     raise exception 'visibility_daily does not reflect candidate citation metrics';
   end if;
 
+  -- Overall must be rebuilt from the replacement's citation count and competitor set.
+  -- The predecessor included this competitor; the replacement intentionally does not.
+  if not exists (
+    select 1 from public.visibility_daily
+    where project_id = v_project and metric_date = v_metric_date
+      and category = 'Overall' and llm_provider = 'Overall'
+      and tracking_location = 'MY' and citation_count = 2
+      and source_run_ids = array[v_new_run]::uuid[]
+  ) then
+    raise exception 'Overall citation aggregate was not rebuilt from the replacement category run';
+  end if;
+
+  if exists (
+    select 1 from public.category_brand_observations
+    where project_id = v_project and metric_date = v_metric_date
+      and category = 'Overall' and llm_provider = 'chatgpt'
+      and tracking_location = 'MY' and brand_id = v_competitor_brand
+  ) then
+    raise exception 'Overall retained a competitor observation omitted by the replacement';
+  end if;
+
   if not exists (
     select 1 from public.competitors
     where project_id = v_project and brand_name = 'Legacy competitor sentinel'

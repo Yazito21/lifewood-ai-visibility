@@ -1777,3 +1777,19 @@ Verification status:
 - Regression coverage is committed to the disposable-database test suite.
 - It has not yet been executed in a confirmed local PostgreSQL or GitHub Actions run.
 - No hosted Supabase rehearsal, Production migration, Edge Function deployment, Vercel Production deployment, unpause, or historical deletion was performed.
+
+
+## Development update - 2026-11-17 (Overall competitor and citation regression coverage)
+
+Expanded `replacement_rerun_derived_data_behaviour.sql` to verify the Overall aggregate after a replacement that removes a predecessor competitor observation and citation occurrence:
+
+- Overall citation count must equal the replacement category's citation count, and its `source_run_ids` must point to the replacement run.
+- The predecessor competitor must not remain in Overall `category_brand_observations` when the replacement candidate omits it.
+- The existing checks continue to prove that direct-competitor configuration and direct-competitor observations remain unchanged.
+
+This tests the downstream pooled aggregate, not just the category-level replacement tables.
+
+Verification status:
+- Added to the disposable-database regression suite.
+- The prior full workflow passed before this additional assertion; this latest assertion still needs a fresh CI run.
+- No hosted Supabase rehearsal or Production deployment/migration has been performed.
