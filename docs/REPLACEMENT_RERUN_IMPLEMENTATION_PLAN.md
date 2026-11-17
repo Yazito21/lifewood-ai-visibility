@@ -2038,3 +2038,14 @@ No Production data or schema was changed. No historical rows were deleted. The n
 Updated `docs/REPLACEMENT_RERUN_DEPLOYMENT_RUNBOOK.md` to include the twelfth migration, `20261117150000_exclude_superseded_runs_from_leaderboard_lookup.sql`, and to record the current Production preflight state. The runbook now distinguishes the read-only checks already completed (migration history, key columns, FK dependencies, historical run inventory) from remaining release checks (triggers, grants, RLS, and hosted function definitions).
 
 The Production migration history currently ends at the November 12, 2026 report-template migrations, so all twelve replacement migrations remain pending. The runbook remains **prepared, not executed**. A separate sandbox rehearsal and explicit approval for each Production deployment surface remain mandatory.
+
+
+### Zero-cost rehearsal decision recorded
+
+The user has explicitly ruled out additional Supabase spending. The implementation will not create a Supabase development branch, create another hosted Supabase project, upgrade a plan, or request organisation-level cost confirmation.
+
+The next validation work will continue in the disposable local Supabase stack used by GitHub Actions. The latest successful run on commit `83c3a48e2d992f23eb275e0c4476c95f62efd614` applied the replacement migrations to a schema-only fixture and passed the replacement, rollback, isolation, aggregation, derived-data, FK, and concurrency behavioural tests.
+
+This is not equivalent to a hosted integration rehearsal. The hosted Edge Function deployment, hosted database configuration, and live Vercel-to-Supabase flow remain unverified. Production must not be used as a substitute test environment. Any later Production release decision must explicitly acknowledge this remaining limitation and require separate approval for each deployment surface.
+
+The deployment runbook now records this no-additional-cost constraint and the local-CI-only validation path.
