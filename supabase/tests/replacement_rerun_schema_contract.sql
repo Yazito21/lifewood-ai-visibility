@@ -159,7 +159,7 @@ begin
 
   select pg_get_functiondef('public.tracking_runs_publication_guard()'::regprocedure)
     into publication_guard_definition;
-  if position('then ''category'' end' in publication_guard_definition) = 0
+  if position('else ''category'' end' in publication_guard_definition) = 0
      or position('run_kind is distinct from ''topic''' in publication_guard_definition) > 0 then
     raise exception 'replacement rerun contract: publication trigger still uses legacy run kind';
   end if;
