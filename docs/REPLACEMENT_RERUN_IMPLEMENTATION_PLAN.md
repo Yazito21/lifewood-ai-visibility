@@ -1663,3 +1663,12 @@ Further strengthening of the successful lifecycle test:
 - Commit: `45b1a68b159f94484529c7015daede952055d6b3` - assert candidate staging contains rows before promotion.
 
 These are source-level test additions only. The branch-push workflow still needs an observable successful run before the Deno and SQL behaviour suite can be considered verified.
+
+
+Entity-analysis failure gate coverage:
+- Extended the successful lifecycle fixture to simulate an HTTP 401 from the separate entity-extraction request.
+- Added a handler test asserting that the provider response can be retained, but the run is finalized as `partial`, reports one analysis failure, and never calls candidate promotion.
+- The test also asserts that no destructive table delete is issued.
+- Commit: `593ceb83cdba8468656188c8ea3ba02f40ab58b2` - test entity extraction failure remains unpublished.
+
+This covers another condition in the publication gate: a provider answer alone is insufficient for publication if required response analysis did not complete.
