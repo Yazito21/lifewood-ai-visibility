@@ -485,13 +485,13 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         return;
       } catch (error) {
         lastError = error;
-        // A timeout/connection abort is transient. Retry once; smaller batches keep
-        // the retry bounded and reduce the chance of exhausting the Edge Function budget.
-        if (attempt === 0 && (error instanceof DOMException && error.name === "AbortError" ||
-            error instanceof Error && /aborted|timeout|timed out|network|fetch failed/i.test(error.message))) {
-          continue;
-        }
-        if (attempt === 0) continue;
+        // Retry only a transient network/timeout failure, once. HTTP 429/5xx
+        // retries are handled above; auth, validation, malformed JSON, and other
+        // deterministic failures must fail this batch immediately.
+        const transientNetworkFailure = error instanceof DOMException && error.name === "AbortError" ||
+          error instanceof Error && /aborted|timeout|timed out|network|fetch failed/i.test(error.message);
+        if (attempt === 0 && transientNetworkFailure) continue;
+        break;
       } finally {
         clearTimeout(extractionTimeout);
       }
