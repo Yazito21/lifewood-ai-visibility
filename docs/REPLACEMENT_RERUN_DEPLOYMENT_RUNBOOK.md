@@ -11,7 +11,7 @@ This runbook is a controlled release plan only. It does not authorize Production
 
 The replacement-rerun branch changes three deployment surfaces:
 
-1. **Supabase database:** nine migrations listed below.
+1. **Supabase database:** ten migrations listed below.
 2. **Supabase Edge Function:** `visibility-tracking`, including candidate staging, atomic promotion, and the emergency pause gate.
 3. **Vercel application:** `app/platform/[projectId]/dashboard/page.tsx`, which runs and resumes category batches and retains failed candidate IDs.
 
@@ -44,6 +44,7 @@ Apply only this reviewed sequence, after the live migration-history reconciliati
 7. `20261113150000_promote_tracking_run_candidate_atomically.sql`
 8. `20261117110000_coordinate_competitor_recompute_with_tracking_replacements.sql`
 9. `20261117120000_harden_candidate_raw_response_scope_validation.sql`
+10. `20261117130000_validate_staged_brand_project_ownership.sql`
 
 These migrations add candidate staging/audit structures and define or update the validation, preview, promotion, metric-finalization, and recompute-coordination functions. They do not authorize historical cleanup. Do not manually delete rows from canonical metric tables or legacy competitor tables as part of this release.
 

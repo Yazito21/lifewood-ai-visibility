@@ -52,8 +52,9 @@ jobs:
             supabase/migrations/20261113130000_add_tracking_run_replacement_preview.sql \
             supabase/migrations/20261113140000_use_location_scoped_presence_helpers.sql \
             supabase/migrations/20261113150000_promote_tracking_run_candidate_atomically.sql \
-            supabase/migrations/20261117110000_coordinate_competitor_recompute_with_tracking_replacements.sql
-            supabase/migrations/20261117120000_harden_candidate_raw_response_scope_validation.sql
+            supabase/migrations/20261117110000_coordinate_competitor_recompute_with_tracking_replacements.sql \
+            supabase/migrations/20261117120000_harden_candidate_raw_response_scope_validation.sql \
+            supabase/migrations/20261117130000_validate_staged_brand_project_ownership.sql
           do
             echo "Applying $migration"
             psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$migration"

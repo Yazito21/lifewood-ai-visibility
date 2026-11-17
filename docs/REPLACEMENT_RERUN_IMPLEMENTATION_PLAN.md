@@ -1735,3 +1735,28 @@ CI integration follow-up:
 - Added the new hardening migration to `.github/workflows/replacement-rerun-db-tests.yml` after the existing 2026-11-17 coordination migration, preserving chronological application order.
 - This ensures the disposable database behavioural suite actually exercises the new validator rather than testing only the earlier function definition.
 - Commits: `501c74cd6300748445925d4e67fc0341820e168a` (include migration), `f1af618e3296d5585402f9308a655bb2f1e9579e` (chronological order).
+
+
+## Development update - 2026-11-17 (staged brand ownership validation)
+
+The replacement audit identified a remaining database validation gap: foreign keys prove that a referenced brand exists, but do not prove that the brand belongs to the candidate's project. A malformed staged row could otherwise associate a candidate response with a brand registry record from another project.
+
+Added migration `20261117130000_validate_staged_brand_project_ownership.sql`:
+
+- Validates `response_brand_evidence.brand_id`.
+- Validates `category_brand_observations.brand_id`.
+- Validates `citation_occurrences.entity_id`.
+- Validates every ID in `third_party_mentions.associated_brand_ids`.
+- Rejects missing, unknown, or foreign-project registry references with the explicit error `staged_brand_reference_not_owned_by_candidate_project`.
+- Keeps validation read-only; canonical rows and predecessor runs are not modified.
+
+Expanded `replacement_rerun_candidate_validation_behaviour.sql` with a negative case that stages a foreign-project brand across all four reference shapes and asserts that validation rejects the candidate.
+
+Updated the disposable local database workflow to apply the new migration chronologically and include the expanded behavioural test. The runbook now lists ten reviewed migrations.
+
+Commit:
+- `7550552a414f82e2cce96807b74a47c1b185d38a` - validate staged brand project ownership.
+
+Verification status:
+- The migration and SQL regression test are committed, but no confirmed CI execution or local PostgreSQL run is available yet.
+- No hosted Supabase rehearsal, Production migration, Edge Function deployment, Vercel Production deployment, unpause, or historical deletion was performed.
