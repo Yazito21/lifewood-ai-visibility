@@ -194,3 +194,91 @@ Deno.test("authenticated user without project membership cannot run a sample", a
   assertEquals((await response.json()).error, "NOT_AUTHORIZED_FOR_PROJECT");
   assertEquals(queriedTables.sort(), ["profiles", "project_members", "projects"].sort());
 });
+
+
+function createScriptedQueryClient(
+  fixtures: Record<string, unknown>,
+  events: Array<{ table: string; operation: string; payload?: unknown }>,
+) {
+  return {
+    from(table: string) {
+      let operation = "select";
+      let payload: unknown;
+      const result = () => ({ data: fixtures[table] ?? null, error: null });
+      const builder: Record<string, unknown> = {
+        select() { operation = "select"; return builder; },
+        eq() { return builder; },
+        in() { return builder; },
+        order() { return builder; },
+        insert(value: unknown) { operation = "insert"; payload = value; events.push({ table, operation, payload }); return builder; },
+        upsert(value: unknown) { operation = "upsert"; payload = value; events.push({ table, operation, payload }); return builder; },
+        update(value: unknown) { operation = "update"; payload = value; events.push({ table, operation, payload }); return builder; },
+        delete() { operation = "delete"; events.push({ table, operation }); return builder; },
+        maybeSingle() { return Promise.resolve(result()); },
+        then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
+          return Promise.resolve(result()).then(resolve, reject);
+        },
+      };
+      return builder;
+    },
+    rpc() {
+      throw new Error("RPC must not be called before brand configuration validation");
+    },
+  };
+}
+
+Deno.test("persistent tracking rejects an incomplete tracked-brand assignment before creating a run", async () => {
+  const values: Record<string, string> = {
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "public-key",
+    SUPABASE_SERVICE_ROLE_KEY: "service-key",
+  };
+  const events: Array<{ table: string; operation: string; payload?: unknown }> = [];
+  let providerRequests = 0;
+  const fixtures: Record<string, unknown> = {
+    profiles: { role: "admin" },
+    project_members: { role: "admin" },
+    projects: {
+      id: "lifewood-project",
+      brand_name: "Lifewood",
+      categories: ["General"],
+      tracking_market: "MY",
+      tracking_locations: ["MY"],
+    },
+    prompts: [{
+      id: "prompt-1",
+      prompt_number: 1,
+      prompt: "Which providers offer multilingual AI data services?",
+      category: "General",
+      language: "English",
+      active: true,
+    }],
+    category_brand_assignments: [],
+  };
+  const handler = createVisibilityTrackingHandler({
+    getEnv: (name) => values[name],
+    fetcher: async (input) => {
+      if (String(input).endsWith("/auth/v1/user")) {
+        return new Response(JSON.stringify({ id: "admin-1" }), { status: 200 });
+      }
+      providerRequests += 1;
+      return new Response("provider must not be called", { status: 500 });
+    },
+    createAdminClient: (() => createScriptedQueryClient(fixtures, events)) as never,
+  });
+
+  const response = await handler(new Request("https://edge.test/visibility-tracking", {
+    method: "POST",
+    headers: { Authorization: "Bearer valid-token", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project_id: "lifewood-project",
+      category: "General",
+      prompt_ids: ["prompt-1"],
+    }),
+  }));
+
+  assertEquals(response.status, 409);
+  assertEquals((await response.json()).error, "BRAND_REGISTRY_INCOMPLETE");
+  assertEquals(events.some((event) => event.table === "tracking_runs" && event.operation !== "select"), false);
+  assertEquals(providerRequests, 0);
+});
