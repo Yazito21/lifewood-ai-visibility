@@ -73,6 +73,10 @@ begin
     raise exception 'original canonical visibility row missing before replacement';
   end if;
 
+  -- The daily entitlement must follow the published replacement, not point to a deleted run.
+  insert into public.tracking_run_daily_claims (project_id, run_date, run_id)
+  values (v_project, v_metric_date, v_old_run);
+
   -- Prepare a second completed candidate for the identical project/date/category/provider/location.
   insert into public.tracking_runs (
     project_id, provider, status, total_prompts, completed_prompts,
@@ -115,6 +119,13 @@ begin
     where id = v_new_run and status = 'completed' and published_at is not null
   ) then
     raise exception 'replacement candidate was not published';
+  end if;
+
+  if not exists (
+    select 1 from public.tracking_run_daily_claims
+    where project_id = v_project and run_date = v_metric_date and run_id = v_new_run
+  ) then
+    raise exception 'daily entitlement claim was not reassigned to replacement run';
   end if;
 
   if exists (select 1 from public.tracking_runs where id = v_old_run) then
