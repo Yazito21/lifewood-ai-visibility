@@ -1545,3 +1545,28 @@ Additional handler-level authorization coverage:
 
 Commit:
 - `f70168cb75cbca37a87b8f21ad55324b01dc67a3` - test project authorization through the handler.
+
+
+## Development update - 2026-11-17 (handler validation guard)
+
+Implemented on `feat/replace-rerun-data`:
+
+- Extended the scripted Supabase query fake so the actual Edge Function handler can be tested beyond the initial access checks.
+- Added a request-flow test for an authenticated project Admin whose selected category has no tracked-brand assignment.
+- The test verifies the handler rejects the request with `BRAND_REGISTRY_INCOMPLETE` before creating a `tracking_runs` row or making a provider request. This protects the replacement path from starting a candidate against invalid comparison configuration.
+- This is still a focused handler test, not the full provider-to-promotion rehearsal.
+
+Commit:
+- `f3f2cba27b7018f8850cccdf610784cdc14d25ba` - test incomplete brand setup rejection through handler.
+
+Validation status:
+- The commit's combined GitHub status currently reports only a pending Vercel check. The workflow-runs lookup exposed no run, and no Deno test/type-check or database smoke-test result is confirmed. Do not treat the pending Vercel check as passing Edge Function or SQL validation.
+- The feature branch is 131 commits ahead of `main`, 0 behind.
+- No Supabase migration, Edge Function deployment, Vercel Production deployment, hosted sandbox, or historical deletion was performed.
+
+Updated next steps:
+1. Continue expanding the actual-handler harness through prompt/config reads, candidate creation, provider retry behaviour, raw response persistence, and staging calls.
+2. Add explicit negative-path assertions that incomplete/failed candidates never invoke promotion and never modify the previously published scope.
+3. Verify all Deno tests and `deno check`, then obtain a confirmed database smoke-test result from the isolated CI workflow.
+4. Only after those checks, plan the isolated hosted Supabase rehearsal. Disclose any potential cost and obtain confirmation before creating a paid resource.
+5. Keep Production migrations, Edge Function deployment, Vercel Production promotion, unpausing, and historical deletion gated behind separate explicit approval.
