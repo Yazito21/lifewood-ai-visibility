@@ -59,7 +59,7 @@ begin
             and (published_at at time zone 'Asia/Kuala_Lumpur')::date = v_date
         );
     end if;
-$migration$;
+$old$;
   v_new := $new$
     -- A per-provider aggregate may write the shared 'Overall' provider row only
     -- when no other provider has a published run in this project/date/location.
@@ -131,7 +131,7 @@ $migration$;
             and (published_at at time zone 'Asia/Kuala_Lumpur')::date = v_date
         );
     end if;
-$migration$;
+$new$;
 
   if position(v_old in v_definition) = 0 then
     raise exception 'promotion Overall block anchor not found';
