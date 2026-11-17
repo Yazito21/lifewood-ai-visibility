@@ -81,6 +81,12 @@ jobs:
             -v ON_ERROR_STOP=1 \
             -f supabase/tests/replacement_rerun_replacement_behaviour.sql
 
+      - name: Run forced mid-promotion rollback behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_rollback_behaviour.sql
+
       - name: Stop local Supabase stack
         if: always()
         run: supabase stop --no-backup
