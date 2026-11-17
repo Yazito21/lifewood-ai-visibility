@@ -292,3 +292,185 @@ Deno.test("persistent tracking rejects a missing tracked-brand registry row befo
   assertEquals(events.some((event) => event.table === "tracking_runs" && event.operation !== "select"), false);
   assertEquals(providerRequests, 0);
 });
+
+
+function toBase64(bytes: Uint8Array) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+async function encryptStoredSecret(secret: string, aad: string, plaintext: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  const key = await crypto.subtle.importKey("raw", digest, "AES-GCM", false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv, additionalData: new TextEncoder().encode(aad) },
+    key,
+    new TextEncoder().encode(plaintext),
+  );
+  return toBase64(iv) + "." + toBase64(new Uint8Array(ciphertext));
+}
+
+function createLifecycleQueryClient(
+  fixtures: Record<string, unknown>,
+  events: Array<{ kind: string; table?: string; operation?: string; payload?: unknown; name?: string; args?: Record<string, unknown> }>,
+) {
+  return {
+    from(table: string) {
+      let operation = "select";
+      let payload: unknown;
+      const result = () => ({ data: fixtures[table] ?? null, error: null });
+      const builder: Record<string, unknown> = {
+        select() { operation = "select"; return builder; },
+        eq() { return builder; },
+        neq() { return builder; },
+        in() { return builder; },
+        order() { return builder; },
+        range() { return builder; },
+        insert(value: unknown) {
+          operation = "insert";
+          payload = value;
+          events.push({ kind: "table", table, operation, payload });
+          return builder;
+        },
+        upsert(value: unknown) {
+          operation = "upsert";
+          payload = value;
+          events.push({ kind: "table", table, operation, payload });
+          return builder;
+        },
+        update(value: unknown) {
+          operation = "update";
+          payload = value;
+          events.push({ kind: "table", table, operation, payload });
+          return builder;
+        },
+        delete() {
+          operation = "delete";
+          events.push({ kind: "table", table, operation });
+          return builder;
+        },
+        maybeSingle() { return Promise.resolve(result()); },
+        then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
+          return Promise.resolve(result()).then(resolve, reject);
+        },
+      };
+      return builder;
+    },
+    async rpc(name: string, args: Record<string, unknown>) {
+      events.push({ kind: "rpc", name, args });
+      if (name === "claim_daily_tracking_run") {
+        return { data: { claimed: true }, error: null };
+      }
+      if (name === "stage_tracking_candidate_rows") {
+        return { data: null, error: null };
+      }
+      if (name === "promote_tracking_run_candidate") {
+        return { data: { status: "published" }, error: null };
+      }
+      return { data: null, error: null };
+    },
+  };
+}
+
+Deno.test("provider failure finalizes an unpublished candidate and never calls promotion", async () => {
+  const serviceSecret = "test-service-role-secret";
+  const ciphertext = await encryptStoredSecret(serviceSecret, "lifewood-project:chatgpt", "test-openai-key");
+  const values: Record<string, string> = {
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "public-key",
+    SUPABASE_SERVICE_ROLE_KEY: serviceSecret,
+  };
+  const events: Array<{ kind: string; table?: string; operation?: string; payload?: unknown; name?: string; args?: Record<string, unknown> }> = [];
+  let providerRequests = 0;
+  const trackedBrand = {
+    id: "brand-lifewood",
+    canonical_name: "Lifewood",
+    normalized_key: "lifewood",
+    aliases: ["Lifewood"],
+    primary_website: "https://lifewood.ai",
+    additional_websites: [],
+    is_tracked_brand: true,
+    is_active: true,
+  };
+  const competitor = {
+    id: "brand-competitor",
+    canonical_name: "Example Data",
+    normalized_key: "exampledata",
+    aliases: ["Example Data"],
+    primary_website: "https://exampledata.test",
+    additional_websites: [],
+    is_tracked_brand: false,
+    is_active: true,
+  };
+  const fixtures: Record<string, unknown> = {
+    profiles: { role: "admin" },
+    project_members: { role: "admin" },
+    projects: {
+      id: "lifewood-project",
+      brand_name: "Lifewood",
+      brand_domains: ["lifewood.ai"],
+      brand_terms: ["Lifewood"],
+      categories: ["General"],
+      tracking_market: "MY",
+      tracking_locations: ["MY"],
+    },
+    prompts: [{
+      id: "prompt-1",
+      prompt_number: 1,
+      prompt: "Which companies provide multilingual AI data services?",
+      category: "General",
+      language: "English",
+      active: true,
+    }],
+    category_brand_assignments: [
+      { project_id: "lifewood-project", category: "General", brand_id: trackedBrand.id, role: "tracked_brand", aliases: ["Lifewood"], websites: ["lifewood.ai"], include_in_metrics: true },
+      { project_id: "lifewood-project", category: "General", brand_id: competitor.id, role: "competitor", aliases: ["Example Data"], websites: ["exampledata.test"], include_in_metrics: true },
+    ],
+    brand_registry: [trackedBrand, competitor],
+    llm_secrets: { ciphertext },
+    tracking_run_stages: null,
+    ai_responses: [],
+  };
+  const handler = createVisibilityTrackingHandler({
+    getEnv: (name) => values[name],
+    fetcher: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/auth/v1/user")) {
+        return new Response(JSON.stringify({ id: "admin-1" }), { status: 200 });
+      }
+      if (url === "https://api.openai.com/v1/responses") {
+        providerRequests += 1;
+        return new Response(JSON.stringify({
+          error: { message: "Incorrect API key provided" },
+        }), { status: 401 });
+      }
+      throw new Error("Unexpected external request: " + url);
+    },
+    createAdminClient: (() => createLifecycleQueryClient(fixtures, events)) as never,
+  });
+
+  const response = await handler(new Request("https://edge.test/visibility-tracking", {
+    method: "POST",
+    headers: { Authorization: "Bearer valid-token", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      project_id: "lifewood-project",
+      category: "General",
+      prompt_ids: ["prompt-1"],
+    }),
+  }));
+  const payload = await response.json();
+
+  assertEquals(response.status, 200);
+  assertEquals(payload.status, "failed");
+  assertEquals(payload.published, undefined);
+  assertEquals(providerRequests, 1);
+  assertEquals(events.some((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate"), false);
+  assertEquals(events.some((event) => event.kind === "table" && event.table === "ai_responses" && event.operation === "insert"), true);
+  assertEquals(events.some((event) => event.kind === "table" && event.table === "tracking_runs" && event.operation === "update" &&
+    (event.payload as Record<string, unknown>)?.status === "failed"), true);
+  assertEquals(events.some((event) => event.kind === "table" && event.operation === "delete"), false);
+  assertEquals(events.some((event) => event.kind === "rpc" && event.name === "stage_tracking_candidate_rows" &&
+    event.args?.p_table_key === "visibility_daily"), true);
+});
