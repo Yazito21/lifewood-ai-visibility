@@ -40,7 +40,7 @@ begin
   );
 
   -- A single tracking_runs row can own responses/metrics for several locations.
-  -- Select topic members by their per-location visibility_daily rows rather than
+  -- Select category members by their per-location visibility_daily rows rather than
   -- the run row's legacy single tracking_location field.
   select pg_get_functiondef('public.publish_engine_overall_metrics(uuid,date,text,text,boolean)'::regprocedure)
     into v_definition;
