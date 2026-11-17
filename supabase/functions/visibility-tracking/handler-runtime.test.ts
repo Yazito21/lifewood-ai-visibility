@@ -487,6 +487,7 @@ Deno.test("provider failure finalizes an unpublished candidate and never calls p
 async function runSuccessfulLifecycle(
   promotionResult: { data: unknown; error: unknown } = { data: { status: "published" }, error: null },
   entityExtractionStatus = 200,
+  entityExtractionNetworkFailures = 0,
 ) {
   const serviceSecret = "test-service-role-secret";
   const ciphertext = await encryptStoredSecret(serviceSecret, "lifewood-project:chatgpt", "test-openai-key");
@@ -559,6 +560,9 @@ async function runSuccessfulLifecycle(
         const inputText = JSON.stringify(requestBody.input ?? []);
         if (inputText.includes("Extract explicitly mentioned real-world organizations")) {
           extractionRequests += 1;
+          if (extractionRequests <= entityExtractionNetworkFailures) {
+            throw new Error("simulated network error during entity extraction");
+          }
           if (entityExtractionStatus !== 200) {
             return new Response(JSON.stringify({ error: { message: "Entity extraction rejected" } }), {
               status: entityExtractionStatus,
@@ -685,6 +689,22 @@ Deno.test("successful provider response stages all candidate data before confirm
   }), true);
   assertEquals(result.events.some((event) => event.kind === "table" && event.operation === "delete"), false);
 });
+
+Deno.test("entity extraction retries one transient network failure then publishes", async () => {
+  const result = await runSuccessfulLifecycle(
+    { data: { status: "published" }, error: null },
+    200,
+    1,
+  );
+
+  assertEquals(result.response.status, 200);
+  assertEquals(result.payload.status, "completed");
+  assertEquals(result.payload.published, true);
+  assertEquals(result.providerRequests, 1);
+  assertEquals(result.extractionRequests, 2);
+  assertEquals(result.events.some((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate"), true);
+});
+
 
 Deno.test("promotion RPC error leaves a completed candidate unpublished", async () => {
   const result = await runSuccessfulLifecycle({
