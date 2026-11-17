@@ -112,3 +112,85 @@ Deno.test("invalid bearer token is rejected before database client creation", as
   assertEquals(authRequests[0]?.headers.get("Authorization"), "Bearer invalid-token");
   assertEquals(clientCreations, 0);
 });
+
+function createAccessLookupClient(fixtures: Record<string, unknown>, queriedTables: string[]) {
+  return {
+    from(table: string) {
+      queriedTables.push(table);
+      const builder = {
+        select() { return builder; },
+        eq() { return builder; },
+        maybeSingle() {
+          return Promise.resolve({ data: fixtures[table] ?? null, error: null });
+        },
+      };
+      return builder;
+    },
+  };
+}
+
+Deno.test("authenticated non-admin member cannot start a persistent tracking run", async () => {
+  const values: Record<string, string> = {
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "public-key",
+    SUPABASE_SERVICE_ROLE_KEY: "service-key",
+  };
+  const queriedTables: string[] = [];
+  let providerRequests = 0;
+  const handler = createVisibilityTrackingHandler({
+    getEnv: (name) => values[name],
+    fetcher: async (input) => {
+      if (String(input).endsWith("/auth/v1/user")) {
+        return new Response(JSON.stringify({ id: "user-1" }), { status: 200 });
+      }
+      providerRequests += 1;
+      return new Response("provider should not be called", { status: 500 });
+    },
+    createAdminClient: (() => createAccessLookupClient({
+      profiles: { role: "user" },
+      project_members: { role: "member" },
+      projects: { id: "project-1", categories: ["General"] },
+    }, queriedTables)) as never,
+  });
+
+  const response = await handler(new Request("https://edge.test/visibility-tracking", {
+    method: "POST",
+    headers: { Authorization: "Bearer valid-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: "project-1" }),
+  }));
+
+  assertEquals(response.status, 403);
+  assertEquals((await response.json()).error, "NOT_AUTHORIZED_TO_RUN_TRACKING");
+  assertEquals(queriedTables.sort(), ["profiles", "project_members", "projects"].sort());
+  assertEquals(providerRequests, 0);
+});
+
+Deno.test("authenticated user without project membership cannot run a sample", async () => {
+  const values: Record<string, string> = {
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_PUBLISHABLE_KEY: "public-key",
+    SUPABASE_SERVICE_ROLE_KEY: "service-key",
+  };
+  const queriedTables: string[] = [];
+  const handler = createVisibilityTrackingHandler({
+    getEnv: (name) => values[name],
+    fetcher: async (input) => String(input).endsWith("/auth/v1/user")
+      ? new Response(JSON.stringify({ id: "user-1" }), { status: 200 })
+      : new Response("unexpected provider request", { status: 500 }),
+    createAdminClient: (() => createAccessLookupClient({
+      profiles: { role: "user" },
+      project_members: null,
+      projects: { id: "project-1", categories: ["General"] },
+    }, queriedTables)) as never,
+  });
+
+  const response = await handler(new Request("https://edge.test/visibility-tracking", {
+    method: "POST",
+    headers: { Authorization: "Bearer valid-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ project_id: "project-1", mode: "sample", prompt_ids: ["prompt-1"] }),
+  }));
+
+  assertEquals(response.status, 403);
+  assertEquals((await response.json()).error, "NOT_AUTHORIZED_FOR_PROJECT");
+  assertEquals(queriedTables.sort(), ["profiles", "project_members", "projects"].sort());
+});
