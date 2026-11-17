@@ -1961,3 +1961,10 @@ The connected Supabase project was confirmed as `lifewood-ai-visibility` (`jhauu
 A read-only `information_schema.columns` check confirmed the existing Production columns needed for run lineage, raw responses, response evidence, normalized citation occurrences, visibility metrics, competitor observations, and direct competitor records. It also confirmed that `tracking_run_replacements` is not yet present. The inventory query now reports its audit count as NULL (not zero) until that table exists, avoiding any assumption that the pending replacement migration has been deployed.
 
 The hosted inventory itself remains a SELECT-only operation. No schema changes, row updates, deletes, or deployments were performed during this preflight.
+
+
+### Historical inventory query refined after Production read-only review
+
+The first hosted inventory execution revealed that grouping all run kinds together obscures the distinction between legacy `full` source runs, category-level `topic` runs, and `overall_aggregate` records. The diagnostic is now grouped by `run_kind` and reports completed-but-unpublished runs separately.
+
+For synthetic category slices, raw-response and evidence counts now filter the source run's responses by the prompt's category. This avoids counting every response from a shared legacy full run in every synthetic category slice. The query still makes no changes and treats the not-yet-deployed replacement audit table as unavailable rather than reporting a misleading zero.
