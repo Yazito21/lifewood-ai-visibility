@@ -1589,3 +1589,36 @@ Commits:
 
 Validation status:
 - The latest combined commit status reports a pending Vercel check only. No Deno test/type-check or database smoke-test result is confirmed. No hosted or Production deployment was performed.
+
+
+## Development update - 2026-11-17 (failed-provider lifecycle handler test)
+
+Added a higher-coverage test through the exported `createVisibilityTrackingHandler`, using a scripted Supabase client and an AES-GCM encrypted test API secret.
+
+The test executes the persistent category-run path with:
+- an authenticated project Admin;
+- a valid tracked-brand registry and category assignment;
+- one selected active prompt;
+- a provider response that fails immediately with HTTP 401.
+
+It asserts that:
+- the handler returns a failed run result;
+- the provider is called exactly once (401 is not retryable);
+- the raw response persistence path is reached;
+- the candidate's `visibility_daily` data is staged for diagnostics;
+- the run is finalized as failed;
+- `promote_tracking_run_candidate` is never called;
+- no table delete is issued by the handler.
+
+Commit:
+- `265e089c1edfaefb01b61a9c6c3607a679d5c3a3` - exercise failed provider candidate lifecycle through the handler.
+
+Validation status:
+- The commit's combined status currently reports a pending Vercel check. The repository workflow is configured to run Deno checks/tests and isolated local Supabase migration tests on branch pushes, but I have not yet obtained a confirmed workflow-run result for this commit.
+- No Deno test, Deno check, or SQL behavioural test is claimed as passing.
+- No hosted Supabase rehearsal, Production migration, Edge Function deployment, Vercel Production deployment, unpause, or historical deletion was performed.
+
+Next development focus:
+1. Add the complementary successful-provider path through the handler, including deterministic citation/evidence/mention staging and the promotion RPC boundary.
+2. Extend the fake database to retain inserted response IDs and verify the staged response-linked data, not just the RPC invocation.
+3. Obtain and inspect the branch-push CI run. Fix any TypeScript/Deno failures before proceeding to the successful lifecycle test.
