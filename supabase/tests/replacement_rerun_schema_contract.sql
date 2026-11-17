@@ -140,6 +140,23 @@ begin
     raise exception 'replacement rerun contract: legacy run kind was not converted to category';
   end if;
 
+  if exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.prokind = 'f'
+      and pg_get_functiondef(p.oid) like '%run_kind%'
+      and (
+        pg_get_functiondef(p.oid) like '%run_kind = ''topic''%'
+        or pg_get_functiondef(p.oid) like '%run_kind is distinct from ''topic''%'
+        or pg_get_functiondef(p.oid) like '%run_kind in (''topic'',%'
+        or pg_get_functiondef(p.oid) like '%v_loc, g.category, ''topic'', ''profound_import''%'
+      )
+  ) then
+    raise exception 'replacement rerun contract: a public SQL function still uses the legacy topic run kind';
+  end if;
+
   select pg_get_functiondef('public.tracking_runs_publication_guard()'::regprocedure)
     into publication_guard_definition;
   if position('then ''category'' end' in publication_guard_definition) = 0
