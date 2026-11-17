@@ -1,5 +1,5 @@
 -- Atomic category-scoped replacement.
--- This is intentionally limited to topic/category candidates. Full-run candidates
+-- This is intentionally limited to category candidates. Full-run candidates
 -- remain unpublished until their category-slicing semantics are separately designed.
 create or replace function public.promote_tracking_run_candidate(
   p_run_id uuid,
@@ -42,7 +42,7 @@ begin
     raise exception 'candidate_must_be_completed_and_unpublished';
   end if;
 
-  if v_run.category is null or v_run.run_kind is distinct from 'topic' then
+  if v_run.category is null or v_run.run_kind is distinct from 'category' then
     raise exception 'only_category_scoped_topic_candidates_can_be_promoted';
   end if;
 
@@ -167,7 +167,7 @@ begin
         old.project_id <> v_run.project_id
         or old.provider <> v_run.provider
         or old.category is distinct from v_run.category
-        or old.run_kind is distinct from 'topic'
+        or old.run_kind is distinct from 'category'
         or old.source_run_id is not null
         or old.status <> 'completed'
         or old.published_at is null
