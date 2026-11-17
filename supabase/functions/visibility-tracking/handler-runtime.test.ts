@@ -682,6 +682,10 @@ Deno.test("successful provider response stages all candidate data before confirm
   assertEquals(result.extractionRequests, 1);
   assertEquals((result.fixtures.ai_responses as Array<Record<string, unknown>>).length, 1);
   assertEquals(result.events.some((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate"), true);
+  // claim_daily_tracking_run creates the run row without run_kind; the handler
+  // must explicitly convert this category-scoped entitlement into a topic run.
+  assertEquals(result.events.some((event) => event.kind === "table" && event.table === "tracking_runs" &&
+    event.operation === "update" && (event.payload as Record<string, unknown>)?.run_kind === "topic"), true);
 
   const stagingEvents = result.events.filter((event) =>
     event.kind === "rpc" && event.name === "stage_tracking_candidate_rows"
