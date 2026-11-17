@@ -1367,6 +1367,28 @@ The CI run used only a disposable local Supabase stack and stopped it successful
 
 Exact current feature-branch head after this code commit: `55393fd02aeab0badd8c53d627da02d9fa93e38f`.
 
+### 2026-11-17: emergency tracking pause gate and deployment planning
+
+Commit `2b3ffc9dca3d687b8de2142efd362bd297bbe828` adds an explicit emergency stop to the `visibility-tracking` Edge Function:
+- The `TRACKING_REPLACEMENT_PAUSED` secret is checked immediately after CORS preflight and before auth, database access, run creation, provider calls, staging, or promotion.
+- When set to `true`, the function returns HTTP 503 with `TRACKING_TEMPORARILY_PAUSED` and states that no run was started.
+- A Deno unit test verifies that only an explicit case-insensitive `true` value activates the pause.
+
+GitHub Actions run [#45](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44009915868), commit `2b3ffc9dca3d687b8de2142efd362bd297bbe828`, **SUCCESS**. Both jobs passed: the disposable local database replacement suite and the application/Edge quality job, including the pause-gate unit test.
+
+A read-only tree comparison against `main` confirmed that the release changes three deployment surfaces: eight Supabase migrations, the `visibility-tracking` Edge Function, and the Dashboard category-batch flow in `app/platform/[projectId]/dashboard/page.tsx`. Therefore Vercel deployment is also required; this is not a database-only release. The `supabase/config.toml` change is for local CI behavior and must not be treated as a hosted config change.
+
+A controlled rollout/rollback runbook has been added at [`docs/REPLACEMENT_RERUN_DEPLOYMENT_RUNBOOK.md`](./REPLACEMENT_RERUN_DEPLOYMENT_RUNBOOK.md). It is a plan only and has not been executed. Its core rollback rule is pause first and repair forward; do not redeploy the old direct-write Edge Function as an automatic rollback.
+
+### Current deployment blockers
+
+- No separate hosted non-Production Supabase project is available for a hosted integration rehearsal.
+- A full mocked Edge Function request-flow test is still outstanding. The current suite has focused unit tests, Deno type-checking, and database behavioural tests.
+- The tracked-brand registry bootstrap side effect still requires review.
+- A fresh live schema/migration-history audit and exact pending-migration reconciliation are required immediately before any hosted change.
+- Explicit approval is still required before Production migrations, Edge Function deployment, or Vercel Production deployment. Historical Production deletion requires separate explicit approval.
+
+
 
 
 ### 2026-11-17: executable lock contract correction and final CI verification
