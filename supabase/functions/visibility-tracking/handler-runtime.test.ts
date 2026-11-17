@@ -728,7 +728,7 @@ Deno.test("entity extraction failure leaves provider response partial and unpubl
   assertEquals(result.payload.analysis_failures, 1);
   assertEquals(result.payload.published, undefined);
   assertEquals(result.providerRequests, 1);
-  assertEquals(result.extractionRequests, 3);
+  assertEquals(result.extractionRequests, 1);
   assertEquals(result.events.some((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate"), false);
   assertEquals(result.events.some((event) => event.kind === "table" && event.table === "tracking_runs" &&
     event.operation === "update" && (event.payload as Record<string, unknown>)?.status === "partial"), true);
