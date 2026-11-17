@@ -93,6 +93,14 @@ begin
     raise exception 'staged_rows_do_not_match_exact_candidate_scope';
   end if;
 
+  -- The competitor recompute worker can rewrite evidence, citation occurrences,
+  -- category observations and Overall for the whole project. Take its shared project
+  -- lock before any predecessor discovery or canonical mutation.
+  perform pg_advisory_xact_lock(hashtextextended(
+    v_run.project_id::text || '|__TRACKING_REPLACEMENT_RECOMPUTE__',
+    0
+  ));
+
   -- Acquire each exact project/date/category/provider/location lock in sorted
   -- order. Sorted acquisition avoids deadlocks for overlapping multi-location runs.
   foreach v_location in array v_locations loop

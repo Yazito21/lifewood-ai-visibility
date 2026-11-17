@@ -1309,3 +1309,17 @@ The repository has no checked-in ESLint configuration despite the `npm run lint`
 The first concurrency run [#36](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44007251627) successfully completed the concurrent-promotion assertions: the first and second candidate promotions serialized, the second candidate became canonical, both earlier runs/raw responses were removed, and two audit edges remained. The job then failed during synthetic-project teardown because deleting the project cascaded to prompts while `ai_responses` retained a prompt FK. The test script now deletes its synthetic `ai_responses` before deleting the project. This was a test cleanup defect after the assertions, not a replacement assertion failure; the corrected script must pass in a fresh CI run before concurrency is marked complete.
 
 The Dashboard uses sequential category-scoped Edge Function calls for its normal multi-category Run Tracking batch. Each category replacement and its Overall refresh are atomic; the batch as a whole is not atomic. Full-batch atomicity remains a separate capability.
+
+
+### 2026-11-17: competitor recompute integration dependency identified
+
+The application audit found an active Competitors-page action: `request_competitor_recompute` enqueues a project recomputation. The live `recompute_competitor_metrics` worker rewrites `response_brand_evidence`, `citation_occurrences`, `category_brand_observations`, tracked-brand visibility fields, and then calls the Overall publisher. It can therefore race a category replacement even though it does not use the legacy `competitors` table.
+
+Added a shared project-scoped transaction advisory lock (`__TRACKING_REPLACEMENT_RECOMPUTE__`) to:
+- The replacement promotion RPC, before scope locks and predecessor discovery.
+- `publish_engine_overall_metrics`, covering direct Overall refresh callers.
+- `recompute_competitor_metrics`, covering the queued competitor recompute worker.
+
+This intentionally serializes a project's replacement promotion with its competitor recompute. The exact category/location locks and shared Overall lock remain in place. The new migration applies the same lock to the current live function definitions using guarded source replacement; it fails closed if the expected function anchors are absent. The schema contract checks that all three paths contain the shared lock and that promotion acquires it before preview.
+
+This is an additional migration dependency and is not yet applied to hosted Supabase. CI must replay the new migration and rerun the behavioural suite before this coordination is considered verified.

@@ -97,12 +97,20 @@ begin
     select pg_get_functiondef('public.promote_tracking_run_candidate(uuid,uuid)'::regprocedure)
       into promotion_definition;
     if position('pg_advisory_xact_lock' in promotion_definition) = 0
-       or position('pg_advisory_xact_lock' in promotion_definition)
+       or position('__TRACKING_REPLACEMENT_RECOMPUTE__' in promotion_definition) = 0
+       or position('__TRACKING_REPLACEMENT_RECOMPUTE__' in promotion_definition)
           > position('preview_tracking_run_replacement' in promotion_definition)
        or position('__OVERALL_REFRESH__' in promotion_definition) = 0
        or position('__OVERALL_REFRESH__' in promotion_definition)
           > position('preview_tracking_run_replacement' in promotion_definition) then
-      raise exception 'replacement rerun contract: category and shared Overall locks must precede predecessor preview';
+      raise exception 'replacement rerun contract: project, category and shared Overall locks must precede predecessor preview';
+    end if;
+
+    if position('__TRACKING_REPLACEMENT_RECOMPUTE__' in
+         pg_get_functiondef('public.publish_engine_overall_metrics(uuid,date,text,text,boolean)'::regprocedure)) = 0
+       or position('__TRACKING_REPLACEMENT_RECOMPUTE__' in
+         pg_get_functiondef('public.recompute_competitor_metrics(uuid,date,date)'::regprocedure)) = 0 then
+      raise exception 'replacement rerun contract: competitor recompute and Overall publication must share the project lock';
     end if;
   end;
 
