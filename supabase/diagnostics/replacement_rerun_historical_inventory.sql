@@ -94,12 +94,7 @@ scope_counts as (
       where v.project_id = s.project_id and v.metric_date = s.metric_date
         and v.category is not distinct from s.category and v.llm_provider = s.provider
         and v.tracking_location = s.tracking_location) as visibility_metric_rows,
-    (select count(distinct rr.id)::integer
-       from public.tracking_run_replacements rr
-       join run_scope rs on rs.run_id = rr.replaced_run_id or rs.run_id = rr.replacement_run_id
-      where rs.project_id = s.project_id and rs.metric_date = s.metric_date
-        and rs.category is not distinct from s.category and rs.provider = s.provider
-        and rs.tracking_location = s.tracking_location) as replacement_audit_rows
+    null::integer as replacement_audit_rows -- audit table is introduced by the pending replacement migration
   from scope_summary s
 )
 select *

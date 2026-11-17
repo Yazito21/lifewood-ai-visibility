@@ -1952,3 +1952,12 @@ This included:
 Added a deterministic worker-failure scenario to the competitor recomputation behavioural fixture. It injects a transaction-local test trigger to force the queue worker to fail, verifies the job is marked `failed` with the error retained, then explicitly re-enqueues the project and verifies the fresh job completes after the injected failure is removed.
 
 The current queue design does not automatically retry a failed job. It preserves the failed job for audit and allows a new job to be enqueued by a subsequent competitor change or manual recompute request. This fixture verifies that explicit retry path. The new queue test requires a fresh CI run.
+
+
+### Production schema preflight for the historical inventory
+
+The connected Supabase project was confirmed as `lifewood-ai-visibility` (`jhauufmrxpsbfrahgclv`), ACTIVE_HEALTHY. The applied migration list currently ends at the November 12 report-template migrations; the replacement audit migration has not been applied there.
+
+A read-only `information_schema.columns` check confirmed the existing Production columns needed for run lineage, raw responses, response evidence, normalized citation occurrences, visibility metrics, competitor observations, and direct competitor records. It also confirmed that `tracking_run_replacements` is not yet present. The inventory query now reports its audit count as NULL (not zero) until that table exists, avoiding any assumption that the pending replacement migration has been deployed.
+
+The hosted inventory itself remains a SELECT-only operation. No schema changes, row updates, deletes, or deployments were performed during this preflight.
