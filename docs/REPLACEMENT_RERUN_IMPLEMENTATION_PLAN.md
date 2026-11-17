@@ -1152,3 +1152,76 @@ Avoid production data and live project writes. Keep all tests in the disposable 
 - Production migration/Edge Function deployment: NOT performed.
 - Production data modification/deletion: NONE.
 - Paid Supabase resource: NONE.
+
+
+## 2026-11-17: fresh live schema and complete Edge Function audit
+
+### Repository and CI state
+
+- Feature branch: `feat/replace-rerun-data`
+- Branch head before this audit's changes: `dc86cbe91d9616f42b2eaf03e3bdb7f691f4d699`
+- Latest observed CI run: [#31](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44005365071), commit `dc86cbe91d9616f42b2eaf03e3bdb7f691f4d699`, **success**.
+- The workflow currently runs schema/security, candidate validation, first publication, exact-scope replacement, forced rollback, and scope-isolation tests.
+- The latest passing workflow does not yet prove multi-session concurrency, Overall invalidation/rebuild for all cases, or full-run replacement.
+
+### Fresh hosted schema/trigger/FK audit (read-only)
+
+Supabase project `jhauufmrxpsbfrahgclv` was confirmed `ACTIVE_HEALTHY` on PostgreSQL 17.11 in `ap-southeast-1`.
+
+The hosted database has not received the feature migrations: the live catalog contains neither `tracking_run_candidate_rows` nor the staging/validation/preview/promotion RPCs. This confirms the feature branch remains isolated from hosted Production schema.
+
+The current publication guard has enabled BEFORE INSERT and BEFORE UPDATE triggers on `tracking_runs`. On INSERT it derives `run_kind` from whether category is null. On publication UPDATE it supersedes the current matching run and invokes `finalize_run_metrics` for non-Overall runs.
+
+Fresh FK findings:
+- `tracking_runs.source_run_id -> tracking_runs.id`: NO ACTION.
+- `tracking_runs.supersedes_run_id -> tracking_runs.id`: ON DELETE SET NULL.
+- `tracking_run_daily_claims.run_id -> tracking_runs.id`: ON DELETE CASCADE.
+- `tracking_batch_categories.tracking_run_id -> tracking_runs.id`: ON DELETE SET NULL.
+- `third_party_mentions.response_id -> ai_responses.id`: ON DELETE SET NULL.
+- `citation_occurrences.response_id -> ai_responses.id` and `response_brand_evidence.response_id -> ai_responses.id`: ON DELETE CASCADE.
+- `category_brand_observations.run_id` and `visibility_daily.run_id`: ON DELETE SET NULL.
+
+The existing replacement transaction explicitly reassigns a matching daily claim to the replacement run. The behavioural test deliberately verifies that historical batch-category rows detach their deleted run reference (the batch row itself remains), rather than retaining a dangling FK. This is the current batch-history policy.
+
+### Complete `visibility-tracking/index.ts` write-path review
+
+Reviewed all 1,553 lines on the feature branch, including retries, extraction failures, run setup, response persistence, evidence/citation generation, metric staging, finalisation and promotion.
+
+Candidate-owned writes:
+- `ai_responses`: raw response rows inserted under the candidate `run_id`.
+- `tracking_run_stages`: stage journal upserts/updates only.
+- `tracking_run_candidate_rows`: six derived table types staged through the service-role RPC: `citations`, `citation_occurrences`, `response_brand_evidence`, `third_party_mentions`, `category_brand_observations`, and `visibility_daily`.
+- `tracking_runs`: candidate creation and status/error counters; the Edge Function does not set `published_at`.
+- `tracking_run_daily_claims` and `tracking_batch_categories`: entitlement and orchestration bookkeeping.
+
+The function no longer directly deletes or writes canonical derived citation/evidence/mention/observation/visibility rows before promotion. It does not write to legacy `competitors`, `direct_competitors`, or `direct_competitor_observations`.
+
+Important non-candidate configuration side effects found: a compatibility bootstrap can upsert the tracked brand into `brand_registry` and create missing `category_brand_assignments` while a candidate is processing. These are configuration/registry writes, not published run metrics, but they can persist even if the candidate later fails. Review whether to remove this bootstrap from the tracking request or isolate it as an explicit setup action before deployment.
+
+Important deployment limitation: the Edge Function calls the category-only `promote_tracking_run_candidate` for every completed non-sample run. Full-run candidates have a null category and are rejected by the RPC. Therefore the current Edge Function must not be deployed as a general full-run replacement implementation. Either gate full-run requests before processing or complete an atomic full-batch promotion design first. The present implementation supports category-scoped `topic` candidates only.
+
+### Correctness issue identified and hardened on the feature branch
+
+The original promotion function built its predecessor preview before acquiring the advisory transaction lock. Two concurrent candidates could therefore both observe the same old predecessor; the second could wait for the first promotion and then continue using stale predecessor IDs. That could leave the first candidate's raw response data behind while replacing its aggregates.
+
+The promotion migration is being hardened to:
+1. Derive the exact candidate date and locations from validated staged data.
+2. Acquire sorted advisory transaction locks for each project/date/category/provider/location scope.
+3. Revalidate the candidate after locking.
+4. Rebuild the predecessor preview only after the lock is held.
+5. Use the refreshed predecessor IDs for all deletion and audit operations.
+
+The candidate staging key is also being hardened to use JSON-encoded identity parts and include `source_type` and `citation_index`, avoiding delimiter collisions and preventing distinct third-party source types from overwriting each other.
+
+A schema-contract assertion is added to enforce that the advisory lock occurs before predecessor preview in the promotion function definition.
+
+### Remaining work
+
+- Run the updated isolated CI workflow and record the exact result/commit.
+- Add actual multi-session concurrency coverage; the lock-order contract is not a substitute for a two-session behavioural test.
+- Add multi-location promotion tests and full Overall rebuild/invalidation coverage.
+- Complete frontend/API consumer audit, including full feature-branch traversal and legacy `competitors` usage.
+- Decide whether failed-candidate brand-registry bootstrap side effects should be removed or separated.
+- Decide and implement full-run behaviour before deploying the updated Edge Function generally.
+- Run lint/type checks and Edge Function tests.
+- No hosted migration, Edge Function deployment, Vercel deployment, or Production data deletion has been performed. Dr D Signature Clinic, MDLand and unrelated projects remain out of scope.

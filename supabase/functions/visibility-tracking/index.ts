@@ -545,13 +545,17 @@ Deno.serve(async (req: Request) => {
       if (!activeRunId || !rows.length) return;
       for (let offset = 0; offset < rows.length; offset += 250) {
         const batch = rows.slice(offset, offset + 250).map((row, index) => {
-          const identity = [
+          const identityParts = [
             row.id, row.response_id, row.entity_id, row.brand_id, row.competitor_id,
             row.canonical_url, row.url, row.category, row.tracking_location,
             row.llm_provider, row.provider, row.metric_date, row.prompt_id,
-            row.match_source, row.matched_value,
-          ].map((value) => String(value ?? "")).join("|");
-          return { ...row, _candidate_key: identity.replace(/\|/g, "") ? identity : String(offset + index) };
+            row.match_source, row.matched_value, row.source_type, row.citation_index,
+          ];
+          const hasIdentity = identityParts.some((value) => value !== undefined && value !== null && String(value) !== "");
+          // JSON encoding avoids delimiter collisions and includes source_type so
+          // distinct citation/research-source mentions cannot overwrite one another.
+          const identity = JSON.stringify(identityParts.map((value) => value ?? null));
+          return { ...row, _candidate_key: hasIdentity ? identity : String(offset + index) };
         });
         const { error } = await admin.rpc("stage_tracking_candidate_rows", {
           p_run_id: activeRunId,

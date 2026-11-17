@@ -51,12 +51,11 @@ begin
     raise exception 'candidate_validation_failed: %', v_validation->'errors';
   end if;
 
-  v_preview := public.preview_tracking_run_replacement(p_run_id);
-  if coalesce((v_preview->>'ready_for_promotion')::boolean, false) is not true then
-    raise exception 'candidate_replacement_preview_not_ready';
-  end if;
-
-  v_date := (v_preview->>'metric_date')::date;
+  -- Derive the lock scope from immutable candidate staging, not from a predecessor
+  -- preview. The preview must run only after the scope lock is held; otherwise two
+  -- simultaneous candidates can both preview the same predecessor before either
+  -- acquires the lock, and the second can proceed with stale predecessor IDs.
+  v_date := (v_validation->'metric_dates'->>0)::date;
   select coalesce(array_agg(distinct row_data->>'tracking_location' order by row_data->>'tracking_location'), array[]::text[])
     into v_locations
   from public.tracking_run_candidate_rows
@@ -94,12 +93,27 @@ begin
     raise exception 'staged_rows_do_not_match_exact_candidate_scope';
   end if;
 
-  -- Serialize replacements for this exact project/date/category/provider scope.
-  perform pg_advisory_xact_lock(hashtextextended(
-    v_run.project_id::text || '|' || v_date::text || '|' || v_run.category || '|' || v_run.provider,
-    0
-  ));
-  perform 1 from public.projects where id = v_run.project_id for update;
+  -- Acquire each exact project/date/category/provider/location lock in sorted
+  -- order. Sorted acquisition avoids deadlocks for overlapping multi-location runs.
+  foreach v_location in array v_locations loop
+    perform pg_advisory_xact_lock(hashtextextended(
+      v_run.project_id::text || '|' || v_date::text || '|' || v_run.category || '|' || v_run.provider || '|' || v_location,
+      0
+    ));
+  end loop;
+  perform 1 from public.projects where id = v_run.project_id for share;
+
+  -- Revalidate and rebuild the predecessor preview only after acquiring the lock.
+  -- This makes predecessor discovery serial with all other promotions in this scope.
+  v_validation := public.validate_tracking_run_candidate(p_run_id);
+  if coalesce((v_validation->>'valid')::boolean, false) is not true then
+    raise exception 'candidate_validation_failed_after_scope_lock: %', v_validation->'errors';
+  end if;
+  v_preview := public.preview_tracking_run_replacement(p_run_id);
+  if coalesce((v_preview->>'ready_for_promotion')::boolean, false) is not true
+     or (v_preview->>'metric_date')::date <> v_date then
+    raise exception 'candidate_replacement_preview_not_ready_after_scope_lock';
+  end if;
 
   select coalesce(array_agg(distinct (item->>'run_id')::uuid order by (item->>'run_id')::uuid), array[]::uuid[])
     into v_predecessors

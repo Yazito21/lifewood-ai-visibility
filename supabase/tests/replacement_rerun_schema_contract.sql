@@ -88,6 +88,21 @@ begin
     end if;
   end loop;
 
+  -- Promotion must acquire its exact-scope transaction lock before rebuilding
+  -- the predecessor preview. Otherwise concurrent candidates can act on stale
+  -- predecessor IDs after waiting for the same lock.
+  declare
+    promotion_definition text;
+  begin
+    select pg_get_functiondef('public.promote_tracking_run_candidate(uuid,uuid)'::regprocedure)
+      into promotion_definition;
+    if position('pg_advisory_xact_lock' in promotion_definition) = 0
+       or position('pg_advisory_xact_lock' in promotion_definition)
+          > position('preview_tracking_run_replacement' in promotion_definition) then
+      raise exception 'replacement rerun contract: predecessor preview must be refreshed after scope lock';
+    end if;
+  end;
+
   -- All RPCs that read or mutate candidate state must run with a fixed safe search_path.
   if exists (
     select 1
