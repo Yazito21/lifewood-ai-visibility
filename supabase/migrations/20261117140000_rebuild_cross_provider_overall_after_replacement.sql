@@ -68,7 +68,7 @@ $old$;
       from public.tracking_runs tx
       where tx.project_id = v_run.project_id
         and tx.tracking_location = v_location
-        and tx.run_kind = 'topic'
+        and tx.run_kind = 'category'
         and tx.status = 'completed'
         and tx.published_at is not null
         and tx.superseded_at is null
