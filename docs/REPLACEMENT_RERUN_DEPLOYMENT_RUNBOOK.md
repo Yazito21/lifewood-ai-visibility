@@ -134,3 +134,8 @@ The next no-cost work is continued local CI coverage, code review, runbook harde
 - A read-only Production historical predecessor/dependency inventory has been performed. No historical rows have been deleted.
 - No legacy `competitors`, `direct_competitors`, or `direct_competitor_observations` data is to be deleted.
 - No Dr D Signature Clinic, MDLand, or unrelated project is to be modified or used for testing.
+
+
+### Category run-kind terminology migration
+
+The release now includes migration `20261117160000_standardise_category_run_kind.sql` as the thirteenth migration. It converts existing `tracking_runs.run_kind = 'topic'` values to `category`, updates the allowed-value constraint and updates existing SQL functions that branch on the legacy run kind. The historical stage-journal JSON key `topic` remains readable for compatibility.
