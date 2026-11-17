@@ -748,6 +748,7 @@ export function createVisibilityTrackingHandler(
         const { error: runInsertError } = await admin.from("tracking_runs").insert({
           id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running",
           tracking_location: trackingLocationsForRun[0], category: isCategoryScopedRun ? selectedCategory : null,
+          run_kind: isCategoryScopedRun ? "topic" : "full",
           total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
         });
         if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
@@ -848,6 +849,7 @@ export function createVisibilityTrackingHandler(
           const { error: scopeError } = await admin.from("tracking_runs").update({
             category: selectedCategory,
             tracking_location: trackingLocationsForRun[0],
+            run_kind: "topic",
           }).eq("id", runId).eq("project_id", projectId);
           if (scopeError) return json({ error: "TRACKING_RUN_SCOPE_UPDATE_FAILED", message: scopeError.message }, 500);
         } else {
@@ -928,6 +930,7 @@ export function createVisibilityTrackingHandler(
               const { error: scopeError } = await admin.from("tracking_runs").update({
                 category: selectedCategory,
                 tracking_location: trackingLocationsForRun[0],
+            run_kind: "topic",
               }).eq("id", runId).eq("project_id", projectId);
               if (scopeError) return json({ error: "TRACKING_RUN_SCOPE_UPDATE_FAILED", message: scopeError.message }, 500);
             }
