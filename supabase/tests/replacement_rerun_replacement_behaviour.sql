@@ -17,6 +17,7 @@ declare
   v_metric_date date := (now() at time zone 'Asia/Kuala_Lumpur')::date;
   v_old_score numeric := 0;
   v_new_score numeric := 0;
+  v_batch uuid;
 begin
   insert into public.projects (brand_name, categories, tracking_market, tracking_locations)
   values ('Synthetic Replacement Brand', array['Skin'], 'MY', array['MY'])
@@ -73,6 +74,13 @@ begin
     raise exception 'original canonical visibility row missing before replacement';
   end if;
 
+  -- Keep historical batch lineage observable; the FK is intentionally SET NULL on predecessor deletion.
+  insert into public.tracking_batches (project_id, requested_by, status, category_order)
+  values (v_project, gen_random_uuid(), 'completed', '["Skin"]'::jsonb)
+  returning id into v_batch;
+  insert into public.tracking_batch_topics (batch_id, topic, ordinal, status, tracking_run_id)
+  values (v_batch, 'Skin', 0, 'completed', v_old_run);
+
   -- The daily entitlement must follow the published replacement, not point to a deleted run.
   insert into public.tracking_run_daily_claims (project_id, run_date, run_id)
   values (v_project, v_metric_date, v_old_run);
@@ -119,6 +127,19 @@ begin
     where id = v_new_run and status = 'completed' and published_at is not null
   ) then
     raise exception 'replacement candidate was not published';
+  end if;
+
+  if not exists (
+    select 1 from public.tracking_batch_topics
+    where batch_id = v_batch and topic = 'Skin' and tracking_run_id is null
+  ) then
+    raise exception 'historical batch topic FK did not safely detach deleted predecessor';
+  end if;
+  if not exists (
+    select 1 from public.tracking_run_replacements
+    where replacement_run_id = v_new_run and replaced_run_id = v_old_run
+  ) then
+    raise exception 'replacement audit did not preserve predecessor-to-candidate lineage';
   end if;
 
   if not exists (
