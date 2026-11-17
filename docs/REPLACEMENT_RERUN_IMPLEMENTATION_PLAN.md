@@ -2066,3 +2066,8 @@ The PR explicitly records that no additional Supabase spend is authorised, that 
 ### Category terminology standardisation
 
 The persisted `tracking_runs.run_kind` value for a single-category run is standardised as `category`. Existing rows previously stored as `topic` are converted by migration `20261117160000_standardise_category_run_kind.sql`. The legacy `tracking_run_stages.metadata` JSON key `topic` is retained for backward compatibility when reading historical stage journals; it is not the `run_kind` value.
+
+
+### Category terminology migration and regression coverage
+
+Added migration `20261117160000_standardise_category_run_kind.sql` as the thirteenth replacement migration. It updates the legacy publication trigger and existing SQL functions before converting stored `tracking_runs.run_kind = 'topic'` values to `category`, then replaces the allowed-value constraint. The legacy stage-journal JSON metadata key `topic` is deliberately retained for historical compatibility. The Edge Function, promotion/recompute SQL, diagnostics, behavioural fixtures, schema contract, and deployment runbook now use `category` as the run-kind terminology. CI applies the new migration after the existing replacement migrations and asserts that no legacy `topic` run-kind values remain.
