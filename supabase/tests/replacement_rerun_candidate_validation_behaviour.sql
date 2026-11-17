@@ -15,6 +15,8 @@ declare
   v_bad_provider_run uuid;
   v_bad_prompt_run uuid;
   v_other_category_prompt uuid;
+  v_other_project uuid;
+  v_bad_project_run uuid;
   v_result jsonb;
   v_metric_date date := (now() at time zone 'Asia/Kuala_Lumpur')::date;
 begin
@@ -145,6 +147,43 @@ begin
   v_result := public.validate_tracking_run_candidate(v_bad_prompt_run);
   if not (v_result->'errors' ? 'raw_response_project_provider_prompt_or_location_scope_mismatch') then
     raise exception 'candidate validation accepted a response from a prompt in another category: %', v_result;
+  end if;
+
+  -- The raw response's project_id must match the candidate even if its prompt_id
+  -- happens to point at a valid prompt in the candidate project.
+  insert into public.projects (brand_name, categories, tracking_market, tracking_locations)
+  values ('Synthetic Foreign Response Project', array['Skin'], 'MY', array['MY'])
+  returning id into v_other_project;
+
+  insert into public.tracking_runs (
+    project_id, provider, status, total_prompts, completed_prompts,
+    started_at, completed_at, tracking_location, category, run_kind
+  ) values (
+    v_project, 'chatgpt', 'running', 1, 0,
+    now(), null, 'MY', 'Skin', 'topic'
+  ) returning id into v_bad_project_run;
+
+  insert into public.ai_responses (
+    project_id, prompt_id, llm_provider, captured_at, prompt_snapshot,
+    raw_response, response_text, response_status, run_id, tracking_location
+  ) values (
+    v_other_project, v_prompt, 'chatgpt', now(), 'Synthetic test prompt',
+    '{}'::jsonb, 'Wrong-project response', 'completed', v_bad_project_run, 'MY'
+  );
+
+  perform public.stage_tracking_candidate_rows(v_bad_project_run, 'visibility_daily',
+    jsonb_build_array(jsonb_build_object(
+      'project_id', v_project, 'metric_date', v_metric_date, 'category', 'Skin',
+      'llm_provider', 'chatgpt', 'tracking_location', 'MY', 'run_id', v_bad_project_run,
+      'visibility_score', 1, 'citation_count', 0, 'presence_count', 0, 'response_count', 1
+    )));
+  update public.tracking_runs
+  set status = 'completed', completed_prompts = 1, completed_at = now()
+  where id = v_bad_project_run;
+
+  v_result := public.validate_tracking_run_candidate(v_bad_project_run);
+  if not (v_result->'errors' ? 'raw_response_project_provider_prompt_or_location_scope_mismatch') then
+    raise exception 'candidate validation accepted a raw response from another project: %', v_result;
   end if;
 end
 $$;
