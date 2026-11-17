@@ -105,13 +105,12 @@ begin
   returning id into v_project;
 
   insert into public.prompts (project_id, prompt_number, prompt, category, language, active)
-  values
-    (v_project, 1, 'Skin prompt', 'Skin', 'English', true),
-    (v_project, 2, 'Mind prompt', 'Mind', 'English', true)
+  values (v_project, 1, 'Skin prompt', 'Skin', 'English', true)
   returning id into v_prompt_skin;
 
-  select id into v_prompt_mind from public.prompts
-  where project_id = v_project and category = 'Mind' limit 1;
+  insert into public.prompts (project_id, prompt_number, prompt, category, language, active)
+  values (v_project, 2, 'Mind prompt', 'Mind', 'English', true)
+  returning id into v_prompt_mind;
 
   insert into public.tracking_runs (
     project_id, provider, status, total_prompts, completed_prompts,

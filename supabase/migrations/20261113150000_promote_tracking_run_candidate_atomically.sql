@@ -101,6 +101,16 @@ begin
       0
     ));
   end loop;
+
+  -- Overall is shared by every category. Serialize this refresh scope as well,
+  -- otherwise concurrent Skin and Mind promotions can each rebuild Overall
+  -- from an interleaved snapshot even though their category locks do not overlap.
+  foreach v_location in array v_locations loop
+    perform pg_advisory_xact_lock(hashtextextended(
+      v_run.project_id::text || '|' || v_date::text || '|__OVERALL_REFRESH__|' || v_run.provider || '|' || v_location,
+      0
+    ));
+  end loop;
   perform 1 from public.projects where id = v_run.project_id for share;
 
   -- Revalidate and rebuild the predecessor preview only after acquiring the lock.

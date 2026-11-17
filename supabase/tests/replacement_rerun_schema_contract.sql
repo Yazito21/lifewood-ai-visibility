@@ -98,8 +98,11 @@ begin
       into promotion_definition;
     if position('pg_advisory_xact_lock' in promotion_definition) = 0
        or position('pg_advisory_xact_lock' in promotion_definition)
+          > position('preview_tracking_run_replacement' in promotion_definition)
+       or position('__OVERALL_REFRESH__' in promotion_definition) = 0
+       or position('__OVERALL_REFRESH__' in promotion_definition)
           > position('preview_tracking_run_replacement' in promotion_definition) then
-      raise exception 'replacement rerun contract: predecessor preview must be refreshed after scope lock';
+      raise exception 'replacement rerun contract: category and shared Overall locks must precede predecessor preview';
     end if;
   end;
 

@@ -1261,3 +1261,14 @@ This test is wired into the feature-branch GitHub Actions workflow. Its result i
 - Resolve the full-run limitation and decide how to isolate the tracked-brand registry bootstrap side effects.
 - Run Deno/TypeScript lint and Edge Function tests; current CI is database-focused.
 - No hosted migration, Supabase Edge Function deployment, Vercel deployment, or Production data deletion has been performed.
+
+
+### 2026-11-17: Overall refresh lock and fixture correction
+
+A further concurrency review found that category-specific advisory locks alone do not serialize two different category promotions that both refresh the same Overall aggregate. Added a second, shared advisory lock keyed by project/Malaysia date/provider/location with the reserved `__OVERALL_REFRESH__` segment. Category locks are acquired first, then shared Overall locks, both in sorted location order, before the predecessor preview. This prevents simultaneous category promotions from rebuilding the same Overall snapshot against interleaved category membership.
+
+The schema/security contract now verifies that both lock types precede predecessor preview.
+
+The first run of the new Overall behaviour test reached the test step and failed due to a fixture statement returning two prompt IDs into one scalar variable. The fixture has been corrected to insert the Skin and Mind prompts separately. The CI run's database migration, schema/security, candidate validation, first-publication, exact replacement, rollback and scope-isolation steps all passed before that fixture failure.
+
+The shared Overall lock and fixture correction are committed together; the next CI run must pass before Overall rebuild/invalidation is marked verified.
