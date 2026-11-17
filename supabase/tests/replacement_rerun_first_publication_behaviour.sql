@@ -26,7 +26,7 @@ begin
     started_at, completed_at, tracking_location, category, run_kind
   ) values (
     v_project, 'chatgpt', 'running', 1, 0,
-    now(), null, 'MY', 'Skin', 'topic'
+    now(), null, 'MY', 'Skin', 'category'
   ) returning id into v_run;
 
   insert into public.ai_responses (
