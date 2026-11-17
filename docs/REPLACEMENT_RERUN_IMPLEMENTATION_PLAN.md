@@ -1874,3 +1874,16 @@ Confirmed:
 - [ ] Review the inventory output and obtain separate approval before any historical deletion.
 
 No Production or hosted environment was changed during this audit.
+
+
+### Competitor recomputation contract regression added
+
+Added `supabase/tests/replacement_rerun_competitor_recompute_contract.sql` and wired it into the disposable-database workflow. It checks that:
+
+- Replacement promotion and competitor recomputation retain the same project advisory-lock key.
+- Recompute retains legacy `source_run_id` and `profound_import` handling.
+- Removed active competitor observations are archived before removal.
+- Recompute remains scoped to the requested project and active, non-superseded runs.
+- Recompute does not delete raw AI responses or the separate direct-competitor configuration/observation tables.
+
+This is a database-function contract test, not a substitute for the planned end-to-end synthetic legacy/imported-data fixture. It must pass in a fresh CI run before being treated as verified.
