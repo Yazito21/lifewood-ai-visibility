@@ -675,3 +675,17 @@ Deno.test("promotion RPC error leaves a completed candidate unpublished", async 
     ["citations", "citation_occurrences", "response_brand_evidence", "third_party_mentions", "category_brand_observations", "visibility_daily"].includes(String(event.table)) &&
     event.operation === "delete"), false);
 });
+
+
+Deno.test("unexpected promotion status is not reported as published", async () => {
+  const result = await runSuccessfulLifecycle({
+    data: { status: "already_published_elsewhere" },
+    error: null,
+  });
+
+  assertEquals(result.response.status, 500);
+  assertEquals(result.payload.error, "CANDIDATE_PROMOTION_FAILED");
+  assertEquals(result.payload.status, "completed_unpublished");
+  assertEquals(result.events.some((event) => event.kind === "rpc" && event.name === "promote_tracking_run_candidate"), true);
+  assertEquals(result.events.some((event) => event.kind === "table" && event.operation === "delete"), false);
+});
