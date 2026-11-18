@@ -2585,3 +2585,18 @@ This is a baseline security/performance triage, not a replacement-rerun blocker 
 ### Backup checklist command correction
 
 The Free-plan backup checklist was cross-checked against the current Supabase CLI reference and backup/restore guide. Its dump commands now use `supabase db dump --remote="$env:SUPABASE_DB_URL"`; `--db-url` is deprecated in CLI v3 and removed in CLI v4. The checklist also clarifies that the logical dump excludes managed schemas such as `auth` and `storage`, so it is an application-database recovery checkpoint rather than a full Supabase-project backup. No export has been run and no Production credentials were accessed.
+
+
+### 2026-11-18: latest CI verification and Preview access limitation
+
+The latest feature-branch head checked was `5c68671bae0ed37e11a833e9b6e5318d318d3e6b`. All three PR-triggered GitHub Actions workflows have now completed successfully on this exact head:
+
+- Edge Function Check: passed (run 44231902197).
+- Build Check: passed (run 44231902159). The TypeScript check and production application build both passed.
+- Replacement Rerun Database Smoke Tests: passed (run 44231902339). The isolated local Supabase job completed schema restoration, migration application, RPC/grant checks, competitor recomputation compatibility tests, candidate validation, first publication, exact-scope replacement, forced rollback, scope isolation, Overall aggregation, derived-data replacement, FK rejection, concurrency, and read-only inventory checks.
+
+This remains local CI, not a hosted Supabase rehearsal or Production acceptance test. No ESLint result is claimed.
+
+The Vercel deployment API returned HTTP 403 (forbidden) when attempting to list the Preview deployment for this project/branch. Therefore the Preview status for head `5c68671...` is **unverified** from this checkpoint; do not infer that it succeeded or failed. An earlier Preview success recorded for `978788980...` does not establish deployment status for the newer head.
+
+The CI results do not change the outstanding release gates: manual Free-plan export/off-site copy/isolated restore verification, hosted rehearsal if an already-existing isolated no-cost environment is available, human review, and separate explicit release approval. PR #99 remains draft and unmerged. No Production migration, deployment, tracking activation, or historical deletion was performed.
