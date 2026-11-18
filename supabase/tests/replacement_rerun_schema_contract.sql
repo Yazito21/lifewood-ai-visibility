@@ -12,7 +12,8 @@ begin
     'public.stage_tracking_candidate_rows(uuid,text,jsonb)',
     'public.validate_tracking_run_candidate(uuid)',
     'public.preview_tracking_run_replacement(uuid)',
-    'public.promote_tracking_run_candidate(uuid,uuid)'
+    'public.promote_tracking_run_candidate(uuid,uuid)',
+    'public.publish_engine_overall_metrics(uuid,date,text,text,boolean)'
   ] loop
     if to_regprocedure(fn) is null then
       raise exception 'replacement rerun contract: missing function %', fn;
@@ -70,7 +71,8 @@ begin
     'public.stage_tracking_candidate_rows(uuid,text,jsonb)',
     'public.validate_tracking_run_candidate(uuid)',
     'public.preview_tracking_run_replacement(uuid)',
-    'public.promote_tracking_run_candidate(uuid,uuid)'
+    'public.promote_tracking_run_candidate(uuid,uuid)',
+    'public.publish_engine_overall_metrics(uuid,date,text,text,boolean)'
   ] loop
     if has_function_privilege('anon', fn, 'EXECUTE')
        or has_function_privilege('authenticated', fn, 'EXECUTE')
@@ -172,7 +174,8 @@ begin
       'public.stage_tracking_candidate_rows(uuid,text,jsonb)'::regprocedure,
       'public.validate_tracking_run_candidate(uuid)'::regprocedure,
       'public.preview_tracking_run_replacement(uuid)'::regprocedure,
-      'public.promote_tracking_run_candidate(uuid,uuid)'::regprocedure
+      'public.promote_tracking_run_candidate(uuid,uuid)'::regprocedure,
+      'public.publish_engine_overall_metrics(uuid,date,text,text,boolean)'::regprocedure
     )
     and (not p.prosecdef or p.proconfig is null
          or not exists (select 1 from unnest(p.proconfig) setting
