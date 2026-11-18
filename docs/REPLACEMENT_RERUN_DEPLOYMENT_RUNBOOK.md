@@ -150,3 +150,10 @@ The fourteenth migration, `20261118100000_harden_metric_finalization_search_path
 ### Latest feature-branch validation checkpoint
 
 The current PR head is `3c6e01faf8c35d0600e277f6a026ecbe15164e24`. GitHub Actions reports success for all three workflows on that exact commit: Edge Function Check, Build Check, and Replacement Rerun Database Smoke Tests. This is local-CI validation only; it does not change the hosted-rehearsal limitation or authorize Production changes.
+
+
+### Predecessor data retention and recovery checkpoint
+
+The `tracking_run_replacements` table is a durable audit trail, **not a backup archive**. It records predecessor/replacement run metadata snapshots and deleted-row counts. The promotion transaction removes predecessor raw `ai_responses` and related derived rows after writing the audit record. Failed promotion transactions roll back atomically; after a successful commit, the audit record alone cannot restore the deleted raw response payloads or derived rows.
+
+Before the first Production replacement, verify and record an independent backup/restore or export checkpoint for the exact replacement scope, or obtain explicit acceptance that predecessor payloads will not be recoverable from the replacement audit. Do not describe the audit table as a rollback mechanism. No Production backup, export, or data modification was performed by preparing this runbook.
