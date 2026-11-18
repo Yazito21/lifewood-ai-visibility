@@ -114,6 +114,17 @@ begin
          pg_get_functiondef('public.recompute_competitor_metrics(uuid,date,date)'::regprocedure)) = 0 then
       raise exception 'replacement rerun contract: competitor recompute and Overall publication must execute the shared project lock';
     end if;
+
+    -- Later migrations must not reintroduce the legacy location-agnostic
+    -- two-argument presence helper when redefining Overall/recompute functions.
+    if position('run_tracked_presence(m.run_id, m.category, p_location)' in
+         pg_get_functiondef('public.publish_engine_overall_metrics(uuid,date,text,text,boolean)'::regprocedure)) = 0
+       or position('run_tracked_presence(fr.id, tn, fr.tracking_location)' in
+         pg_get_functiondef('public.recompute_competitor_metrics(uuid,date,date)'::regprocedure)) = 0
+       or position('run_tracked_presence(m.run_id, m.category)' in
+         pg_get_functiondef('public.publish_engine_overall_metrics(uuid,date,text,text,boolean)'::regprocedure)) > 0 then
+      raise exception 'replacement rerun contract: Overall/recompute must use location-scoped presence counts';
+    end if;
   end;
 
   if not exists (
