@@ -7,6 +7,7 @@ import { stageTrackingCandidateRows } from "./candidate-staging.ts";
 import { isTrackingPaused } from "./tracking-pause.ts";
 import { validateTrackedBrandConfiguration } from "./tracked-brand-config.ts";
 import { promoteCompletedTrackingCandidate } from "./candidate-promotion.ts";
+import { validateReplacementLocationScope } from "./replacement-scope.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -731,6 +732,16 @@ export function createVisibilityTrackingHandler(
     const apiKey = await decrypt(secret.ciphertext, projectId + ":chatgpt", getEnv);
     const trackingLocationsForRun = resolveTrackingCountryCodes(project as Record<string, unknown>);
     if (!trackingLocationsForRun.length) return json({ error: "NO_VALID_TRACKING_LOCATIONS" }, 400);
+    if (mode !== "sample") {
+      const replacementScope = validateReplacementLocationScope(trackingLocationsForRun);
+      if (!replacementScope.ok) {
+        return json({
+          error: replacementScope.code,
+          message: "Atomic replacement currently supports one tracking location per persistent run. Configure exactly one tracking location before running tracking; no run was created and no provider request was sent.",
+          tracking_locations: replacementScope.locations,
+        }, 409);
+      }
+    }
     let runId: string | null = null;
     let isSuperadminRerun = false;
     const isCategoryScopedRun = Boolean(selectedCategory);
