@@ -210,3 +210,18 @@ All checks above were read-only. No Production schema, data, grants, RLS policie
 ### Backup checklist CLI compatibility note
 
 Use the current Supabase CLI `--remote=<connection-string>` target syntax shown in the [Free-plan backup checklist](./REPLACEMENT_RERUN_FREE_PLAN_BACKUP_CHECKLIST.md). The older `--db-url` flag is deprecated in CLI v3 and removed in CLI v4. The logical dump excludes managed schemas such as `auth` and `storage`; it is not a complete project backup. No export or restore test has yet been performed.
+
+
+## 12. Latest CI and Preview verification (2026-11-18)
+
+On feature-branch head `5c68671bae0ed37e11a833e9b6e5318d318d3e6b`, all three GitHub Actions workflows completed successfully:
+
+- Edge Function Check: run 44231902197.
+- Build Check: run 44231902159; TypeScript and application build steps passed.
+- Replacement Rerun Database Smoke Tests: run 44231902339; all local isolated database test steps passed, including replacement, rollback, scope isolation, Overall aggregation, derived-data replacement, FK rejection, concurrency, and read-only inventory checks.
+
+These checks use disposable local Supabase. They are not hosted rehearsal or Production acceptance. No ESLint result is claimed.
+
+Vercel Preview status for this latest head could not be verified: the Vercel deployment-list API returned HTTP 403 (forbidden) for the connected account. Do not treat the earlier Preview success for commit `978788980...` as evidence for the newer head. Resolve Vercel project/team access through the authorised Vercel account, then inspect the Preview deployment for the exact commit before relying on it.
+
+All previously documented release gates remain in force: Free-plan logical export, encrypted off-site copy and isolated restore verification; hosted rehearsal only in an already-existing isolated no-cost environment; human review; and separate explicit approval. PR #99 remains draft and unmerged. No Production change is authorised by this validation checkpoint.
