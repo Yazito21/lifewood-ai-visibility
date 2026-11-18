@@ -2314,3 +2314,38 @@ The competitor-related behavioural fixtures and recomputation migration were rev
 No direct-competitor cleanup defect was found in this pass. The separate direct competitor registry/observations are intentionally preserved. Existing competitor observations for the tracked brand/assigned competitors are recomputed from active run evidence; removed competitor observations are archived by the recompute process.
 
 The next gate is a final schema/dependency and release-readiness audit, followed by a refreshed read-only Production inventory. Do not apply migrations or deploy as part of that gate.
+
+
+## 2026-11-18: FK dependency and read-path release audit
+
+### Read-only Production FK inventory
+
+A read-only query of the current Production schema confirmed the following direct relationships involving `tracking_runs`:
+
+- `tracking_run_daily_claims.run_id` uses `ON DELETE CASCADE`; the promotion transaction explicitly reassigns claims from predecessor IDs to the candidate before predecessor deletion.
+- `tracking_run_stages.run_id` uses `ON DELETE CASCADE`; deleting a predecessor removes its run-stage journal.
+- `tracking_runs.source_run_id` is a self-reference with the default restrictive delete action; the promotion path rejects a predecessor if any child run references it as a source.
+- `tracking_runs.supersedes_run_id` uses `ON DELETE SET NULL`; references from surviving rows are not allowed to block deletion.
+- `category_brand_observations.run_id`, `visibility_daily.run_id`, and `tracking_batch_categories.tracking_run_id` use `ON DELETE SET NULL`. The replacement routine explicitly deletes exact-scope category observations and visibility rows; batch-category references are detached by the FK action.
+- Production `ai_responses.run_id` has no declared FK to `tracking_runs`; the promotion routine therefore explicitly deletes predecessor raw responses and response-owned evidence before deleting predecessor run rows.
+
+The FK inventory is a snapshot of the currently deployed Production schema, not proof that the replacement migrations have been applied. Production still has no replacement staging/audit schema or promotion function.
+
+### Replacement routine dependency handling reviewed on the feature branch
+
+The promotion SQL explicitly handles the relevant dependencies before deleting predecessor runs: it transfers daily claims, writes durable audit snapshots, checks source-run children, removes exact-scope derived rows and raw responses, and only then removes predecessor `tracking_runs` rows. The candidate is promoted in the same transaction. The separate direct competitor registry/observation datasets remain outside this deletion path as covered by the existing behavioural fixture.
+
+### Read-path review status
+
+The dashboard, analytics, citations, competitors, and reports routes were sampled. The dashboard is the only application page changed in this PR; the other pages continue to use canonical daily metrics and/or reporting RPCs. This is consistent with replacement mutating canonical scope rows transactionally rather than exposing a second version to clients. However, this is not yet a complete exhaustive audit of every nested component, export, or RPC dependency. The active-run leaderboard lookup migration and competitor recompute active-run filter were separately reviewed in the preceding source review.
+
+### Important limitations / outstanding checks
+
+- The Production inventory does not contain replacement-specific functions or tables, so Production grants/RLS for those new objects cannot be verified until after a separately approved deployment.
+- A column inventory identified additional run-reference columns in `category_brand_observations_archive` and `response_brand_evidence_scoped`; their full dependency/retention semantics require a targeted follow-up check against feature-branch migrations and the live schema before release.
+- No replacement routines are present in Production; the empty Production routine-privilege result is expected and must not be interpreted as a successful deployed permission check.
+- Continue with a targeted stale-reference and read-path audit, then refresh the read-only Production inventory. Do not treat this pass as release approval.
+
+### Safety status
+
+No Production writes, migrations, deployments, hosted Supabase resource creation, tracking activation, or historical deletion were performed. PR #99 remains open and draft. Hosted rehearsal remains deferred because no additional Supabase spend is authorised.
