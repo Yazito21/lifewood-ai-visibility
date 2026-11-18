@@ -187,7 +187,7 @@ CREATE OR REPLACE FUNCTION public.recompute_competitor_metrics(p_project_id uuid
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
  SET statement_timeout TO '20min'
 AS $function$
 declare
