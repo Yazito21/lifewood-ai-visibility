@@ -11,6 +11,7 @@ This checklist addresses the backup gate in [the replacement-rerun deployment ru
 The connected Supabase organization currently reports the **Free** plan. Supabase's current documentation states that Free projects do **not** receive automatic daily database backups. Daily backups are included on Pro, Team, and Enterprise plans. Supabase recommends that Free-plan projects create regular logical exports with the Supabase CLI `db dump` command and keep off-site copies.
 
 Sources:
+- [Supabase CLI: db dump reference](https://supabase.com/docs/reference/cli/supabase-db-dump)
 - [Supabase: Database Backups](https://supabase.com/docs/guides/platform/backups)
 - [Supabase: Backup and Restore using the CLI](https://supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore)
 - [Supabase CLI: db dump](https://supabase.com/docs/reference/cli/supabase-db-dump)
@@ -24,7 +25,7 @@ Run this on a trusted workstation before the first Production replacement. Do no
 Prerequisites:
 - Supabase CLI installed.
 - Docker Desktop running (the CLI uses a container for `pg_dump`).
-- The Production database connection string copied from the Supabase Dashboard's **Connect** panel. Prefer the Session pooler connection string unless your network supports the direct connection.
+- The Production database connection string copied from the Supabase Dashboard's **Connect** panel. Prefer the direct connection string; use the Session pooler connection string if your network does not support IPv6 and you do not have the IPv4 add-on. Use the connection string as supplied by the Dashboard, with any required password URL-encoding.
 - A secure local destination with enough free disk space.
 
 In PowerShell, enter the connection string through a secure prompt. It is converted to a process environment variable only in memory for the duration of the export:
@@ -47,13 +48,13 @@ supabase --version
 docker info | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Docker is not available. Start Docker Desktop and retry." }
 
-supabase db dump --db-url "$env:SUPABASE_DB_URL" -f "$backupDir\roles.sql" --role-only
+supabase db dump --remote="$env:SUPABASE_DB_URL" -f "$backupDir\roles.sql" --role-only
 if ($LASTEXITCODE -ne 0) { throw "Role export failed. Do not proceed." }
 
-supabase db dump --db-url "$env:SUPABASE_DB_URL" -f "$backupDir\schema.sql"
+supabase db dump --remote="$env:SUPABASE_DB_URL" -f "$backupDir\schema.sql"
 if ($LASTEXITCODE -ne 0) { throw "Schema export failed. Do not proceed." }
 
-supabase db dump --db-url "$env:SUPABASE_DB_URL" -f "$backupDir\data.sql" --use-copy --data-only -x "storage.buckets_vectors" -x "storage.vector_indexes"
+supabase db dump --remote="$env:SUPABASE_DB_URL" -f "$backupDir\data.sql" --use-copy --data-only -x "storage.buckets_vectors" -x "storage.vector_indexes"
 if ($LASTEXITCODE -ne 0) { throw "Data export failed. Do not proceed." }
 
 $manifest = @(
@@ -80,7 +81,7 @@ The commands export roles, schema, and data separately, following Supabase's doc
 ## 3. Understand what this export does and does not contain
 
 - The CLI applies Supabase-specific filtering and excludes Supabase-managed schemas such as `auth`, `storage`, and extension-owned schemas. It is not a complete image of every managed Supabase service.
-- The database export covers the application database schemas included by the CLI, including the public tables used by replacement promotion. Confirm the required tables and their data are present in the dump before accepting it.
+- The database export covers the application database schemas included by the CLI, including the public tables used by replacement promotion. The CLI excludes Supabase-managed schemas such as `auth` and `storage`; this does not export Auth users/configuration, Storage objects, Edge Functions, project secrets, or all other project settings. Confirm the required public tables and their data are present in the dump before accepting it.
 - Storage API file objects are not included in a database dump. If any data needed for the wider platform recovery is stored as Storage objects, export those objects separately and record that separate checkpoint.
 - Custom role passwords are not included in the export and may need to be reset during a restore.
 - This is a logical export at the time the dump runs, not PITR and not an automatically maintained backup.
@@ -117,3 +118,16 @@ As of the latest read-only checks:
 - The replacement feature remains unapproved for Production use until the manual export and restore-verification gate above is completed, or the user separately gives explicit acceptance of the irreversible predecessor-payload retention behaviour described in the main runbook.
 
 **Safety:** This document is a procedure only. It does not authorise Production migrations, Edge Function deployment, Vercel Production deployment, tracking activation, historical deletion, or a live replacement run.
+
+
+## CLI syntax verification (2026-11-18)
+
+The export commands use `supabase db dump --remote="$env:SUPABASE_DB_URL"`. Current Supabase CLI documentation describes `--remote=<ref|branch|url>` as the supported remote target syntax and states that `--db-url` is deprecated in CLI v3 and removed in CLI v4. The commands above were updated accordingly.
+
+Supabase's current backup guide recommends the direct database connection string when the network supports IPv6; otherwise use the Session pooler connection string when no IPv4 add-on is available. Use the exact connection string from the Dashboard and URL-encode password characters if required.
+
+The CLI dump excludes Supabase-managed schemas, including `auth`, `storage`, and extension-owned schemas. Therefore this checkpoint protects the included application database schema/data used by replacement promotion, not the entire Supabase project. Auth users/configuration, Storage objects, Edge Functions, project secrets, and other managed settings need separate recovery procedures if full-project recovery is required.
+
+References:
+- https://supabase.com/docs/reference/cli/supabase-db-dump
+- https://supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore
