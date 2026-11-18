@@ -175,6 +175,14 @@ end;
 $function$
 ;
 
+-- This helper is called only from trusted service-role workflows and other
+-- SECURITY DEFINER functions. Do not expose its project-wide rebuild capability
+-- through the browser-facing PostgREST API.
+REVOKE ALL ON FUNCTION public.publish_engine_overall_metrics(uuid, date, text, text, boolean)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.publish_engine_overall_metrics(uuid, date, text, text, boolean)
+  TO service_role;
+
 CREATE OR REPLACE FUNCTION public.recompute_competitor_metrics(p_project_id uuid, p_date_from date DEFAULT NULL::date, p_date_to date DEFAULT NULL::date)
  RETURNS jsonb
  LANGUAGE plpgsql
