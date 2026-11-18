@@ -2186,3 +2186,49 @@ The replacement-coordination migration redefines `public.recompute_competitor_me
 ### Validation
 
 The change is committed to the feature branch. CI was triggered for the latest commits and must pass before this hardening is considered validated. No Production change was made.
+
+
+
+## 2026-11-18: latest CI passed; integration review and read-only Production preflight
+
+**Reviewed feature-branch commit:** `f0e4f5afb780bd757239d5c6541d7bcdca3d1b4b`  
+**Review PR:** [#99](https://github.com/Yazito21/lifewood-ai-visibility/pull/99) — open, draft, not merged.
+
+### Latest automated validation
+
+All three workflows completed successfully on the reviewed commit:
+
+- [Edge Function Check](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44222742550) — passed.
+- [Build Check](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44222742647) — passed.
+- [Replacement Rerun Database Smoke Tests](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44222742567) — passed.
+
+### Additional source review
+
+- Reviewed the location-aware presence helper migration and the later replacement/recompute definitions. The latest definitions pass explicit tracking location into presence calculations.
+- Reviewed cross-provider Overall promotion logic. It distinguishes a single-provider aggregate from the shared cross-provider Overall pool and invalidates stale Overall snapshots when category coverage is incomplete.
+- Reviewed the leaderboard lookup migration. It adds the active-run condition so superseded published runs are not selected as current leaderboard inputs.
+- Reviewed the category run-kind migration. It converts persisted `topic` run-kind values to `category`, updates matching SQL function logic, preserves `full` and `overall_aggregate`, and intentionally leaves the historical stage-metadata JSON key `topic` unchanged.
+- Reviewed dashboard, analytics, and report data access. These views consume the canonical `visibility_daily` records and/or database reporting RPCs; replacement correctness therefore depends on the atomic publication and active-run selection rules validated by the database suite.
+
+### Read-only Production preflight snapshot
+
+Production project `jhauufmrxpsbfrahgclv` was queried read-only:
+
+- Its migration history still ends with the existing 2026-11-12 client-report-template migrations. None of the replacement-rerun migrations are applied.
+- The replacement staging table, replacement audit table, and promotion RPC are absent, confirming the replacement schema has not been deployed.
+- Existing Production data contains 137 completed/failed/partial rows with legacy `run_kind = 'topic'`; the category terminology migration will convert these persisted run-kind values to `category`. The 37 currently superseded rows are existing Production history and have not been modified.
+- Existing legacy full runs are still present. They are not automatically deleted by this implementation.
+
+The Supabase security advisor also reports existing database-wide warnings, including RLS-enabled tables without policies, functions with mutable search paths, and SECURITY DEFINER functions executable by browser roles. These findings are not evidence that the new replacement migrations have been deployed; they require separate triage against intended access patterns. The advisor also reports leaked-password protection disabled. No advisor remediation or Production changes were performed.
+
+### Current stage and remaining gates
+
+- [x] Latest database, application build, and Edge Function workflows pass on the reviewed commit.
+- [x] Additional source review of location-scoped recomputation, cross-provider Overall rebuilding, active leaderboard selection, and category run-kind conversion.
+- [x] Read-only confirmation that replacement schema/migrations are absent from Production.
+- [ ] Complete final review of remaining SQL dependencies, function privileges, RLS/trigger interactions, and Edge Function finalisation/error paths.
+- [ ] Reconcile all Production historical dependencies and recovery readiness before any release.
+- [ ] Hosted end-to-end rehearsal remains unavailable under the no-additional-cost constraint.
+- [ ] Obtain separate explicit approval before merging/releasing, applying Production migrations, deploying the Edge Function or Vercel Production, enabling replacement tracking, or deleting historical data.
+
+**Safety status:** No Production schema/data changes, deployments, hosted Supabase resources, or historical deletions were performed. PR #99 remains a draft. This progress entry documents review and read-only checks only.
