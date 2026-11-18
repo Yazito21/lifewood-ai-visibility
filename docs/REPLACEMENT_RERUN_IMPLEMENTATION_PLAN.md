@@ -2425,3 +2425,26 @@ GitHub Actions has started the latest checks. At the time of this update:
 - Vercel Preview Comments: completed successfully.
 
 The three code-validation workflows are not yet reported as passed. Recheck their final conclusions before considering the implementation validated for review.
+
+
+## 2026-11-18: CI migration-sequence failure diagnosed and corrected
+
+### Finding
+
+The latest PR checks showed Build Check and Edge Function Check passing, but the disposable database smoke test stopped at the schema-contract stage. The failure was not caused by a failing replacement RPC migration. The CI workflow's explicit migration list omitted the latest feature-branch migration, `20261118100000_harden_metric_finalization_search_path.sql`. Consequently, the test database had not received the `search_path=public, pg_temp` hardening for `run_tracked_presence` and `finalize_run_metrics`, while the schema contract correctly required it.
+
+### Change
+
+- Added the missing metric-finalization search_path migration to the ordered migration list in `.github/workflows/replacement-rerun-db-tests.yml`.
+- Kept the test isolated to the disposable local Supabase stack; no hosted Supabase resource or Production database was used.
+- The behavioural suite had been skipped because the schema-contract step failed first. A fresh full CI run is required to validate the correction and execute all behavioural tests.
+
+### Validation status
+
+- [x] Build Check passed on the preceding PR check.
+- [x] Edge Function Check passed on the preceding PR check.
+- [x] Root cause of the database smoke-test failure identified as an omitted migration in the CI sequence.
+- [x] CI workflow updated to apply the omitted migration before schema-contract assertions.
+- [ ] Fresh database smoke test and full behavioural suite pass on the corrected workflow.
+
+No Production migrations, deployments, tracking activation, hosted Supabase resources, or historical data changes were performed.
