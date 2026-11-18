@@ -2448,3 +2448,36 @@ The latest PR checks showed Build Check and Edge Function Check passing, but the
 - [ ] Fresh database smoke test and full behavioural suite pass on the corrected workflow.
 
 No Production migrations, deployments, tracking activation, hosted Supabase resources, or historical data changes were performed.
+
+
+## 2026-11-18: corrected database CI suite passed and branch ancestry reviewed
+
+### CI result
+
+The corrected replacement-rerun database workflow and the other required code checks completed successfully on feature-branch code commit `3c6e01faf8c35d0600e277f6a026ecbe15164e24`:
+
+- Edge Function Check: passed (run 44227070925).
+- Build Check: passed (run 44227070703).
+- Replacement Rerun Database Smoke Tests: passed (run 44227070688).
+
+This closes the earlier CI migration-sequence issue: the workflow now applies the metric-finalization search_path hardening migration before schema-contract assertions, and the complete disposable local database smoke-test workflow passes. These checks are local/disposable CI validation, not hosted Supabase rehearsal or Production acceptance testing.
+
+### Main-branch ancestry review
+
+PR #99's feature branch is two commits behind `main` by ancestry. The two intervening commits were:
+
+- `797880c82e213957e526e5d9fe3bf435fc14e9d1`: added a temporary legacy run-kind migration fixture.
+- `99f9a253adf985d40a6027b585e8a28ec9ea8f1f`: reverted that exact fixture.
+
+The current `main` tree has the same tree SHA as the common ancestor `2b7f94c65aa8ab1d7168f341eb11dc260129337a`. Therefore, these two commits introduce no net file changes that need to be brought into the feature branch. No force update, rebase, merge, or history rewrite was performed.
+
+### Review and release status
+
+- [x] Inspect both commits after the feature branch's merge base.
+- [x] Confirm no net source-tree changes on `main` relative to the merge base.
+- [x] Recheck all three required CI workflows after the migration-list correction; all passed on the validated code commit.
+- [ ] Complete the remaining final SQL dependency/index/RLS/trigger and recovery-readiness review.
+- [ ] Recheck current PR checks and Vercel preview availability after the free-tier daily deployment cap resets.
+- [ ] Obtain human review and separate explicit approval before merging or releasing.
+
+PR #99 remains open, draft, and unmerged. No Production migration, Edge Function deployment, Vercel Production deployment, tracking activation, additional hosted Supabase resource, or historical deletion has occurred. Hosted end-to-end rehearsal remains deferred under the no-additional-cost constraint.
