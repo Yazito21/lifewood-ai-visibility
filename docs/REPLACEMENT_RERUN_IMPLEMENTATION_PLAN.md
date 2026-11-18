@@ -2557,3 +2557,26 @@ PR #99 remains open, draft, and unmerged. It is mergeable according to GitHub me
 The current implementation remains category-scoped. Dashboard batches process categories sequentially; one configured tracking location is supported by the current project schema; full-batch atomicity and multi-location candidate runs are not implemented. Local CI success must not be represented as hosted rehearsal or Production acceptance.
 
 No Production migration, Edge Function deployment, Vercel Production deployment, tracking activation, hosted Supabase resource creation, or historical deletion has occurred.
+
+
+### 2026-11-18: advisor findings verified against live grants (read-only)
+
+A follow-up read-only SQL check confirmed the table-level SELECT grants for the seven tables flagged as RLS-enabled with no policies:
+
+| Table | RLS | Policies | anon SELECT | authenticated SELECT | service_role SELECT |
+|---|---:|---:|---:|---:|---:|
+| `category_brand_assignments_archive` | on | 0 | no | no | yes |
+| `category_brand_observations_archive` | on | 0 | no | no | yes |
+| `citation_occurrences` | on | 0 | no | no | yes |
+| `llm_secrets` | on | 0 | no | no | yes |
+| `prompts_backup_20261101` | on | 0 | no | no | no |
+| `tracking_run_stages` | on | 0 | no | no | yes |
+| `tracking_runs` | on | 0 | no | no | yes |
+
+For these tables, the advisor warning is not evidence of public SELECT exposure: the inspected `anon` and `authenticated` roles have no SELECT grant. The absence of policies still needs to be understood against each table's intended access path. In particular, do not add broad policies simply to silence the linter. The prompt backup table also has no service-role SELECT grant in this check.
+
+The advisor reported six SECURITY DEFINER functions executable by `anon` and seventeen executable by `authenticated`. A read-only privilege/function-settings query confirmed that some are helper or trigger functions and some are application RPCs. The anon-executable set includes `competitor_entities` and `get_published_competitor_observations`, plus trigger-oriented functions. The authenticated set includes project-role/member helpers, reporting RPCs, competitor recomputation, the published-run lookup, and UI-preference saving. These grants may be intentional, but each exposed RPC needs a body-level authorization and data-scope review before any grant is changed. Do not revoke all SECURITY DEFINER execution indiscriminately.
+
+The two mutable-search-path warnings are for invoker functions `site_host(text)` and `alias_match_pattern(text[])`; they are not SECURITY DEFINER according to the read-only query. The advisor also reports leaked-password protection disabled. Performance findings include ten unindexed foreign keys, seven RLS init-plan warnings, four multiple-permissive-policy warnings, three tables without primary keys, five unused indexes, and one duplicate index. No policies, grants, functions, Auth settings, or indexes were changed.
+
+This is a baseline security/performance triage, not a replacement-rerun blocker caused by the fourteen feature migrations. The two replacement metric-finalization helpers hardened by migration 14 already use `search_path=public, pg_temp`. The remaining findings should be prioritised by actual data exposure and query workload, with any remediation separately reviewed and tested.
