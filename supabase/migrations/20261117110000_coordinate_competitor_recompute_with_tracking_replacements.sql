@@ -7,7 +7,7 @@ CREATE OR REPLACE FUNCTION public.publish_engine_overall_metrics(p_project_id uu
  RETURNS uuid
  LANGUAGE plpgsql
  SECURITY DEFINER
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 declare
   v_categories text[];
