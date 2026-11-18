@@ -27,10 +27,16 @@ Prerequisites:
 - The Production database connection string copied from the Supabase Dashboard's **Connect** panel. Prefer the Session pooler connection string unless your network supports the direct connection.
 - A secure local destination with enough free disk space.
 
-In PowerShell, set the connection string in the current terminal session (replace the placeholder locally; do not commit it):
+In PowerShell, enter the connection string through a secure prompt. It is converted to a process environment variable only in memory for the duration of the export:
 
 ```powershell
-$env:SUPABASE_DB_URL = Read-Host "Paste the database connection string"
+$secure = Read-Host "Enter the database connection string" -AsSecureString
+$ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+try {
+  $env:SUPABASE_DB_URL = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+} finally {
+  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+}
 if ([string]::IsNullOrWhiteSpace($env:SUPABASE_DB_URL)) { throw "SUPABASE_DB_URL is required." }
 
 $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
