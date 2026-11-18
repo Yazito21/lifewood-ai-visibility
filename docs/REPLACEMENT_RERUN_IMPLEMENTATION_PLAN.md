@@ -2481,3 +2481,37 @@ The current `main` tree has the same tree SHA as the common ancestor `2b7f94c65a
 - [ ] Obtain human review and separate explicit approval before merging or releasing.
 
 PR #99 remains open, draft, and unmerged. No Production migration, Edge Function deployment, Vercel Production deployment, tracking activation, additional hosted Supabase resource, or historical deletion has occurred. Hosted end-to-end rehearsal remains deferred under the no-additional-cost constraint.
+
+
+## 2026-11-18: final SQL replacement and recovery semantics review
+
+### SQL review completed
+
+Reviewed the candidate promotion, replacement audit, competitor recomputation coordination, category/run-kind rename, leaderboard active-run filtering, and metric-finalization search_path migrations.
+
+Confirmed in the reviewed SQL:
+
+- Candidate promotion is restricted to completed, unpublished category runs. Full-run and shared-source category slices are explicitly rejected.
+- Promotion revalidates the candidate after acquiring the project-wide recomputation lock and ordered date/category/provider/location locks. The Overall refresh is also serialized.
+- Candidate staging and replacement audit tables have RLS enabled; browser roles are revoked and the service role is granted access.
+- Candidate staging writes and promotion RPCs require the service role. The promotion RPC validates project/category/provider/date/location scope before canonical mutation.
+- The competitor recomputation worker and replacement promotion use the same project-scoped advisory lock.
+- Replacement audit run IDs intentionally have no foreign keys to tracking_runs, so audit lineage survives physical deletion of predecessor run records.
+- The leaderboard lookup excludes superseded runs.
+- The metric finalization helpers have a fixed `public, pg_temp` search_path.
+
+### Important recovery limitation
+
+The replacement audit is **not a full backup of predecessor data**. It stores predecessor/replacement tracking-run metadata snapshots and per-table deleted-row counts. The promotion transaction deletes predecessor raw `ai_responses` and associated derived rows after writing that audit record. A transaction failure rolls back the entire promotion, but after a successful commit the deleted raw response payloads and deleted derived rows cannot be reconstructed from `tracking_run_replacements` alone.
+
+This matches replacement semantics, but it is an irreversible data-retention decision after commit unless an independent backup/export exists. Production release must therefore include a verified backup/restore or export checkpoint, or explicit acceptance that predecessor payloads are not recoverable from the replacement audit. No backup operation or Production write was performed as part of this review.
+
+### Remaining release gates
+
+- [x] Review promotion scope checks, lock ordering, recomputation coordination, RLS/service-role grants, audit lineage, and superseded-run filtering.
+- [x] Confirm replacement audit is metadata/count lineage, not a raw-data archive.
+- [ ] Verify the intended Production backup/restore or export checkpoint before the first live replacement.
+- [ ] Recheck PR checks and Vercel Preview after the free-tier daily deployment cap resets.
+- [ ] Obtain human review and separate explicit approval before merge/release.
+
+PR #99 remains open, draft, and unmerged. No Production migration, deployment, tracking activation, hosted Supabase resource creation, or historical deletion has occurred.
