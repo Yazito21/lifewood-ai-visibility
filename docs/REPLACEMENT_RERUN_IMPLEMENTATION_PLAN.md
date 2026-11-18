@@ -2363,3 +2363,51 @@ These are baseline observations only. The archive table already contains detache
 ### CI after documentation commit
 
 The implementation-plan documentation was committed as `d57a782d8849a048ae60cdac2684dfc36fd4fb90`. The commit-specific workflow lookup returned no PR-triggered workflow runs at the time of this check, so this documentation-only commit is not being reported as having a fresh CI pass. The previously recorded three green workflows remain valid for the code commit they tested. Recheck PR checks before any merge/release decision.
+
+
+## 2026-11-18: read-path audit and metric-helper search_path hardening
+
+### Application read-path review
+
+Reviewed the current feature-branch routes and their direct data sources:
+
+- Dashboard reads `visibility_daily`, tracking batch tables, project/profile membership, and the cumulative-citations RPC. Its run-related queries include active/published lineage checks; canonical daily metrics are replaced transactionally.
+- Analytics reads canonical `visibility_daily` rows for the selected project/location/date range and excludes the synthetic `llm_provider = 'Overall'` row from per-engine chart aggregation. It does not query raw run history.
+- Citations uses `get_cumulative_citations` and `get_third_party_mentions`. These are evidence-derived reporting RPCs; successful promotion removes predecessor response/evidence rows before commit, so the RPCs should see only surviving canonical evidence.
+- Competitors reads the project-scoped competitor reporting data. Replacement coordination rebuilds tracked-brand competitor observations from active published category runs under the shared project lock.
+- Current Reports reads canonical visibility metrics and cumulative citations when assembling client report data. Legacy audit reports read saved report snapshots and do not re-query tracking-run history when opened.
+- Run-history handling is covered by the earlier replacement read-path changes and active leaderboard lookup filter.
+
+No additional frontend change was justified by this pass. The read paths do not independently select deleted predecessor run rows; their correctness depends on promotion atomically replacing canonical rows and rebuilding derived evidence before commit. The audit remains source-based, not a live hosted replacement rehearsal.
+
+### Security hardening finding and change
+
+The schema contract already required fixed `search_path=public, pg_temp` for candidate staging/validation/preview/promotion, Overall publication, and competitor recomputation. A wider review found that the location-scoped `run_tracked_presence(uuid,text,text)` and `finalize_run_metrics(uuid)` helpers are also SECURITY DEFINER functions used by the publication pipeline, but still declared `search_path=public`.
+
+Added migration `20261118100000_harden_metric_finalization_search_path.sql` to set both helpers to `search_path=public, pg_temp`. Extended `replacement_rerun_schema_contract.sql` to include both helpers in the fixed-search-path/SECURITY DEFINER assertion and service-role-only execution checks. This is a feature-branch migration/test change only; it has not been applied to Production.
+
+### Refreshed Production preflight (read-only)
+
+The latest Production migration inventory still ends at `20261112032011` (`allow_admins_to_update_client_report_template`). The latest replacement migration is not present. A direct schema query confirms:
+
+- `tracking_run_candidate_rows`: absent.
+- `tracking_run_replacements`: absent.
+- `promote_tracking_run_candidate(uuid,uuid)`: absent.
+- Replacement-named public routines: 0.
+- Legacy Production `run_kind='topic'` rows: 137.
+- Existing `superseded_at` rows: 37.
+
+No Production data or schema was changed. The legacy run-kind and superseded counts remain the same baseline observations; they are not cleanup instructions.
+
+### Current validation and remaining gates
+
+- [x] Sampled dashboard, analytics, citations, competitors, current reports, and legacy report read paths.
+- [x] Identified and hardened the remaining SECURITY DEFINER metric helpers on the feature branch.
+- [x] Extended schema contract tests for helper search_path and service-role grants.
+- [x] Refreshed read-only Production migration/schema/data inventory.
+- [ ] Run the full CI suite on the latest feature-branch commits and address any failures.
+- [ ] Complete final SQL dependency/index/RLS/trigger review and recovery-readiness checklist.
+- [ ] Hosted end-to-end rehearsal remains deferred under the no-additional-cost constraint.
+- [ ] Obtain separate explicit approval before merge/release, Production migrations, Edge Function/Vercel Production deployment, tracking activation, or historical deletion.
+
+**Safety:** No Production writes, migrations, deployments, additional hosted Supabase resources, tracking activation, or historical deletions were performed. PR #99 remains open, draft, and unmerged.
