@@ -2609,3 +2609,15 @@ A later Vercel GitHub integration notification on PR #99 reported the `lifewood-
 Earlier Vercel bot notifications on 2026-11-17 also reported deployment attempts blocked by the Free-plan limit of more than 100 deployments per day. The later Ready notification is positive evidence of a Preview deployment, but does not establish that all intervening deployment attempts succeeded. Do not upgrade or incur charges to bypass the limit.
 
 PR #99 remains open, draft, and unmerged. No human review is recorded. All backup, hosted-rehearsal, and explicit Production approval gates remain unchanged.
+
+
+## 14. Latest PR-head verification (2026-11-18)
+
+PR #99 head `6a6d0756df83f6292e997063456228804277d91c` was checked directly. All three GitHub Actions workflows passed on this exact SHA:
+- Edge Function Check: run 44241763604.
+- Replacement Rerun Database Smoke Tests: run 44241763623.
+- Build Check: run 44241763695.
+
+The Vercel GitHub integration posted a Ready Preview notification at 2026-11-18 05:06:41 UTC, matching the PR's latest update timestamp. Preview URL: https://lifewood-ai-visibility-git-feat-repla-77b243-yazito21s-projects.vercel.app . However, a direct Vercel deployment-list query filtered to this exact SHA returned HTTP 403 (forbidden), so the deployed source SHA cannot be independently confirmed from the connected Vercel API. Treat this as a successful Ready notification with a remaining source-SHA verification caveat, not as a fully verified exact-head deployment.
+
+PR #99 remains open, draft, unmerged, and mergeable; no human reviews are recorded. No Production migrations, data changes, deployments, tracking activation, or historical deletion were performed. Free-plan backup/restore and hosted-rehearsal gates remain outstanding.
