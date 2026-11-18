@@ -205,3 +205,8 @@ Reference remediation guidance:
 - [Unindexed foreign keys](https://supabase.com/docs/guides/database/database-linter?lint=0001_unindexed_foreign_keys)
 
 All checks above were read-only. No Production schema, data, grants, RLS policies, functions, Auth settings, or indexes were changed.
+
+
+### Backup checklist CLI compatibility note
+
+Use the current Supabase CLI `--remote=<connection-string>` target syntax shown in the [Free-plan backup checklist](./REPLACEMENT_RERUN_FREE_PLAN_BACKUP_CHECKLIST.md). The older `--db-url` flag is deprecated in CLI v3 and removed in CLI v4. The logical dump excludes managed schemas such as `auth` and `storage`; it is not a complete project backup. No export or restore test has yet been performed.
