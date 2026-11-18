@@ -2580,3 +2580,8 @@ The advisor reported six SECURITY DEFINER functions executable by `anon` and sev
 The two mutable-search-path warnings are for invoker functions `site_host(text)` and `alias_match_pattern(text[])`; they are not SECURITY DEFINER according to the read-only query. The advisor also reports leaked-password protection disabled. Performance findings include ten unindexed foreign keys, seven RLS init-plan warnings, four multiple-permissive-policy warnings, three tables without primary keys, five unused indexes, and one duplicate index. No policies, grants, functions, Auth settings, or indexes were changed.
 
 This is a baseline security/performance triage, not a replacement-rerun blocker caused by the fourteen feature migrations. The two replacement metric-finalization helpers hardened by migration 14 already use `search_path=public, pg_temp`. The remaining findings should be prioritised by actual data exposure and query workload, with any remediation separately reviewed and tested.
+
+
+### Backup checklist command correction
+
+The Free-plan backup checklist was cross-checked against the current Supabase CLI reference and backup/restore guide. Its dump commands now use `supabase db dump --remote="$env:SUPABASE_DB_URL"`; `--db-url` is deprecated in CLI v3 and removed in CLI v4. The checklist also clarifies that the logical dump excludes managed schemas such as `auth` and `storage`, so it is an application-database recovery checkpoint rather than a full Supabase-project backup. No export has been run and no Production credentials were accessed.
