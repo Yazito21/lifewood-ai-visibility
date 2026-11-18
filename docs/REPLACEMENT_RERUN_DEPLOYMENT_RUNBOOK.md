@@ -11,7 +11,7 @@ This runbook is a controlled release plan only. It does not authorize Production
 
 The replacement-rerun branch changes three deployment surfaces:
 
-1. **Supabase database:** thirteen migrations listed below.
+1. **Supabase database:** fourteen migrations listed below.
 2. **Supabase Edge Function:** `visibility-tracking`, including candidate staging, atomic promotion, and the emergency pause gate.
 3. **Vercel application:** `app/platform/[projectId]/dashboard/page.tsx`, which runs and resumes category batches and retains failed candidate IDs.
 
@@ -48,6 +48,7 @@ Apply only this reviewed sequence, after the live migration-history reconciliati
 11. `20261117140000_rebuild_cross_provider_overall_after_replacement.sql`
 12. `20261117150000_exclude_superseded_runs_from_leaderboard_lookup.sql`
 13. `20261117160000_standardise_category_run_kind.sql`
+14. `20261118100000_harden_metric_finalization_search_path.sql`
 
 These migrations add candidate staging/audit structures and define or update the validation, preview, promotion, metric-finalization, recompute-coordination, cross-provider Overall rebuild, and active published-run lookup functions. The final migration ensures superseded runs are not selected as current leaderboard data. They do not authorize historical cleanup. Do not manually delete rows from canonical metric tables or legacy competitor tables as part of this release.
 
@@ -72,7 +73,7 @@ The pause gate is checked before authentication, database access, run creation, 
 
 ### C. Apply database migrations
 
-1. Apply the thirteen migrations in the order above using the approved migration procedure.
+1. Apply the fourteen migrations in the order above using the approved migration procedure.
 2. Re-run the schema/security contract and read-only function-definition checks against the hosted target.
 3. Confirm the promotion RPC, candidate staging RPC, validation/preview RPCs, and advisory-lock coordination are present with the intended service-role-only grants.
 4. Stop if any migration or post-migration contract check fails. Keep tracking paused.
@@ -112,7 +113,7 @@ The pause secret is an operational stop control, not a substitute for database b
 
 ## 6. Current Production preflight findings
 
-The connected Production project is active and healthy. Its applied migration history currently ends at the November 12, 2026 report-template migrations; none of the thirteen replacement migrations above has been applied. The replacement audit table is therefore not present in Production. The live read-only inventory also confirmed legacy source-run dependencies and failed/partial unpublished attempts that must be retained unless a separate historical cleanup plan is approved.
+The connected Production project is active and healthy. Its applied migration history currently ends at the November 12, 2026 report-template migrations; none of the fourteen replacement migrations above has been applied. The replacement audit table is therefore not present in Production. The live read-only inventory also confirmed legacy source-run dependencies and failed/partial unpublished attempts that must be retained unless a separate historical cleanup plan is approved.
 
 No Production schema or data changes were made during the preflight. This section is informational and does not authorize a release.
 
@@ -140,3 +141,12 @@ The next no-cost work is continued local CI coverage, code review, runbook harde
 ### Category run-kind terminology migration
 
 The release now includes migration `20261117160000_standardise_category_run_kind.sql` as the thirteenth migration. It converts existing `tracking_runs.run_kind = 'topic'` values to `category`, updates the allowed-value constraint and updates existing SQL functions that branch on the legacy run kind. The historical stage-journal JSON key `topic` remains readable for compatibility.
+
+
+### SECURITY DEFINER metric finalization search_path hardening
+
+The fourteenth migration, `20261118100000_harden_metric_finalization_search_path.sql`, fixes the `search_path` for `public.run_tracked_presence(uuid, text, text)` and `public.finalize_run_metrics(uuid)` to `public, pg_temp`. These helpers participate in the replacement publication/finalization path. The migration is additive and does not modify application data. It must be included in the exact reviewed release set and in post-migration security verification.
+
+### Latest feature-branch validation checkpoint
+
+The current PR head is `3c6e01faf8c35d0600e277f6a026ecbe15164e24`. GitHub Actions reports success for all three workflows on that exact commit: Edge Function Check, Build Check, and Replacement Rerun Database Smoke Tests. This is local-CI validation only; it does not change the hosted-rehearsal limitation or authorize Production changes.
