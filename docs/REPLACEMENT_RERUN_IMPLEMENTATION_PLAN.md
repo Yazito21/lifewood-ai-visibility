@@ -2273,3 +2273,26 @@ GitHub Actions completed successfully for all three required workflows:
 The latest checks validate the multi-location fail-fast guard alongside the existing feature-branch build and disposable local Supabase regression suite. The guard prevents a persistent run with zero or multiple distinct configured locations from creating a run or making provider requests. It does not add multi-location replacement support.
 
 PR #99 remains open, draft, and unmerged. No Production migration, Edge Function deployment, Vercel Production deployment, hosted Supabase resource creation, tracking activation, or historical data deletion has occurred. Hosted end-to-end rehearsal remains unavailable under the no-additional-cost constraint.
+
+
+## 2026-11-18: promotion and recomputation source review continued
+
+Reviewed the atomic promotion migration, hardened candidate validator, candidate staging/promotion helpers, replacement audit schema, competitor recomputation coordination, cross-provider Overall patch, and active leaderboard lookup patch.
+
+### Confirmed design properties
+
+- Promotion accepts only completed, unpublished `category` candidates and calls the read-only validator before mutation.
+- The replacement date and location scope are derived from candidate metric rows; the exact project/date/category/provider/location locks are acquired before predecessor preview and deletion.
+- The candidate validator verifies raw-response project/provider/prompt-category ownership, completed-response counts, Malaysia-local metric date, configured tracking location, staged row scope, candidate-owned response references, and project-owned brand references.
+- Predecessors that are shared source runs, cross-scope runs, incomplete/unpublished runs, or referenced by child source runs are rejected rather than partially removed.
+- Successful replacement writes durable audit snapshots without predecessor foreign keys, deletes exact-scope canonical data and predecessor raw responses/run rows inside the same transaction, promotes staged rows, publishes the candidate, and refreshes Overall metrics before commit.
+- Competitor recomputation and replacement promotion coordinate through a project-scoped transaction advisory lock.
+- Cross-provider Overall rebuilding distinguishes provider-specific aggregates from the shared cross-provider pool; active leaderboard selection excludes superseded runs.
+- Candidate staging and promotion helpers treat the database RPC as the sole publication authority.
+
+### Remaining review points
+
+- Complete the remaining pass over all migration patches and application read paths, especially the exact relationship between direct competitor observations, competitor recomputation, and replacement cleanup.
+- Reconcile Production triggers, grants, RLS, deployed function definitions, FK dependencies, and recovery readiness before any release. Production checks remain read-only.
+- Hosted end-to-end rehearsal remains unavailable under the no-additional-cost constraint.
+- No Production migration, Edge Function/Vercel Production deployment, tracking activation, or historical deletion is authorised or performed by this review.
