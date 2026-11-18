@@ -185,3 +185,23 @@ The connected Production migration history still ends at `20261112032011`; none 
 Hosted rehearsal remains unperformed under the no-additional-cost constraint. If an already-existing isolated environment is not available, keep this as an explicit release limitation; do not use Production or an unrelated client project as a test target.
 
 No Production migrations, Edge Function or Vercel Production deployments, tracking activation, historical deletion, Supabase paid resource creation, or Production data changes have occurred.
+
+
+## 11. Read-only advisor triage baseline (2026-11-18)
+
+The latest Supabase advisor checks surfaced baseline warnings. A read-only SQL check confirmed that the seven RLS-enabled/no-policy tables have no `SELECT` grant for `anon` or `authenticated`. Six have a service-role SELECT grant; `prompts_backup_20261101` does not. Therefore the linter result alone does not establish public SELECT exposure. Do not add policies just to silence the advisor.
+
+The advisor reports six anon-executable and seventeen authenticated-executable SECURITY DEFINER functions. Some are application RPCs and some are trigger-oriented functions. Review each function body, grant, and caller intent before modifying privileges. In particular, do not apply a blanket revoke that could break project membership checks, role helpers, reporting RPCs, competitor recomputation, or UI preferences.
+
+Other baseline warnings include two invoker functions with mutable search paths (`site_host(text)` and `alias_match_pattern(text[])`), disabled leaked-password protection, ten unindexed foreign keys, seven RLS init-plan warnings, four multiple-permissive-policy warnings, three tables without primary keys, five unused indexes, and one duplicate index.
+
+No advisor remediation has been applied. These findings are recorded for deliberate security/performance triage and must not be conflated with the replacement branch's own service-role-only candidate staging and promotion controls. The replacement-specific metric-finalization helpers hardened by migration 14 use `search_path=public, pg_temp`.
+
+Reference remediation guidance:
+- [RLS enabled without policies](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy)
+- [Mutable function search path](https://supabase.com/docs/guides/database/database-linter?lint=0011_function_search_path_mutable)
+- [SECURITY DEFINER executable by anon](https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable)
+- [SECURITY DEFINER executable by authenticated](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)
+- [Unindexed foreign keys](https://supabase.com/docs/guides/database/database-linter?lint=0001_unindexed_foreign_keys)
+
+All checks above were read-only. No Production schema, data, grants, RLS policies, functions, Auth settings, or indexes were changed.
