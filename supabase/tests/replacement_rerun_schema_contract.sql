@@ -13,7 +13,9 @@ begin
     'public.validate_tracking_run_candidate(uuid)',
     'public.preview_tracking_run_replacement(uuid)',
     'public.promote_tracking_run_candidate(uuid,uuid)',
-    'public.publish_engine_overall_metrics(uuid,date,text,text,boolean)'
+    'public.publish_engine_overall_metrics(uuid,date,text,text,boolean)',
+    'public.run_tracked_presence(uuid,text,text)',
+    'public.finalize_run_metrics(uuid)'
   ] loop
     if to_regprocedure(fn) is null then
       raise exception 'replacement rerun contract: missing function %', fn;
