@@ -25,7 +25,7 @@ Do not begin a hosted release until all of the following are satisfied:
 - Handler-level mocked lifecycle tests now cover provider failures, entity-extraction failures/retries, raw response persistence, all six candidate staging tables, promotion success/failure, and fail-closed promotion responses. The tests are committed but must pass in CI before any hosted rehearsal.
 - The tracked-brand registry bootstrap write side effect has been removed. Tracking now performs a read-only registry/category-assignment preflight and fails before provider calls or run creation when configuration is incomplete.
 - A fresh read-only audit confirms the live schema, triggers, foreign keys, grants, RLS, function definitions, and migration history still match the assumptions in the implementation. The read-only Production preflight has confirmed the migration history, required columns, and tracking-run foreign keys; the remaining trigger/grant/RLS/function-definition checks are still release preconditions.
-- A current database backup/PITR recovery point is confirmed, and the operational owner is available during the release.
+- Before the first live replacement, an independent backup/export checkpoint has been created and successfully restore-tested, and the operational owner is available during the release. The connected organization is on Supabase Free, so do not assume automatic daily backups or PITR. Follow [the Free-plan backup checklist](./REPLACEMENT_RERUN_FREE_PLAN_BACKUP_CHECKLIST.md): create a local logical export, retain an encrypted off-site copy, and restore it into an isolated local environment. This checkpoint has **not** yet been completed. Until it is verified, the Production replacement gate remains blocked unless the user separately accepts the unrecoverable-predecessor-payload risk.
 - The exact intended pending migration set has been reconciled against the hosted migration history. **Do not run a generic `supabase db push` until this comparison proves it will apply only the reviewed changes.** Stop if any unrelated migration is pending or the migration history is inconsistent.
 - The user explicitly approves the exact Production migrations, Edge Function deployment, and Vercel Production deployment. Historical deletion requires separate explicit approval.
 
@@ -57,7 +57,7 @@ These migrations add candidate staging/audit structures and define or update the
 ### A. Preflight
 
 1. Confirm the release commit SHA and that both CI jobs are green.
-2. Confirm the Production backup/PITR recovery point.
+2. Confirm the completed logical export, encrypted off-site copy, and successful isolated restore test recorded under [the Free-plan backup checklist](./REPLACEMENT_RERUN_FREE_PLAN_BACKUP_CHECKLIST.md). Do not treat the replacement audit table as a backup. Do not assume Free-plan automatic backups or PITR.
 3. Re-run the live read-only schema/function/trigger/FK audit and compare the remote migration history.
 4. Confirm the exact migration list to be applied. Stop on any unexpected pending migration.
 5. If a no-additional-cost hosted sandbox already exists, confirm it is isolated from Production data and credentials. Do not create or pay for one. If none exists, record hosted rehearsal as not performed and keep the Production release blocked unless a separate release decision explicitly accepts that limitation.
@@ -106,7 +106,7 @@ If a deployment or smoke test fails:
 3. If the Vercel application is faulty, roll Vercel back to the previous known-good application deployment. This does not roll back Supabase.
 4. Keep the additive database structures and audit records in place. Do not drop candidate/audit tables or reverse functions destructively after they may have received data.
 5. Diagnose from Edge Function logs, run-stage journals, candidate rows, and replacement audit records. Prefer a forward-fix migration/function release while tracking remains paused.
-6. If canonical data is found to be incorrect, stop and prepare a separate, scope-specific recovery plan from the verified backup/PITR point. Do not delete or restore historical Production rows without explicit approval.
+6. If canonical data is found to be incorrect, stop and prepare a separate, scope-specific recovery plan from the verified independent export/backup checkpoint. Do not delete or restore historical Production rows without explicit approval.
 7. Re-enable tracking only after the corrected code and database contracts pass the required checks.
 
 The pause secret is an operational stop control, not a substitute for database backups or a tested recovery plan.
@@ -157,3 +157,31 @@ The current PR head is `3c6e01faf8c35d0600e277f6a026ecbe15164e24`. GitHub Action
 The `tracking_run_replacements` table is a durable audit trail, **not a backup archive**. It records predecessor/replacement run metadata snapshots and deleted-row counts. The promotion transaction removes predecessor raw `ai_responses` and related derived rows after writing the audit record. Failed promotion transactions roll back atomically; after a successful commit, the audit record alone cannot restore the deleted raw response payloads or derived rows.
 
 Before the first Production replacement, verify and record an independent backup/restore or export checkpoint for the exact replacement scope, or obtain explicit acceptance that predecessor payloads will not be recoverable from the replacement audit. Do not describe the audit table as a rollback mechanism. No Production backup, export, or data modification was performed by preparing this runbook.
+
+
+## 9. Free-plan backup and restore gate (2026-11-18)
+
+The connected Supabase organization reports the **Free** plan. The target project is active/healthy, but no automatic daily backup or PITR recovery point has been verified. No manual export or restore test has been executed as part of this work.
+
+Use [`REPLACEMENT_RERUN_FREE_PLAN_BACKUP_CHECKLIST.md`](./REPLACEMENT_RERUN_FREE_PLAN_BACKUP_CHECKLIST.md) for the no-additional-Supabase-cost procedure. The operator must run the Supabase CLI export locally using the database connection string from the Supabase Dashboard. Never paste credentials or database dumps into ChatGPT, GitHub, or source control. The procedure requires a non-empty roles/schema/data export, SHA-256 manifest, encrypted off-site copy, isolated local restore, and row-count verification for replacement-critical tables.
+
+**Release gate:** Do not perform the first Production replacement until the export and restore test have been verified and recorded, or the user separately accepts that successfully replaced predecessor payloads cannot be recovered from the replacement audit. The audit table stores metadata and deleted-row counts, not raw predecessor payloads.
+
+No paid plan, PITR add-on, hosted branch, or additional Supabase project is authorised or required for this checklist.
+
+## 10. Latest validation checkpoint (2026-11-18)
+
+Latest feature-branch head: `978788980a096e75c24a3d8794703d9a7d393041`.
+
+All three GitHub Actions workflows passed on this documentation-only head:
+- Edge Function Check: run 44231135078.
+- Build Check: run 44231135131.
+- Replacement Rerun Database Smoke Tests: run 44231135102.
+
+The Vercel Preview status check for this head reports success. Preview readiness does not prove backend isolation and does not replace hosted Supabase rehearsal.
+
+The connected Production migration history still ends at `20261112032011`; none of the fourteen replacement migrations has been applied. The read-only Supabase advisors reported security/performance warnings requiring object-specific triage. No remediation was applied. PR #99 remains open, draft, and unmerged, with no human review recorded.
+
+Hosted rehearsal remains unperformed under the no-additional-cost constraint. If an already-existing isolated environment is not available, keep this as an explicit release limitation; do not use Production or an unrelated client project as a test target.
+
+No Production migrations, Edge Function or Vercel Production deployments, tracking activation, historical deletion, Supabase paid resource creation, or Production data changes have occurred.
