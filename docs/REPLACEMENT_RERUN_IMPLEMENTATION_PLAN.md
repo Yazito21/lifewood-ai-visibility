@@ -2600,3 +2600,12 @@ This remains local CI, not a hosted Supabase rehearsal or Production acceptance 
 The Vercel deployment API returned HTTP 403 (forbidden) when attempting to list the Preview deployment for this project/branch. Therefore the Preview status for head `5c68671...` is **unverified** from this checkpoint; do not infer that it succeeded or failed. An earlier Preview success recorded for `978788980...` does not establish deployment status for the newer head.
 
 The CI results do not change the outstanding release gates: manual Free-plan export/off-site copy/isolated restore verification, hosted rehearsal if an already-existing isolated no-cost environment is available, human review, and separate explicit release approval. PR #99 remains draft and unmerged. No Production migration, deployment, tracking activation, or historical deletion was performed.
+
+
+## 13. Preview deployment follow-up (2026-11-18)
+
+A later Vercel GitHub integration notification on PR #99 reported the `lifewood-ai-visibility` Preview deployment as **Ready**, updated at 2026-11-18 05:01:34 UTC, and supplied this Preview URL: https://lifewood-ai-visibility-git-feat-repla-77b243-yazito21s-projects.vercel.app . This resolves the earlier uncertainty that no Preview status was visible through the deployment-list API. However, the notification text does not expose the deployed commit SHA, so verify the Preview deployment's source commit in Vercel before treating it as an exact-head acceptance check.
+
+Earlier Vercel bot notifications on 2026-11-17 also reported deployment attempts blocked by the Free-plan limit of more than 100 deployments per day. The later Ready notification is positive evidence of a Preview deployment, but does not establish that all intervening deployment attempts succeeded. Do not upgrade or incur charges to bypass the limit.
+
+PR #99 remains open, draft, and unmerged. No human review is recorded. All backup, hosted-rehearsal, and explicit Production approval gates remain unchanged.
