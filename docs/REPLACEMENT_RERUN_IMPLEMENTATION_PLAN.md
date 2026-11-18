@@ -2171,3 +2171,18 @@ The database suite uses a disposable local Supabase stack in GitHub Actions. It 
 - [ ] Obtain separate explicit approval before any Production migration, Edge Function deployment, Vercel Production deployment, unpausing tracking, or historical data deletion.
 
 PR #99 remains open and in draft. No Production schema/data changes, hosted Supabase resources, deployments, or historical deletions have been performed.
+
+
+## 2026-11-18: competitor recompute SECURITY DEFINER search-path hardening
+
+Commits:
+- `f99af23a7625db2c064adb1398d3acb5fd780417` — pin `recompute_competitor_metrics` search path to `public, pg_temp`.
+- `bf10a0e462bf03a7ed458631dec7f7bf017fee11` — extend the database schema contract to require the fixed safe search path on the recompute function.
+
+### Review finding
+
+The replacement-coordination migration redefines `public.recompute_competitor_metrics` as a `SECURITY DEFINER` function but its function-level setting used only `search_path = public`. The other replacement RPCs use an explicit `public, pg_temp` path. The recompute function now follows the same explicit path convention.
+
+### Validation
+
+The change is committed to the feature branch. CI was triggered for the latest commits and must pass before this hardening is considered validated. No Production change was made.
