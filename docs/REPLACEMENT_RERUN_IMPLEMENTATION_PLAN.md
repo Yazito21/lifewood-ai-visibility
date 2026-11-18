@@ -2349,3 +2349,17 @@ The dashboard, analytics, citations, competitors, and reports routes were sample
 ### Safety status
 
 No Production writes, migrations, deployments, hosted Supabase resource creation, tracking activation, or historical deletion were performed. PR #99 remains open and draft. Hosted rehearsal remains deferred because no additional Supabase spend is authorised.
+
+
+### Follow-up stale-reference counts (Production, read-only)
+
+A targeted query checked two additional run-reference columns:
+
+- `category_brand_observations_archive`: 3,118 rows; 1,644 have a null `run_id`; 0 non-null references point to a missing `tracking_runs` row.
+- `response_brand_evidence_scoped`: 76,286 rows; 0 null `run_id`; 0 non-null references point to a missing `tracking_runs` row.
+
+These are baseline observations only. The archive table already contains detached historical rows; this implementation does not propose deleting or rewriting them. The scoped evidence table has no orphan references in this snapshot. Their exact relationship to canonical evidence and retention semantics remains part of the pre-release dependency review.
+
+### CI after documentation commit
+
+The implementation-plan documentation was committed as `d57a782d8849a048ae60cdac2684dfc36fd4fb90`. The commit-specific workflow lookup returned no PR-triggered workflow runs at the time of this check, so this documentation-only commit is not being reported as having a fresh CI pass. The previously recorded three green workflows remain valid for the code commit they tested. Recheck PR checks before any merge/release decision.
