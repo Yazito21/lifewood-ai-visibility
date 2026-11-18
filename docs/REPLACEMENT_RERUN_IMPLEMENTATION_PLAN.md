@@ -2296,3 +2296,21 @@ Reviewed the atomic promotion migration, hardened candidate validator, candidate
 - Reconcile Production triggers, grants, RLS, deployed function definitions, FK dependencies, and recovery readiness before any release. Production checks remain read-only.
 - Hosted end-to-end rehearsal remains unavailable under the no-additional-cost constraint.
 - No Production migration, Edge Function/Vercel Production deployment, tracking activation, or historical deletion is authorised or performed by this review.
+
+
+## 2026-11-18: competitor data isolation review completed
+
+The competitor-related behavioural fixtures and recomputation migration were reviewed in detail.
+
+- Replacement cleanup is scoped to canonical citation, response evidence, third-party mention, category observation, visibility and raw-response datasets for the exact replacement scope.
+- The separate legacy `competitors` summary table is not part of replacement cleanup.
+- The separate `direct_competitors` registry and `direct_competitor_observations` are not part of replacement cleanup or the recompute routine.
+- The derived-data behavioural test creates sentinel rows in all three separate competitor datasets, performs a first publication and a replacement, then asserts those sentinel rows remain unchanged.
+- The recompute behavioural test verifies current assigned competitors are reconstructed from active published runs, removed competitor observations are archived, citations/evidence are reconstructed, and a failed recompute job can be explicitly retried.
+- The recompute routine takes the same project-scoped advisory transaction lock as promotion, and reads active published category runs only (`superseded_at is null`). This serializes the broad recompute with replacement and prevents superseded predecessor evidence from being reintroduced.
+
+### Review outcome
+
+No direct-competitor cleanup defect was found in this pass. The separate direct competitor registry/observations are intentionally preserved. Existing competitor observations for the tracked brand/assigned competitors are recomputed from active run evidence; removed competitor observations are archived by the recompute process.
+
+The next gate is a final schema/dependency and release-readiness audit, followed by a refreshed read-only Production inventory. Do not apply migrations or deploy as part of that gate.
