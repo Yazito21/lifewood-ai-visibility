@@ -2232,3 +2232,29 @@ The Supabase security advisor also reports existing database-wide warnings, incl
 - [ ] Obtain separate explicit approval before merging/releasing, applying Production migrations, deploying the Edge Function or Vercel Production, enabling replacement tracking, or deleting historical data.
 
 **Safety status:** No Production schema/data changes, deployments, hosted Supabase resources, or historical deletions were performed. PR #99 remains a draft. This progress entry documents review and read-only checks only.
+
+
+
+## 2026-11-18: fail-fast guard for unsupported multi-location replacement runs
+
+### Finding
+
+The replacement candidate validator in `20261117130000_validate_staged_brand_project_ownership.sql` intentionally requires exactly one configured project tracking location per persistent candidate. The Edge Function, however, can resolve multiple configured locations and previously proceeded to collect provider responses before the database validation rejected the candidate. This could spend provider API credits and leave a completed-but-unpublished candidate.
+
+### Change
+
+- Added `replacement-scope.ts` with a pure preflight validator for the current one-location replacement contract.
+- Added unit tests for one location, duplicate location values, empty configuration, and multiple locations.
+- Updated `visibility-tracking/index.ts` to reject unsupported multi-location persistent runs with HTTP 409 immediately after location resolution, before creating a tracking run or sending provider requests.
+- Sample mode remains unaffected because it does not use the persistent replacement publication path.
+- The guard is intentionally fail-closed. It does not silently select one location or widen the replacement scope.
+
+### Limitation and future work
+
+Multi-location atomic replacement remains unsupported. Projects that require multiple tracking locations must either be run one location at a time after the project configuration supports that workflow, or the replacement schema/validator/promotion transaction must be extended and tested for independently scoped location candidates. This change prevents wasted provider calls; it does not claim multi-location support.
+
+### Validation and release status
+
+- [ ] Edge Function tests and Build Check must pass on the resulting feature-branch commit.
+- [ ] Database smoke tests must remain green.
+- [ ] No Production changes or deployments were made. PR #99 remains a draft; no merge or release approval is implied.
