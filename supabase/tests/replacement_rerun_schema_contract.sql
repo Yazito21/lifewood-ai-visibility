@@ -186,7 +186,8 @@ begin
       'public.validate_tracking_run_candidate(uuid)'::regprocedure,
       'public.preview_tracking_run_replacement(uuid)'::regprocedure,
       'public.promote_tracking_run_candidate(uuid,uuid)'::regprocedure,
-      'public.publish_engine_overall_metrics(uuid,date,text,text,boolean)'::regprocedure
+      'public.publish_engine_overall_metrics(uuid,date,text,text,boolean)'::regprocedure,
+      'public.recompute_competitor_metrics(uuid,date,date)'::regprocedure
     )
     and (not p.prosecdef or p.proconfig is null
          or not exists (select 1 from unnest(p.proconfig) setting
