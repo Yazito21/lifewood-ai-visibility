@@ -2515,3 +2515,45 @@ This matches replacement semantics, but it is an irreversible data-retention dec
 - [ ] Obtain human review and separate explicit approval before merge/release.
 
 PR #99 remains open, draft, and unmerged. No Production migration, deployment, tracking activation, hosted Supabase resource creation, or historical deletion has occurred.
+
+
+## 2026-11-18: Free-plan backup readiness and final PR validation
+
+### Supabase backup position
+
+The connected Supabase organization reports the **Free** plan and the target project is `ACTIVE_HEALTHY`. Free-plan projects do not receive automatic daily database backups. No PITR recovery point, manual logical export, or restore test has been verified for this project.
+
+A no-additional-Supabase-cost procedure has been added at [`docs/REPLACEMENT_RERUN_FREE_PLAN_BACKUP_CHECKLIST.md`](./REPLACEMENT_RERUN_FREE_PLAN_BACKUP_CHECKLIST.md). It describes a local Supabase CLI export of roles, schema, and data, checksum manifest creation, encrypted off-site retention, and an isolated local restore test. The export requires the operator to use the Production connection string locally; credentials and dump contents must not be sent to ChatGPT or committed to GitHub.
+
+**The procedure is documentation only.** No export or restore test was executed by this implementation work. The backup gate remains open until the operator completes the checklist and records a successful restore verification, or separately accepts the irreversible predecessor-payload retention behaviour. Do not upgrade Supabase, enable paid PITR, create a Supabase branch, or create another hosted project for this task.
+
+### Read-only Production advisor findings
+
+Read-only Supabase security and performance advisor checks surfaced warnings requiring deliberate review, including RLS-enabled tables without policies, SECURITY DEFINER functions executable by browser roles, mutable search paths on existing functions, unindexed foreign keys, and RLS policy performance warnings. No advisor remediation was applied. These findings must be mapped to the affected objects and their intended access patterns before any permission or index changes are proposed; blanket policy/grant changes could break existing application behaviour.
+
+The live project remains active/healthy. Its migration history ends at `20261112032011`; none of the fourteen replacement-rerun migrations has been applied to Production. No Production schema, function, or data changes were made.
+
+### Latest branch validation
+
+The latest feature-branch head at this checkpoint is `978788980a096e75c24a3d8794703d9a7d393041`. It contains documentation-only changes after the application-code validation commit `3c6e01faf8c35d0600e277f6a026ecbe15164e24`.
+
+All three GitHub Actions workflows have now completed successfully on the latest documentation head:
+- Edge Function Check: passed (run 44231135078).
+- Build Check: passed (run 44231135131).
+- Replacement Rerun Database Smoke Tests: passed (run 44231135102).
+
+The Vercel Preview status check for the latest head reports success. This is a Preview status only; it does not establish that the Preview is connected to a safe isolated Supabase environment, and it is not Production validation.
+
+PR #99 remains open, draft, and unmerged. It is mergeable according to GitHub metadata, but no human review has been recorded. No hosted Supabase rehearsal has been performed because no additional hosted Supabase spend or project is authorised.
+
+### Remaining release gates
+
+- [ ] Complete the Free-plan logical export, off-site copy, and isolated restore verification described in the backup checklist.
+- [ ] Triage Supabase security/performance advisor warnings against the affected objects; do not apply blanket remediations.
+- [ ] Complete a hosted end-to-end rehearsal only if an already-existing, isolated, no-additional-cost environment is available. Otherwise retain this as an explicit release limitation.
+- [ ] Obtain human review and separate explicit approval before merge or any Production release.
+- [ ] Reconcile the exact fourteen-migration set again immediately before any approved deployment.
+
+The current implementation remains category-scoped. Dashboard batches process categories sequentially; one configured tracking location is supported by the current project schema; full-batch atomicity and multi-location candidate runs are not implemented. Local CI success must not be represented as hosted rehearsal or Production acceptance.
+
+No Production migration, Edge Function deployment, Vercel Production deployment, tracking activation, hosted Supabase resource creation, or historical deletion has occurred.
