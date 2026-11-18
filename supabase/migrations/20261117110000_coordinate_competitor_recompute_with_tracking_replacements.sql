@@ -45,7 +45,7 @@ begin
 
   select sum(t.presence_count), sum(t.response_count) into v_pres, v_resp
   from unnest(v_members, v_member_categories) m(run_id, category)
-  cross join lateral public.run_tracked_presence(m.run_id, m.category) t;
+  cross join lateral public.run_tracked_presence(m.run_id, m.category, p_location) t;
   if coalesce(v_resp, 0) = 0 then return null; end if;
 
   -- Reuse the active aggregate when it already pools exactly these member runs.
@@ -140,7 +140,7 @@ begin
   into v_tracked_pos
   from public.visibility_daily v
   join unnest(v_members, v_member_categories) m(run_id, category) on v.run_id = m.run_id and v.category = m.category
-  cross join lateral public.run_tracked_presence(m.run_id, m.category) t
+  cross join lateral public.run_tracked_presence(m.run_id, m.category, p_location) t
   where v.project_id = p_project_id and v.metric_date = p_metric_date and v.tracking_location = p_location
     and v.llm_provider = p_provider and v.average_position is not null;
   v_pos_rank := case when v_tracked_pos is not null and exists (
@@ -263,7 +263,7 @@ begin
                  where x.source_run_id = fr.id and x.category = tn and x.published_at is not null and x.superseded_at is null) then
         continue;
       end if;
-      select p.presence_count, p.response_count into v_pres, v_resp from public.run_tracked_presence(fr.id, tn) p;
+      select p.presence_count, p.response_count into v_pres, v_resp from public.run_tracked_presence(fr.id, tn, fr.tracking_location) p;
       select v.visibility_score into v_score from public.visibility_daily v
       where v.project_id = p_project_id and v.metric_date = fr.d and v.category = tn
         and v.llm_provider = 'Overall' and v.tracking_location = fr.tracking_location;
