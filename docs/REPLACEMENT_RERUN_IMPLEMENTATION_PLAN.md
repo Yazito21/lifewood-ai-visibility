@@ -2130,3 +2130,44 @@ The implementation and automated regression suite are ready for final review, bu
 6. Historical predecessor cleanup remains a separate decision and requires a read-only inventory review plus separate explicit approval. Do not infer approval from approval to deploy the replacement workflow.
 
 **Safety status:** No Production changes or historical deletion have been performed. The implementation is CI-validated on the feature branch; Production rollout and live operational verification remain outstanding.
+
+
+## 2026-11-18: final validation hardening and location-scoped recomputation correction
+
+Commits:
+- `ddc9e833065370ab2fcfb420ab3ce8af3afe9a29` — restrict the Overall publisher RPC to service role.
+- `a261358007d065fdae13626b588f4a676e8929ef` — add RPC privilege/security contract assertions.
+- `ccb5e69f55e7446e4aac80f53016e0b205a749c2` — pin the Overall publisher search path to `public, pg_temp`.
+- `6e0dd1cf5a5d40c7c400a098b341869adf894b86` — preserve location-scoped presence counts in replacement recomputation functions.
+- `81923fced9db77871d1701dd4ea6d7e3a4048016` — add regression assertions for location-scoped presence calls.
+
+### Findings and changes
+
+- The new `publish_engine_overall_metrics(uuid,date,text,text,boolean)` function is `SECURITY DEFINER`; its direct execution is revoked from `PUBLIC`, `anon`, and `authenticated`, and granted to `service_role` only.
+- The function now pins `search_path` to `public, pg_temp`.
+- A final migration-order review found that the later replacement/recompute migration redefined functions after the earlier location-scoping migration. Those later definitions had reintroduced two-argument `run_tracked_presence` calls in location-aware paths.
+- Updated the replacement/recompute migration to pass the explicit location when rebuilding Overall metrics and when checking legacy full-run slices.
+- Extended the schema contract to assert the location-specific helper calls remain in the final installed function definitions. This guards against future migration-order regressions.
+
+### Validation evidence
+
+For commit `81923fced9db77871d1701dd4ea6d7e3a4048016`, GitHub Actions reports:
+- Replacement Rerun Database Smoke Tests: **passed**.
+- Build Check: **passed**.
+- Edge Function Check: **passed**.
+
+The database suite uses a disposable local Supabase stack in GitHub Actions. It covers migration application, RPC/security contracts, candidate validation, first publication, exact-scope replacement, forced mid-promotion rollback, scope isolation, Overall aggregation/invalidation, run-owned derived-data replacement, source-run foreign-key rejection, concurrent same-scope replacement, and read-only historical inventory queries.
+
+### Current stage and remaining gates
+
+- [x] Candidate staging, validation, and transactional promotion implementation.
+- [x] Edge Function candidate-write routing and deferred publication.
+- [x] Exact-scope replacement, rollback, isolation, and recomputation behavioural tests.
+- [x] RPC privilege and fixed-search-path contract checks.
+- [x] Location-scoped Overall/recompute helper regression correction and test.
+- [ ] Complete the remaining source-level review of all migration patches, Edge Function finalisation/error paths, and application read paths.
+- [ ] Complete read-only Production preflight comparison of migration history, deployed definitions, grants, triggers, RLS, and recovery readiness.
+- [ ] Hosted end-to-end rehearsal remains unavailable under the no-additional-cost Supabase constraint. Local CI is not a substitute for hosted integration verification.
+- [ ] Obtain separate explicit approval before any Production migration, Edge Function deployment, Vercel Production deployment, unpausing tracking, or historical data deletion.
+
+PR #99 remains open and in draft. No Production schema/data changes, hosted Supabase resources, deployments, or historical deletions have been performed.
