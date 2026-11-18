@@ -2255,6 +2255,21 @@ Multi-location atomic replacement remains unsupported. Projects that require mul
 
 ### Validation and release status
 
-- [ ] Edge Function tests and Build Check must pass on the resulting feature-branch commit.
-- [ ] Database smoke tests must remain green.
+- [x] Edge Function tests and Build Check passed on the resulting feature-branch commit.
+- [x] Database smoke tests passed on the resulting feature-branch commit.
 - [ ] No Production changes or deployments were made. PR #99 remains a draft; no merge or release approval is implied.
+
+
+## 2026-11-18: fail-fast guard validation completed
+
+**Validated feature-branch commit:** `d999ad952bb647d14a0596e0b14e4acef063adbc`
+
+GitHub Actions completed successfully for all three required workflows:
+
+- [Edge Function Check](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44224202421) — passed.
+- [Build Check](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44224202483) — passed.
+- [Replacement Rerun Database Smoke Tests](https://github.com/Yazito21/lifewood-ai-visibility/actions/runs/44224202506) — passed.
+
+The latest checks validate the multi-location fail-fast guard alongside the existing feature-branch build and disposable local Supabase regression suite. The guard prevents a persistent run with zero or multiple distinct configured locations from creating a run or making provider requests. It does not add multi-location replacement support.
+
+PR #99 remains open, draft, and unmerged. No Production migration, Edge Function deployment, Vercel Production deployment, hosted Supabase resource creation, tracking activation, or historical data deletion has occurred. Hosted end-to-end rehearsal remains unavailable under the no-additional-cost constraint.
