@@ -3,6 +3,11 @@ import { rankAgainstEligiblePopulation } from "./rank-population.ts";
 import { calculateEntityVisibility } from "./visibility-score.ts";
 import { buildCitationOccurrenceRows } from "./citation-occurrences.ts";
 import { callWithRetry, describeProviderFailures, newRetryState, sleepMs } from "./provider-retry.ts";
+import { stageTrackingCandidateRows } from "./candidate-staging.ts";
+import { isTrackingPaused } from "./tracking-pause.ts";
+import { validateTrackedBrandConfiguration } from "./tracked-brand-config.ts";
+import { promoteCompletedTrackingCandidate } from "./candidate-promotion.ts";
+import { validateReplacementLocationScope } from "./replacement-scope.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -17,26 +22,35 @@ function json(body: unknown, status = 200) {
     headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
-function getConfiguredKey(primary: string, jsonEnv: string, legacy?: string) {
-  const direct = Deno.env.get(primary);
+function getConfiguredKey(
+  primary: string,
+  jsonEnv: string,
+  legacy?: string,
+  getEnv: (name: string) => string | undefined = (name) => Deno.env.get(name),
+) {
+  const direct = getEnv(primary);
   if (direct) return direct;
   if (legacy) {
-    const legacyValue = Deno.env.get(legacy);
+    const legacyValue = getEnv(legacy);
     if (legacyValue) return legacyValue;
   }
-  const raw = Deno.env.get(jsonEnv);
+  const raw = getEnv(jsonEnv);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
-    return parsed?.default ? (Deno.env.get(parsed.default) ?? null) : null;
+    return parsed?.default ? (getEnv(parsed.default) ?? null) : null;
   } catch { return null; }
 }
 function fromB64(value: string) {
   const binary = atob(value);
   return Uint8Array.from(binary, (c) => c.charCodeAt(0));
 }
-async function decrypt(ciphertext: string, aad: string) {
-  const secret = getConfiguredKey("SUPABASE_SECRET_KEY", "SUPABASE_SECRET_KEYS", "SUPABASE_SERVICE_ROLE_KEY");
+async function decrypt(
+  ciphertext: string,
+  aad: string,
+  getEnv: (name: string) => string | undefined = (name) => Deno.env.get(name),
+) {
+  const secret = getConfiguredKey("SUPABASE_SECRET_KEY", "SUPABASE_SECRET_KEYS", "SUPABASE_SERVICE_ROLE_KEY", getEnv);
   if (!secret) throw new Error("SERVER_SECRET_UNAVAILABLE");
   const [ivText, encryptedText] = ciphertext.split(".");
   if (!ivText || !encryptedText) throw new Error("INVALID_STORED_SECRET");
@@ -173,7 +187,7 @@ function searchMarketFor(countryCode: string): SearchMarket | null {
   return { type: "approximate", country, ...(timezoneByCountry[country] ? { timezone: timezoneByCountry[country] } : {}) };
 }
 
-async function callChatGPT(apiKey: string, prompt: string, project: Record<string, unknown>) {
+async function callChatGPT(apiKey: string, prompt: string, project: Record<string, unknown>, fetcher: typeof fetch = fetch) {
   const brand = String(project.brand_name ?? "");
   const description = String(project.brand_description ?? "");
   const domains = Array.isArray(project.brand_domains) ? project.brand_domains.join(", ") : "";
@@ -181,7 +195,7 @@ async function callChatGPT(apiKey: string, prompt: string, project: Record<strin
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 65000);
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetcher("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
       signal: controller.signal,
@@ -241,6 +255,7 @@ async function classifyDirectCompetitors(
   project: Record<string, unknown>,
   category: string,
   candidates: Array<{ domain: string; brand_name: string; page_name: string; citations: number }>,
+  fetcher: typeof fetch = fetch,
 ): Promise<ClassifiedCompetitor[]> {
   if (!candidates.length) return [];
   const unique = [...new Map(candidates.map((item) => [item.domain, item])).values()];
@@ -248,7 +263,7 @@ async function classifyDirectCompetitors(
   for (let i = 0; i < unique.length; i += 100) chunks.push(unique.slice(i, i + 100));
   const accepted: ClassifiedCompetitor[] = [];
   for (const chunk of chunks) {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetcher("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
       body: JSON.stringify({
@@ -299,7 +314,7 @@ async function classifyDirectCompetitors(
   return [...new Map(accepted.map((item) => [item.domain, item])).values()];
 }
 
-async function processPrompts(prompts: Array<Record<string, unknown>>, providers: string[], project: Record<string, unknown>, apiKeys: Record<string,string>, trackingLocations: string[]) {
+async function processPrompts(prompts: Array<Record<string, unknown>>, providers: string[], project: Record<string, unknown>, apiKeys: Record<string,string>, trackingLocations: string[], fetcher: typeof fetch = fetch) {
   const tasks: Array<{ provider: string; prompt: Record<string,unknown>; trackingLocation: string }> = [];
   for (const provider of providers) {
     if (provider !== "chatgpt") throw new Error("Only ChatGPT is enabled in this first tracking stage. Configure ChatGPT in Settings.");
@@ -318,7 +333,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
       const started = new Date().toISOString();
       try {
         const projectForLocation = { ...project, tracking_market: trackingLocation, tracking_location: trackingLocation };
-        const answer = await callWithRetry(() => callChatGPT(apiKeys[provider], String(prompt.prompt ?? ""), projectForLocation), retryState);
+        const answer = await callWithRetry(() => callChatGPT(apiKeys[provider], String(prompt.prompt ?? ""), projectForLocation, fetcher), retryState);
         const text = answer.text;
         if (answer.providerError) {
           results[index] = {
@@ -395,7 +410,7 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
       const extractionController = new AbortController();
       const extractionTimeout = setTimeout(() => extractionController.abort(), 25000);
       try {
-        const response = await fetch("https://api.openai.com/v1/responses", {
+        const response = await fetcher("https://api.openai.com/v1/responses", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKeys.chatgpt },
           signal: extractionController.signal,
@@ -425,7 +440,10 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
             await sleepMs(2000 * (attempt + 1));
             continue;
           }
-          throw new Error(apiMessage);
+          // This is a definitive HTTP response, not a network exception. Stop
+          // here so provider error text cannot accidentally trigger a retry.
+          lastError = new Error(apiMessage);
+          break;
         }
         const output = (Array.isArray(payload?.output) ? payload.output : [])
           .flatMap((item: Record<string, unknown>) => item.type === "message" && Array.isArray(item.content)
@@ -471,13 +489,13 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
         return;
       } catch (error) {
         lastError = error;
-        // A timeout/connection abort is transient. Retry once; smaller batches keep
-        // the retry bounded and reduce the chance of exhausting the Edge Function budget.
-        if (attempt === 0 && (error instanceof DOMException && error.name === "AbortError" ||
-            error instanceof Error && /aborted|timeout|timed out|network|fetch failed/i.test(error.message))) {
-          continue;
-        }
-        if (attempt === 0) continue;
+        // Retry only a transient network/timeout failure, once. HTTP 429/5xx
+        // retries are handled above; auth, validation, malformed JSON, and other
+        // deterministic failures must fail this batch immediately.
+        const transientNetworkFailure = error instanceof DOMException && error.name === "AbortError" ||
+          error instanceof Error && /aborted|timeout|timed out|network|fetch failed/i.test(error.message);
+        if (attempt === 0 && transientNetworkFailure) continue;
+        break;
       } finally {
         clearTimeout(extractionTimeout);
       }
@@ -508,24 +526,45 @@ async function processPrompts(prompts: Array<Record<string, unknown>>, providers
 const MAX_TRACKING_PROMPTS = 50;
 const MIN_PROMPTS_PER_CATEGORY = 5;
 
-Deno.serve(async (req: Request) => {
+export type VisibilityTrackingHandlerDependencies = {
+  getEnv?: (name: string) => string | undefined;
+  fetcher?: typeof fetch;
+  createAdminClient?: typeof createClient;
+};
+
+export function createVisibilityTrackingHandler(
+  dependencies: VisibilityTrackingHandlerDependencies = {},
+) {
+  const getEnv = dependencies.getEnv ?? ((name: string) => Deno.env.get(name));
+  const fetcher = dependencies.fetcher ?? fetch;
+  const createAdminClient = dependencies.createAdminClient ?? createClient;
+
+  return async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  // Emergency stop for tracking writes. This check precedes auth, DB access,
+  // run creation, provider calls, staging and promotion.
+  if (isTrackingPaused(getEnv("TRACKING_REPLACEMENT_PAUSED"))) {
+    return json({
+      error: "TRACKING_TEMPORARILY_PAUSED",
+      message: "Tracking is temporarily paused by an administrator. No run was started.",
+    }, 503);
+  }
   let activeRunId: string | null = null;
   let activeStageKey: string | null = null;
   let activeAdmin: any = null;
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const publicKey = getConfiguredKey("SUPABASE_PUBLISHABLE_KEY", "SUPABASE_PUBLISHABLE_KEYS") ?? Deno.env.get("SUPABASE_ANON_KEY");
-    const adminKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? getConfiguredKey("SUPABASE_SECRET_KEY", "SUPABASE_SECRET_KEYS");
+    const supabaseUrl = getEnv("SUPABASE_URL");
+    const publicKey = getConfiguredKey("SUPABASE_PUBLISHABLE_KEY", "SUPABASE_PUBLISHABLE_KEYS", undefined, getEnv) ?? getEnv("SUPABASE_ANON_KEY");
+    const adminKey = getEnv("SUPABASE_SERVICE_ROLE_KEY") ?? getConfiguredKey("SUPABASE_SECRET_KEY", "SUPABASE_SECRET_KEYS", undefined, getEnv);
     if (!supabaseUrl || !publicKey || !adminKey) return json({ error: "SUPABASE_SERVER_CONFIG_MISSING" }, 500);
     const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
     if (!token) return json({ error: "AUTHORIZATION_TOKEN_MISSING" }, 401);
-    const auth = await fetch(supabaseUrl + "/auth/v1/user", { headers: { apikey: publicKey, Authorization: "Bearer " + token } });
+    const auth = await fetcher(supabaseUrl + "/auth/v1/user", { headers: { apikey: publicKey, Authorization: "Bearer " + token } });
     if (!auth.ok) return json({ error: "AUTH_VALIDATION_FAILED" }, 401);
     const user = await auth.json();
     const userId = user?.id;
     if (!userId) return json({ error: "AUTH_USER_MISSING" }, 401);
-    const admin = createClient(supabaseUrl, adminKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const admin = createAdminClient(supabaseUrl, adminKey, { auth: { persistSession: false, autoRefreshToken: false } });
     activeAdmin = admin;
     const startStage = async (stageKey: string, metadata: Record<string, unknown> = {}) => {
       if (!activeRunId) return;
@@ -541,6 +580,8 @@ Deno.serve(async (req: Request) => {
       if (error) throw new Error("STAGE_JOURNAL_COMPLETE_FAILED: " + error.message);
       if (activeStageKey === stageKey) activeStageKey = null;
     };
+    const stageCandidateRows = (tableKey: string, rows: Array<Record<string, unknown>>) =>
+      stageTrackingCandidateRows(admin, activeRunId, tableKey, rows);
     const body = await req.json();
     // Category-scoped tracking is orchestrated client-side as one request per category.
     // The server validates and processes only that category for each persistent run.
@@ -580,6 +621,15 @@ Deno.serve(async (req: Request) => {
 
     let promptQuery = admin.from("prompts").select("id,prompt_number,prompt,category,language,active").eq("project_id", projectId).eq("active", true).order("prompt_number");
     const selectedCategory = typeof body?.category === "string" ? body.category.trim() : "";
+    // Atomic promotion currently supports category-scoped candidates only.
+    // Reject legacy full-run requests before creating a run or spending provider
+    // tokens; otherwise they would finish as completed_unpublished candidates.
+    if (mode !== "sample" && !selectedCategory) {
+      return json({
+        error: "FULL_RUN_REPLACEMENT_NOT_SUPPORTED",
+        message: "Run tracking one category at a time. Full-run replacement is not yet supported by the atomic publication workflow.",
+      }, 409);
+    }
     if (selectedCategory) promptQuery = promptQuery.eq("category", selectedCategory);
     if (Array.isArray(body?.prompt_ids)) {
       const ids = body.prompt_ids.map(String).filter(Boolean);
@@ -593,6 +643,11 @@ Deno.serve(async (req: Request) => {
     if (promptsError) return json({ error: "PROMPT_LOAD_FAILED" }, 500);
     if (!prompts?.length) return json({ error: "NO_ACTIVE_PROMPTS" }, 400);
     if (mode === "sample" && prompts.length > 25) return json({ error: "SAMPLE_LIMIT_25_PROMPTS" }, 400);
+
+    // Keep validated comparison configuration available to the later evidence stage.
+    // It is loaded and checked before a run is created or any provider is called.
+    let preloadedBrandAssignments: Array<Record<string, unknown>> | null = null;
+    let preloadedBrandDirectory: Array<Record<string, unknown>> | null = null;
 
     // Persistent category runs validate only their selected category. A full request remains supported for backwards compatibility.
     if (mode !== "sample") {
@@ -622,12 +677,43 @@ Deno.serve(async (req: Request) => {
         }, 409);
       }
 
-      // Validate the brand comparison set (one tracked brand, up to 99 competitors) only for categories included in this run.
-      const { data: setupAssignments, error: setupAssignmentError } = await admin.from("category_brand_assignments")
-        .select("category,brand_id,role,include_in_metrics").eq("project_id", projectId).eq("include_in_metrics", true);
-      if (setupAssignmentError) return json({ error: "BRAND_REGISTRY_VALIDATION_FAILED", message: setupAssignmentError.message }, 500);
+      // Load the complete configured comparison set once and validate both the
+      // assignment shape and tracked-brand registry before creating a candidate.
+      const [
+        { data: setupAssignments, error: setupAssignmentError },
+        { data: setupDirectory, error: setupDirectoryError },
+      ] = await Promise.all([
+        admin.from("category_brand_assignments")
+          .select("project_id,category,brand_id,role,aliases,websites,include_in_metrics")
+          .eq("project_id", projectId).eq("include_in_metrics", true),
+        admin.from("brand_registry")
+          .select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_tracked_brand,is_active")
+          .eq("project_id", projectId).eq("is_active", true),
+      ]);
+      if (setupAssignmentError || setupDirectoryError) return json({
+        error: "BRAND_REGISTRY_VALIDATION_FAILED",
+        message: setupAssignmentError?.message ?? setupDirectoryError?.message,
+      }, 500);
+      preloadedBrandAssignments = (setupAssignments ?? []) as Array<Record<string, unknown>>;
+      preloadedBrandDirectory = (setupDirectory ?? []) as Array<Record<string, unknown>>;
+
+      const trackedSetup = validateTrackedBrandConfiguration(
+        String(project.brand_name ?? "Brand"),
+        validatedCategories,
+        preloadedBrandAssignments,
+        preloadedBrandDirectory,
+      );
+      if (!trackedSetup.ok) return json({
+        error: trackedSetup.code,
+        message: trackedSetup.missingCategories.length
+          ? "Complete the tracked-brand registry and assignments in project Settings for: " + trackedSetup.missingCategories.join(", ")
+          : "Complete the tracked-brand registry in project Settings before running tracking.",
+        missing_categories: trackedSetup.missingCategories,
+      }, 409);
+
+      // Validate one tracked brand and at most 99 competitors for each included category.
       const invalidCategories = validatedCategories.map((category) => {
-        const rows = (setupAssignments ?? []).filter((row: Record<string, unknown>) => String(row.category) === category);
+        const rows = preloadedBrandAssignments!.filter((row: Record<string, unknown>) => String(row.category) === category);
         const total = new Set(rows.map((row: Record<string, unknown>) => String(row.brand_id))).size;
         const tracked = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "tracked_brand").map((row: Record<string, unknown>) => String(row.brand_id))).size;
         const competitors = new Set(rows.filter((row: Record<string, unknown>) => String(row.role) === "competitor").map((row: Record<string, unknown>) => String(row.brand_id))).size;
@@ -643,38 +729,38 @@ Deno.serve(async (req: Request) => {
     const { data: secret, error: secretError } = await admin.from("llm_secrets").select("ciphertext").eq("project_id", projectId).eq("provider", "chatgpt").maybeSingle();
     if (secretError) return json({ error: "API_KEY_LOOKUP_FAILED" }, 500);
     if (!secret?.ciphertext) return json({ error: "CHATGPT_API_KEY_NOT_CONFIGURED" }, 400);
-    const apiKey = await decrypt(secret.ciphertext, projectId + ":chatgpt");
+    const apiKey = await decrypt(secret.ciphertext, projectId + ":chatgpt", getEnv);
     const trackingLocationsForRun = resolveTrackingCountryCodes(project as Record<string, unknown>);
     if (!trackingLocationsForRun.length) return json({ error: "NO_VALID_TRACKING_LOCATIONS" }, 400);
+    if (mode !== "sample") {
+      const replacementScope = validateReplacementLocationScope(trackingLocationsForRun);
+      if (!replacementScope.ok) {
+        return json({
+          error: replacementScope.code,
+          message: "Atomic replacement currently supports one tracking location per persistent run. Configure exactly one tracking location before running tracking; no run was created and no provider request was sent.",
+          tracking_locations: replacementScope.locations,
+        }, 409);
+      }
+    }
     let runId: string | null = null;
     let isSuperadminRerun = false;
     const isCategoryScopedRun = Boolean(selectedCategory);
     // Daily replacement scope: project + MYT date + location + category + provider; raw responses remain run-scoped.
     const trackingBatchId = typeof body?.tracking_batch_id === "string" ? body.tracking_batch_id.trim() : "";
-    const newAdminBatchRun = !isSuperadmin && isCategoryScopedRun && !trackingBatchId;
 
     if (mode !== "sample") {
       runId = crypto.randomUUID();
 
       const createTrackingRun = async () => {
-        // Record the previous published run for the exact category/provider/location grain.
-        // This is lineage only: prior rows and raw responses remain immutable/auditable.
-        let supersedesRunId: string | null = null;
-        if (isCategoryScopedRun) {
-          const { data: priorPublished, error: priorError } = await admin.from("tracking_runs")
-            .select("id").eq("project_id", projectId).eq("category", selectedCategory)
-            .eq("provider", "chatgpt").eq("tracking_location", trackingLocationsForRun[0])
-            .not("published_at", "is", null).eq("status", "completed")
-            .order("published_at", { ascending: false }).limit(1).maybeSingle();
-          if (priorError) return json({ error: "PUBLISHED_RUN_LOOKUP_FAILED", message: priorError.message }, 500);
-          supersedesRunId = priorPublished?.id ?? null;
-        }
+        // Do not attach predecessor lineage while the candidate is being created.
+        // The previous implementation selected the latest run without a metric-date
+        // filter, which could link a new day's candidate to an older date. Exact-scope
+        // predecessor discovery and lineage assignment belong in the promotion RPC.
         const { error: runInsertError } = await admin.from("tracking_runs").insert({
           id: runId, project_id: projectId, started_by: userId, provider: "chatgpt", status: "running",
           tracking_location: trackingLocationsForRun[0], category: isCategoryScopedRun ? selectedCategory : null,
-          supersedes_run_id: supersedesRunId,
+          run_kind: isCategoryScopedRun ? "category" : "full",
           total_prompts: prompts.length * trackingLocationsForRun.length, completed_prompts: 0, failed_prompts: 0,
-          ...(newAdminBatchRun ? { error_message: "CATEGORY_BATCH:" + runId } : {}),
         });
         if (runInsertError) return json({ error: "TRACKING_RUN_CREATE_FAILED", message: runInsertError.message }, 500);
         return null;
@@ -768,21 +854,106 @@ Deno.serve(async (req: Request) => {
             message: "A tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
             run_id: claim?.run_id ?? null,
           }, 409);
+          // claim_daily_tracking_run creates the entitlement row. Convert its run
+          // into the first category candidate immediately so publication semantics
+          // and category-scoped replacement are correct.
+          const { error: scopeError } = await admin.from("tracking_runs").update({
+            category: selectedCategory,
+            tracking_location: trackingLocationsForRun[0],
+            run_kind: "category",
+          }).eq("id", runId).eq("project_id", projectId);
+          if (scopeError) return json({ error: "TRACKING_RUN_SCOPE_UPDATE_FAILED", message: scopeError.message }, 500);
         } else {
-          const { data: parentRun, error: parentRunError } = await admin.from("tracking_runs")
-            .select("id,started_by,status,completed_at,error_message").eq("id", trackingBatchId).eq("project_id", projectId).maybeSingle();
-          if (parentRunError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED" }, 500);
-          if (!parentRun || parentRun.started_by !== userId || parentRun.status !== "completed" ||
-              !parentRun.completed_at || parentRun.error_message !== "CATEGORY_BATCH:" + trackingBatchId) {
-            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "The previous category must finish successfully before the next one starts." }, 409);
+          const { data: batch, error: batchError } = await admin.from("tracking_batches")
+            .select("id,project_id,requested_by,status")
+            .eq("id", trackingBatchId).eq("project_id", projectId).maybeSingle();
+          if (batchError) return json({ error: "TRACKING_BATCH_LOOKUP_FAILED", message: batchError.message }, 500);
+          if (!batch || batch.requested_by !== userId || batch.status !== "running") {
+            return json({ error: "TRACKING_BATCH_NOT_AUTHORIZED", message: "This tracking batch is not active or does not belong to this requester." }, 409);
           }
-          const insertionError = await createTrackingRun();
-          if (insertionError) return insertionError;
+          const { data: batchRows, error: batchRowsError } = await admin.from("tracking_batch_categories")
+            .select("category,ordinal,status,tracking_run_id")
+            .eq("batch_id", trackingBatchId)
+            .order("ordinal", { ascending: true });
+          if (batchRowsError) return json({ error: "TRACKING_BATCH_CATEGORIES_LOOKUP_FAILED", message: batchRowsError.message }, 500);
+          const currentRows = (batchRows ?? []).filter((row: Record<string, unknown>) =>
+            String(row.category) === selectedCategory && row.status === "running"
+          );
+          if (currentRows.length !== 1) {
+            return json({ error: "TRACKING_BATCH_CATEGORY_NOT_ACTIVE", message: "The requested category is not the active category in this batch." }, 409);
+          }
+          const currentOrdinal = Number(currentRows[0].ordinal);
+          const priorRows = (batchRows ?? []).filter((row: Record<string, unknown>) => Number(row.ordinal) < currentOrdinal);
+          if (priorRows.some((row: Record<string, unknown>) => row.status !== "completed" || !row.tracking_run_id)) {
+            return json({ error: "TRACKING_BATCH_PREVIOUS_CATEGORY_INCOMPLETE", message: "Every preceding category must complete successfully before the next category starts." }, 409);
+          }
+          if (currentOrdinal === 0) {
+            const todayMYT = new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit",
+            }).format(new Date());
+            const { data: existingClaim, error: existingClaimError } = await admin.from("tracking_run_daily_claims")
+              .select("run_id").eq("project_id", projectId).eq("run_date", todayMYT).maybeSingle();
+            if (existingClaimError) return json({ error: "DAILY_TRACKING_CLAIM_LOOKUP_FAILED", message: existingClaimError.message }, 500);
+
+            if (existingClaim?.run_id) {
+              const { data: priorCandidate, error: priorCandidateError } = await admin.from("tracking_runs")
+                .select("id,project_id,started_by,category,status,published_at,completed_prompts,total_prompts,failed_prompts")
+                .eq("id", existingClaim.run_id).eq("project_id", projectId).maybeSingle();
+              if (priorCandidateError) return json({ error: "DAILY_TRACKING_CLAIM_RUN_LOOKUP_FAILED", message: priorCandidateError.message }, 500);
+              if (!priorCandidate || priorCandidate.started_by !== userId || priorCandidate.category !== selectedCategory ||
+                  priorCandidate.status === "running") {
+                return json({ error: "DAILY_TRACKING_LIMIT_REACHED", message: "Today's tracking entitlement is already owned by another run." }, 409);
+              }
+              if (priorCandidate.published_at) {
+                await admin.from("tracking_batch_categories").update({
+                  status: "completed", tracking_run_id: priorCandidate.id,
+                  completed_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString(),
+                }).eq("batch_id", trackingBatchId).eq("category", selectedCategory);
+                return json({
+                  mode, run_id: priorCandidate.id, status: "completed", published: true,
+                  total_prompts: priorCandidate.total_prompts, completed_prompts: priorCandidate.completed_prompts,
+                  failed_prompts: priorCandidate.failed_prompts, message: "The first category was already published successfully.",
+                });
+              }
+              const insertionError = await createTrackingRun();
+              if (insertionError) return insertionError;
+              const { error: claimUpdateError } = await admin.from("tracking_run_daily_claims").update({
+                run_id: runId, started_by: userId, created_at: new Date().toISOString(),
+              }).eq("project_id", projectId).eq("run_date", todayMYT).eq("run_id", existingClaim.run_id);
+              if (claimUpdateError) {
+                await admin.from("tracking_runs").delete().eq("id", runId);
+                return json({ error: "DAILY_TRACKING_CLAIM_UPDATE_FAILED", message: claimUpdateError.message }, 500);
+              }
+            } else {
+              const { data: claimRows, error: claimError } = await admin.rpc("claim_daily_tracking_run", {
+                p_project_id: projectId,
+                p_started_by: userId,
+                p_run_id: runId,
+                p_total_prompts: prompts.length * trackingLocationsForRun.length,
+              });
+              if (claimError) return json({ error: "DAILY_TRACKING_CLAIM_FAILED", message: "Could not reserve today's tracking run. Please contact an administrator." }, 500);
+              const claim = Array.isArray(claimRows) ? claimRows[0] : claimRows;
+              if (!claim?.claimed) return json({
+                error: "DAILY_TRACKING_LIMIT_REACHED",
+                message: "A tracking run has already been started for this project today (Malaysia Time). Try again after midnight MYT.",
+                run_id: claim?.run_id ?? null,
+              }, 409);
+              const { error: scopeError } = await admin.from("tracking_runs").update({
+                category: selectedCategory,
+                tracking_location: trackingLocationsForRun[0],
+            run_kind: "category",
+              }).eq("id", runId).eq("project_id", projectId);
+              if (scopeError) return json({ error: "TRACKING_RUN_SCOPE_UPDATE_FAILED", message: scopeError.message }, 500);
+            }
+          } else {
+            const insertionError = await createTrackingRun();
+            if (insertionError) return insertionError;
+          }
         }
       }
       activeRunId = runId;
     }
-    const results = await processPrompts(prompts as Array<Record<string,unknown>>, providerIds, project as Record<string,unknown>, { chatgpt: apiKey }, trackingLocationsForRun);
+    const results = await processPrompts(prompts as Array<Record<string,unknown>>, providerIds, project as Record<string,unknown>, { chatgpt: apiKey }, trackingLocationsForRun, fetcher);
     const succeeded = results.filter((r) => r.status === "completed");
     const failed = results.filter((r) => r.status === "failed");
 
@@ -881,47 +1052,11 @@ Deno.serve(async (req: Request) => {
     }).formatToParts(new Date());
     const day = `${dateParts.find((p) => p.type === "year")?.value}-${dateParts.find((p) => p.type === "month")?.value}-${dateParts.find((p) => p.type === "day")?.value}`;
 
-    await startStage("category_cleanup", { category: selectedCategory ?? null, category_scoped: isCategoryScopedRun });
-    // Category-scoped reruns replace same-day aggregate rows for only the selected category.
-    // Raw responses and historical run rows are intentionally retained.
-    if (isSuperadminRerun && isCategoryScopedRun) {
-      // Replace only this category's daily aggregates at every configured location.
-      // Deletion before publication remains a TRK-04 recovery risk.
-      const { data: categoryCompetitors, error: categoryCompetitorsError } = await admin.from("direct_competitors")
-        .select("id").eq("project_id", projectId).eq("category", selectedCategory);
-      if (categoryCompetitorsError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + categoryCompetitorsError.message);
-      const competitorIds = (categoryCompetitors ?? []).map((row: { id: string }) => row.id);
-      for (const trackingLocation of trackingLocationsForRun) {
-        const { error: competitorDeleteError } = await admin.from("competitors").delete()
-          .eq("project_id", projectId).eq("metric_date", day)
-          .eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (competitorDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + competitorDeleteError.message);
-        if (competitorIds.length) {
-          const { error: directObservationDeleteError } = await admin.from("direct_competitor_observations").delete()
-            .eq("project_id", projectId).eq("metric_date", day)
-            .eq("tracking_location", trackingLocation).in("competitor_id", competitorIds);
-          if (directObservationDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + directObservationDeleteError.message);
-        }
-        const { error: categoryObservationDeleteError } = await admin.from("category_brand_observations").delete()
-          .eq("project_id", projectId).eq("metric_date", day)
-          .eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (categoryObservationDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + categoryObservationDeleteError.message);
-        const { error: citationDeleteError } = await admin.from("citations").delete()
-          .eq("project_id", projectId).eq("metric_date", day)
-          .eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (citationDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + citationDeleteError.message);
-        const { error: occurrenceDeleteError } = await admin.from("citation_occurrences").delete()
-          .eq("project_id", projectId).eq("metric_date", day)
-          .eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (occurrenceDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + occurrenceDeleteError.message);
-        const { error: metricsDeleteError } = await admin.from("visibility_daily").delete()
-          .eq("project_id", projectId).eq("metric_date", day)
-          .eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (metricsDeleteError) throw new Error("CATEGORY_RERUN_CLEANUP_FAILED: " + metricsDeleteError.message);
-      }
-    }
+    // Candidate reruns must never delete or modify published date-grain rows.
+    // Cleanup is deferred to the atomic promotion transaction.
+    await startStage("candidate_scope_preparation", { category: selectedCategory ?? null, category_scoped: isCategoryScopedRun });
+    await completeStage("candidate_scope_preparation", { cleanup_deferred_to_promotion: true });
 
-    await completeStage("category_cleanup", { category: selectedCategory ?? null, category_scoped: isCategoryScopedRun });
     const categoryNames = [...new Set(prompts.map((p) => String(p.category ?? "General")))];
     const citationsMap = new Map<string, Record<string,unknown>>();
     const competitorMap = new Map<string, number>();
@@ -940,37 +1075,9 @@ Deno.serve(async (req: Request) => {
       }
     }
     const citationRows = [...citationsMap.values()];
-    if (isSuperadminRerun && !isCategoryScopedRun) {
-      // Preserve historical URLs independently for each location on full reruns.
-      const { data: previousCitations, error: previousCitationError } = await admin.from("citations")
-        .select("category,url,frequency,page_name,brand_name,is_brand_related,prompt_id,tracking_location")
-        .eq("project_id", projectId).eq("metric_date", day)
-        .in("tracking_location", trackingLocationsForRun).eq("llm_provider", "chatgpt");
-      if (previousCitationError) throw new Error("CITATION_HISTORY_READ_FAILED: " + previousCitationError.message);
-      const currentByKey = new Map(citationRows.map((row) => [JSON.stringify([row.tracking_location, row.category, row.url]), row]));
-      for (const previous of previousCitations ?? []) {
-        const previousLocation = String((previous as Record<string, unknown>).tracking_location ?? trackingLocationsForRun[0]);
-        const key = JSON.stringify([previousLocation, String(previous.category), String(previous.url)]);
-        const current = currentByKey.get(key);
-        if (current) {
-          current.frequency = Number(current.frequency ?? 0) + Number(previous.frequency ?? 0);
-        } else {
-          const preserved = {
-            project_id: projectId, metric_date: day, tracking_location: previousLocation,
-            llm_provider: "chatgpt", category: previous.category, url: previous.url,
-            frequency: Number(previous.frequency ?? 0), page_name: previous.page_name,
-            brand_name: previous.brand_name, is_brand_related: previous.is_brand_related,
-            prompt_id: previous.prompt_id,
-          };
-          citationRows.push(preserved);
-          currentByKey.set(key, preserved);
-        }
-      }
-    }
     await startStage("citation_persistence", { citation_rows: citationRows.length });
     if (citationRows.length) {
-      const { error } = await admin.from("citations").upsert(citationRows, { onConflict: "project_id,metric_date,category,llm_provider,url,tracking_location" });
-      if (error) throw new Error("CITATIONS_WRITE_FAILED: " + error.message);
+      await stageCandidateRows("citations", citationRows);
     }
 
 
@@ -981,78 +1088,36 @@ Deno.serve(async (req: Request) => {
     // Canonical, explicitly configured comparison set. No response-discovered
     // entity is automatically promoted to competitor status.
     const classificationFailures: string[] = [];
-    const { data: allAssignments, error: assignmentError } = await admin
-      .from("category_brand_assignments")
-      .select("project_id,category,brand_id,role,aliases,websites,include_in_metrics")
-      .eq("project_id", projectId)
-      .eq("include_in_metrics", true);
-    if (assignmentError) throw new Error("CATEGORY_BRAND_ASSIGNMENT_READ_FAILED: " + assignmentError.message);
+    // Reuse the read-only configuration already validated before run creation.
+    // Sample requests return above and do not need persistent candidate configuration.
+    const allAssignments = preloadedBrandAssignments ?? [];
+    const assignedBrandIds = [...new Set(allAssignments.map((row: Record<string, unknown>) => String(row.brand_id)))];
+    const directoryRows = preloadedBrandDirectory ?? [];
 
-    const assignedBrandIds = [...new Set((allAssignments ?? []).map((row: Record<string, unknown>) => String(row.brand_id)))];
-    let { data: directoryRows, error: directoryError } = await admin
-      .from("brand_registry")
-      .select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_tracked_brand,is_active")
-      .eq("project_id", projectId)
-      .eq("is_active", true);
-    if (directoryError) throw new Error("BRAND_REGISTRY_READ_FAILED: " + directoryError.message);
-
-    // Safety bootstrap for a project created before the registry UI was used.
-    // This adds the tracked identity only; it never guesses competitor brands.
-    const trackedKey = String(project.brand_name ?? "Brand").trim().toLocaleLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "");
-    let trackedRecord = (directoryRows ?? []).find((row: Record<string, unknown>) =>
-      row.is_tracked_brand === true || String(row.normalized_key ?? "") === trackedKey
-    ) as Record<string, unknown> | undefined;
-    if (!trackedRecord) {
-      const { data: trackedRows, error: trackedError } = await admin.from("brand_registry").upsert({
-        project_id: projectId,
-        canonical_name: String(project.brand_name ?? "Brand"),
-        normalized_key: trackedKey,
-        aliases: Array.isArray(project.brand_terms) ? project.brand_terms : [],
-        primary_website: Array.isArray(project.brand_domains) ? String((project.brand_domains as unknown[])[0] ?? "") : null,
-        additional_websites: Array.isArray(project.brand_domains) ? (project.brand_domains as unknown[]).slice(1).map(String) : [],
-        is_tracked_brand: true,
-        is_active: true,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "project_id,normalized_key" }).select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_tracked_brand,is_active");
-      if (trackedError) throw new Error("TRACKED_BRAND_BOOTSTRAP_FAILED: " + trackedError.message);
-      trackedRecord = (trackedRows ?? [])[0] as Record<string, unknown> | undefined;
-      const { data: assignmentRows, error: trackedAssignmentError } = await admin.from("category_brand_assignments").upsert(
-        categoryNames.map((category) => ({
-          project_id: projectId, category, brand_id: String(trackedRecord?.id ?? ""),
-          role: "tracked_brand", aliases: Array.isArray(project.brand_terms) ? project.brand_terms : [],
-          websites: Array.isArray(project.brand_domains) ? (project.brand_domains as unknown[]).map(String) : [],
-          include_in_metrics: true,
-        })), { onConflict: "project_id,category,brand_id" }
-      ).select("project_id");
-      if (trackedAssignmentError) throw new Error("TRACKED_BRAND_ASSIGNMENT_BOOTSTRAP_FAILED: " + trackedAssignmentError.message);
-      void assignmentRows;
-      const refreshed = await admin.from("brand_registry")
-        .select("id,canonical_name,normalized_key,aliases,primary_website,additional_websites,is_tracked_brand,is_active")
-        .eq("project_id", projectId).eq("is_active", true);
-      if (refreshed.error) throw new Error("BRAND_REGISTRY_READ_FAILED: " + refreshed.error.message);
-      directoryRows = refreshed.data ?? [];
-    }
-
-    const directoryById = new Map<string, Record<string, unknown>>(
-      (directoryRows ?? []).map((row: Record<string, unknown>) => [String(row.id), row])
+    // Validate the preconfigured tracked-brand registry. Tracking is read-only
+    // with respect to project configuration: no registry or assignment upserts
+    // are permitted during candidate processing.
+    const trackedConfiguration = validateTrackedBrandConfiguration(
+      String(project.brand_name ?? "Brand"),
+      categoryNames,
+      allAssignments,
+      directoryRows,
     );
-    const validAssignments = (allAssignments ?? []).filter((row: Record<string, unknown>) => directoryById.has(String(row.brand_id)));
-    const fixedTrackedId = String(trackedRecord?.id ?? (directoryRows ?? []).find((row: Record<string, unknown>) => row.is_tracked_brand === true)?.id ?? "");
-    const assignedTrackedCategories = new Set(validAssignments
-      .filter((row: Record<string, unknown>) => String(row.brand_id) === fixedTrackedId && String(row.role) === "tracked_brand")
-      .map((row: Record<string, unknown>) => String(row.category)));
-    const missingTrackedCategories = categoryNames.filter((category) => !assignedTrackedCategories.has(category));
-    if (missingTrackedCategories.length && fixedTrackedId) {
-      const { error: trackedAssignmentError } = await admin.from("category_brand_assignments").upsert(
-        missingTrackedCategories.map((category) => ({
-          project_id: projectId, category, brand_id: fixedTrackedId, role: "tracked_brand",
-          aliases: Array.isArray(project.brand_terms) ? project.brand_terms : [],
-          websites: Array.isArray(project.brand_domains) ? (project.brand_domains as unknown[]).map(String) : [],
-          include_in_metrics: true,
-        })), { onConflict: "project_id,category,brand_id" }
+    if (!trackedConfiguration.ok) {
+      throw new Error(
+        trackedConfiguration.code + ": " +
+        (trackedConfiguration.missingCategories.length
+          ? "Complete the tracked-brand registry and assignments in project Settings for: " +
+            trackedConfiguration.missingCategories.join(", ")
+          : "Complete the tracked-brand registry in project Settings."),
       );
-      if (trackedAssignmentError) throw new Error("TRACKED_BRAND_ASSIGNMENT_BOOTSTRAP_FAILED: " + trackedAssignmentError.message);
     }
+    const {
+      trackedRecord,
+      fixedTrackedId,
+      directoryById,
+      validAssignments,
+    } = trackedConfiguration;
 
     type FixedBrandEntity = { id: string; key: string; domain: string; website: string; websites: string[]; brand_name: string; aliases: string[] };
     function siteHost(value: string) { return normalizedHostLabel(value).replace(/^www\./, "").toLocaleLowerCase(); }
@@ -1237,26 +1302,8 @@ Deno.serve(async (req: Request) => {
         });
       }
     }
-    if (isSuperadminRerun && isCategoryScopedRun) {
-      // Remove only this category's derived evidence and mention aggregates before replacing them.
-      const { data: selectedCategoryResponses, error: selectedCategoryResponsesError } = await admin.from("ai_responses")
-        .select("id").eq("project_id", projectId).eq("run_id", runId).eq("tracking_location", trackingLocationsForRun[0]);
-      if (selectedCategoryResponsesError) throw new Error("CATEGORY_RERUN_RESPONSE_LOOKUP_FAILED: " + selectedCategoryResponsesError.message);
-      const selectedResponseIds = (selectedCategoryResponses ?? []).map((row: Record<string, unknown>) => String(row.id)).filter(Boolean);
-      if (selectedResponseIds.length) {
-        for (let offset = 0; offset < selectedResponseIds.length; offset += 500) {
-          const responseIds = selectedResponseIds.slice(offset, offset + 500);
-          const { error: oldEvidenceDeleteError } = await admin.from("response_brand_evidence").delete()
-            .in("response_id", responseIds).eq("category", selectedCategory);
-          if (oldEvidenceDeleteError) throw new Error("CATEGORY_RERUN_EVIDENCE_CLEANUP_FAILED: " + oldEvidenceDeleteError.message);
-        }
-      }
-      for (const trackingLocation of trackingLocationsForRun) {
-        const { error: thirdPartyDeleteError } = await admin.from("third_party_mentions").delete()
-          .eq("project_id", projectId).eq("metric_date", day).eq("tracking_location", trackingLocation).eq("category", selectedCategory);
-        if (thirdPartyDeleteError) throw new Error("CATEGORY_RERUN_MENTIONS_CLEANUP_FAILED: " + thirdPartyDeleteError.message);
-      }
-    }
+    // Candidate evidence and mention rows are isolated by run_id and staged;
+    // published evidence is left untouched until atomic promotion.
 
     // Include brand classification and evidence generation in this journaled stage.
     // Counts are recorded at completion once the final row sets are known.
@@ -1292,25 +1339,16 @@ Deno.serve(async (req: Request) => {
 
     for (let offset = 0; offset < citationOccurrenceRows.length; offset += 500) {
       const batch = citationOccurrenceRows.slice(offset, offset + 500);
-      const { error: citationOccurrenceError } = await admin.from("citation_occurrences").upsert(batch, {
-        onConflict: "response_id,entity_id,canonical_url",
-      });
-      if (citationOccurrenceError) throw new Error("CITATION_OCCURRENCE_WRITE_FAILED: " + citationOccurrenceError.message);
+      await stageCandidateRows("citation_occurrences", batch);
     }
 
     for (let offset = 0; offset < uniqueEvidenceRows.length; offset += 500) {
       const batch = uniqueEvidenceRows.slice(offset, offset + 500);
-      const { error: evidenceWriteError } = await admin.from("response_brand_evidence").upsert(batch, {
-        onConflict: "response_id,brand_id,category,match_source,matched_value",
-      });
-      if (evidenceWriteError) throw new Error("RESPONSE_BRAND_EVIDENCE_WRITE_FAILED: " + evidenceWriteError.message);
+      await stageCandidateRows("response_brand_evidence", batch);
     }
     for (let offset = 0; offset < uniqueThirdPartyRows.length; offset += 500) {
       const batch = uniqueThirdPartyRows.slice(offset, offset + 500);
-      const { error: thirdPartyWriteError } = await admin.from("third_party_mentions").upsert(batch, {
-        onConflict: "project_id,response_id,canonical_url,source_type,category,tracking_location",
-      });
-      if (thirdPartyWriteError) throw new Error("THIRD_PARTY_MENTIONS_WRITE_FAILED: " + thirdPartyWriteError.message);
+      await stageCandidateRows("third_party_mentions", batch);
     }
     await completeStage("evidence_and_mentions_persistence", { evidence_rows: uniqueEvidenceRows.length, mention_rows: uniqueThirdPartyRows.length });
     const brandName = String(project.brand_name ?? "Brand");
@@ -1433,18 +1471,17 @@ Deno.serve(async (req: Request) => {
           (category !== "Overall" && isCategoryScopedRun ? r.category === category : category === "Overall" || r.category === category)
         );
       const { metrics, trackedResponseCount, competitorPresence, competitorAveragePosition } = analyzeSubset(subset, category);
-      const { data: citationCountRows, error: citationCountError } = await admin.rpc("get_scoped_citation_occurrence_counts", {
-        p_project_id: projectId,
-        p_start_date: day,
-        p_end_date: day,
-        p_category: category === "Overall" ? null : category,
-        p_engines: ["chatgpt"],
-        p_tracking_location: trackingLocation,
-      });
-      if (citationCountError) throw new Error("CITATION_OCCURRENCE_AGGREGATE_FAILED: " + citationCountError.message);
-      const citationCountsByEntity = new Map<string, number>((citationCountRows ?? []).map((row: Record<string, unknown>) =>
-        [String(row.entity_id), Number(row.citation_occurrences ?? 0)]
-      ));
+      // Count citations from this candidate's own occurrence rows. Querying the
+      // canonical table here would read the previous published run, not staged rows.
+      const subsetResponseIds = new Set(subset.map((result) =>
+        responseIdByKey.get(String(result.prompt_id) + "|" + String(result.tracking_location ?? trackingLocationsForRun[0])) ?? ""
+      ).filter(Boolean));
+      const citationCountsByEntity = new Map<string, number>();
+      for (const occurrence of citationOccurrenceRows) {
+        if (!subsetResponseIds.has(String(occurrence.response_id))) continue;
+        const entityId = String(occurrence.entity_id);
+        citationCountsByEntity.set(entityId, (citationCountsByEntity.get(entityId) ?? 0) + 1);
+      }
       const observations = (entitiesByCategory.get(category) ?? []).map((entity) => {
         const entityMentions = Number(competitorPresence[entity.key] ?? 0);
         const citations = citationCountsByEntity.get(entity.id) ?? 0;
@@ -1458,21 +1495,14 @@ Deno.serve(async (req: Request) => {
         };
       });
       if (observations.length) {
-        const { error: observationError } = await admin.from("category_brand_observations").upsert(observations, {
-          onConflict: "project_id,brand_id,category,metric_date,tracking_location,llm_provider",
-        });
-        if (observationError) throw new Error("CATEGORY_BRAND_OBSERVATION_WRITE_FAILED: " + observationError.message);
+        await stageCandidateRows("category_brand_observations", observations);
       }
       const row = {
         project_id: projectId, metric_date: day, tracking_location: trackingLocation, category, llm_provider: "Overall", run_id: runId,
         ...metrics,
         citation_count: citationCountsByEntity.get(fixedTrackedId) ?? 0,
       };
-      const { error } = await admin.from("visibility_daily").upsert(row, { onConflict: "project_id,metric_date,category,llm_provider,tracking_location" });
-      if (error) throw new Error("METRICS_WRITE_FAILED for " + category + ": " + error.message);
-      const providerRow = { ...row, llm_provider: "chatgpt" };
-      const { error: providerError } = await admin.from("visibility_daily").upsert(providerRow, { onConflict: "project_id,metric_date,category,llm_provider,tracking_location" });
-      if (providerError) throw new Error("PROVIDER_METRICS_WRITE_FAILED for " + category + ": " + providerError.message);
+      await stageCandidateRows("visibility_daily", [row, { ...row, llm_provider: "chatgpt" }]);
       }
     }
 
@@ -1498,7 +1528,9 @@ Deno.serve(async (req: Request) => {
       completed_at: finalizedAt,
       // Only a fully successful run is a published canonical candidate. Partial
       // runs retain their raw data and diagnostics but do not enter lineage.
-      published_at: status === "completed" ? finalizedAt : null,
+      // Candidate runs are not published here. The promotion RPC will publish
+      // only after validating and atomically replacing the exact date scope.
+      published_at: null,
     }).eq("id", runId);
     if (runStatusWriteError) throw new Error("TRACKING_RUN_STATUS_WRITE_FAILED: " + runStatusWriteError.message);
     if (status !== "completed") {
@@ -1508,12 +1540,30 @@ Deno.serve(async (req: Request) => {
         message: runIssues.join("; ") || "The category did not complete successfully.",
       });
     }
+
+    // A successful candidate becomes canonical only through the atomic promotion RPC.
+    // If promotion fails, retain this completed unpublished candidate for diagnosis
+    // and leave the currently published dataset untouched.
+    const promotionResult = await promoteCompletedTrackingCandidate(admin, runId, userId, status);
+    if (!promotionResult.published) {
+      return json({
+        error: "CANDIDATE_PROMOTION_FAILED",
+        run_id: runId,
+        status: "completed_unpublished",
+        message: promotionResult.skipped
+          ? "The candidate was not complete and was not submitted for publication."
+          : promotionResult.message,
+      }, 500);
+    }
+    const promotion = promotionResult.promotion;
+
     return json({
-      mode, run_id: runId, status, total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
+      mode, run_id: runId, status, published: true, promotion,
+      total_prompts: results.length, completed_prompts: succeeded.length, failed_prompts: failed.length,
       analysis_failures: extractionFailures,
       classification_failures: classificationFailures,
       visibility_score: succeeded.length ? Math.round(succeeded.filter((r) => r.brand_mentioned).length / succeeded.length * 1000) / 10 : 0,
-      message: extractionFailures || classificationFailures.length ? "Tracking completed with analysis/classification failures; inspect the run before using derived metrics." : "ChatGPT tracking run finished.",
+      message: "ChatGPT tracking run finished and its replacement was published successfully.",
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1537,4 +1587,9 @@ Deno.serve(async (req: Request) => {
     }
     return json({ error: message || "Unexpected tracking error." }, 500);
   }
-});
+  };
+}
+
+if (import.meta.main) {
+  Deno.serve(createVisibilityTrackingHandler());
+}

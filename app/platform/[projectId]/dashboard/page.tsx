@@ -141,6 +141,9 @@ export default function DashboardPage() {
         .select("*").eq("batch_id", batchId).order("ordinal");
       if (readCategoriesError || !batchCategories?.length) throw new Error(readCategoriesError?.message || "No saved batch categories found.");
       const orderedCategories = batchCategories as Array<{id:string;category:string;status:string;tracking_run_id:string|null;ordinal:number}>;
+      await supabase.from("tracking_batches").update({
+        status:"running",last_error:null,completed_at:null,updated_at:new Date().toISOString(),
+      }).eq("id",batchId);
       for (const item of orderedCategories) {
         const category = item.category;
         if (item.status === "completed") {
@@ -157,21 +160,26 @@ export default function DashboardPage() {
             project_id: projectId,
             providers: ["chatgpt"],
             category,
-            ...(!isSuperadmin && item.tracking_run_id ? { tracking_batch_id: item.tracking_run_id } : {}),
+            ...(!isSuperadmin && batchId ? { tracking_batch_id: batchId } : {}),
           },
         });
         if (error) {
           let message = error.message;
+          let failedRunId = data?.run_id ?? null;
           if (error.context instanceof Response) {
-            try { const body = await error.context.clone().json(); message = body?.message || body?.error || message; } catch { /* use SDK message */ }
+            try {
+              const body = await error.context.clone().json();
+              message = body?.message || body?.error || message;
+              failedRunId = body?.run_id ?? failedRunId;
+            } catch { /* use SDK message */ }
           }
-          await supabase.from("tracking_batch_categories").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
+          await supabase.from("tracking_batch_categories").update({status:"failed",tracking_run_id:failedRunId,last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
           await supabase.from("tracking_batches").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",batchId);
           throw new Error(category + ": " + message);
         }
         if (data?.error) {
           const message = String(data.message || data.error);
-          await supabase.from("tracking_batch_categories").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
+          await supabase.from("tracking_batch_categories").update({status:"failed",tracking_run_id:data?.run_id ?? null,last_error:message,updated_at:new Date().toISOString()}).eq("id",item.id);
           await supabase.from("tracking_batches").update({status:"failed",last_error:message,updated_at:new Date().toISOString()}).eq("id",batchId);
           throw new Error(category + ": " + message);
         }

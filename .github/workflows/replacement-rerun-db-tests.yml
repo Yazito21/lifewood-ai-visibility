@@ -1,0 +1,192 @@
+name: Replacement Rerun Database Smoke Tests
+
+on:
+  push:
+    branches: [feat/replace-rerun-data]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  replacement-rerun-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.62.10
+
+      - name: Start isolated local Supabase stack
+        run: supabase start -x studio,edge-runtime,logflare,vector,supavisor
+
+      - name: Assemble schema-only baseline fixture
+        run: |
+          cat \
+            supabase/tests/fixtures/schema_baseline/part-01.sql \
+            supabase/tests/fixtures/schema_baseline/part-02.sql \
+            supabase/tests/fixtures/schema_baseline/part-03.sql \
+            supabase/tests/fixtures/schema_baseline/part-04.sql \
+            supabase/tests/fixtures/schema_baseline/part-05.sql \
+            > /tmp/lifewood-schema-baseline.sql
+          test -s /tmp/lifewood-schema-baseline.sql
+          ! grep -Eq '^COPY |^INSERT INTO ' /tmp/lifewood-schema-baseline.sql
+
+      - name: Restore schema-only baseline into disposable local database
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f /tmp/lifewood-schema-baseline.sql
+
+      - name: Seed legacy run kind before terminology migration
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_legacy_run_kind_migration_fixture.sql
+
+      - name: Apply replacement-rerun migrations only
+        run: |
+          set -euo pipefail
+          DB_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+          for migration in \
+            supabase/migrations/20261113090000_add_tracking_run_candidate_staging.sql \
+            supabase/migrations/20261113100000_finalize_metrics_per_tracking_location.sql \
+            supabase/migrations/20261113110000_add_tracking_run_replacement_audit.sql \
+            supabase/migrations/20261113120000_add_tracking_run_candidate_validation.sql \
+            supabase/migrations/20261113130000_add_tracking_run_replacement_preview.sql \
+            supabase/migrations/20261113140000_use_location_scoped_presence_helpers.sql \
+            supabase/migrations/20261113150000_promote_tracking_run_candidate_atomically.sql \
+            supabase/migrations/20261117110000_coordinate_competitor_recompute_with_tracking_replacements.sql \
+            supabase/migrations/20261117120000_harden_candidate_raw_response_scope_validation.sql \
+            supabase/migrations/20261117130000_validate_staged_brand_project_ownership.sql \
+            supabase/migrations/20261117140000_rebuild_cross_provider_overall_after_replacement.sql \
+            supabase/migrations/20261117150000_exclude_superseded_runs_from_leaderboard_lookup.sql \
+            supabase/migrations/20261117160000_standardise_category_run_kind.sql \
+            supabase/migrations/20261118100000_harden_metric_finalization_search_path.sql
+          do
+            echo "Applying $migration"
+            psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
+          done
+
+      - name: Verify replacement RPCs, staging protections and grants
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_schema_contract.sql
+
+      - name: Verify competitor recompute and replacement coordination contract
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_competitor_recompute_contract.sql
+
+      - name: Run competitor recomputation historical compatibility behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_competitor_recompute_behaviour.sql
+
+      - name: Run synthetic candidate validation behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_candidate_validation_behaviour.sql
+
+      - name: Run first-publication promotion behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_first_publication_behaviour.sql
+
+      - name: Run exact-scope replacement behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_replacement_behaviour.sql
+
+      - name: Run forced mid-promotion rollback behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_rollback_behaviour.sql
+
+      - name: Run exact-scope isolation behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_scope_isolation_behaviour.sql
+
+      - name: Run Overall aggregation rebuild and invalidation behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_overall_behaviour.sql
+
+      - name: Run run-owned derived-data replacement behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_derived_data_behaviour.sql
+
+      - name: Run source-run foreign-key rejection behavioural tests
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/tests/replacement_rerun_source_fk_behaviour.sql
+
+      - name: Run concurrent same-scope replacement behavioural test
+        env:
+          DB_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+        run: bash supabase/tests/replacement_rerun_concurrency_behaviour.sh
+
+      - name: Validate read-only historical replacement inventory query
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/diagnostics/replacement_rerun_historical_inventory.sql
+
+      - name: Validate read-only tracking-run foreign-key inventory query
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/diagnostics/replacement_rerun_fk_reference_inventory.sql
+
+      - name: Validate read-only per-run dependency inventory query
+        run: |
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" \
+            -v ON_ERROR_STOP=1 \
+            -f supabase/diagnostics/replacement_rerun_run_dependency_detail.sql
+
+      - name: Stop local Supabase stack
+        if: always()
+        run: supabase stop --no-backup
+
+  app-edge-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install application dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+
+      - name: Type-check the application
+        run: npx tsc --noEmit
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check visibility tracking Edge Function
+        run: deno check supabase/functions/visibility-tracking/index.ts
+
+      - name: Run visibility tracking Edge Function unit tests
+        run: deno test --allow-net supabase/functions/visibility-tracking/*.test.ts
