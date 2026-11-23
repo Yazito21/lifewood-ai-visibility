@@ -8,6 +8,7 @@ import {
   Menu, Settings, ShieldCheck, UsersRound, X, FlaskConical, MessageSquareText, Trophy, FileText,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { LanguageToggle } from "@/components/language-provider";
 
 export type ProjectContext = {
   id: string;
