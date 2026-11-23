@@ -809,3 +809,58 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
   -webkit-text-fill-color: #133020 !important;
   opacity: 1 !important;
 }
+
+
+/* Explicitly isolate header toggle foregrounds from inherited dark-theme button utilities. */
+html.dark body button.platform-header-toggle-option,
+html.dark body button.platform-header-toggle-option:visited,
+html.dark body button.platform-header-toggle-option:hover {
+  color: #f7fbf8 !important;
+  -webkit-text-fill-color: #f7fbf8 !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+html.dark body button.platform-header-toggle-option.is-selected,
+html.dark body button.platform-header-toggle-option.is-selected:hover {
+  color: #123d2d !important;
+  -webkit-text-fill-color: #123d2d !important;
+}
+
+/* Login page dark palette: keep every form control and label readable. */
+.dark .login-form-card {
+  background: #173227 !important;
+  border-color: #355b47 !important;
+  color: #edf7f1 !important;
+}
+.dark .login-form-card .login-label {
+  color: #edf7f1 !important;
+}
+.dark .login-form-card .login-link {
+  color: #91dfb8 !important;
+}
+.dark .login-form-card .login-input {
+  background: #10271e !important;
+  border-color: #426653 !important;
+  color: #f4faf6 !important;
+  -webkit-text-fill-color: #f4faf6 !important;
+}
+.dark .login-form-card .login-input::placeholder {
+  color: #a9beb2 !important;
+  -webkit-text-fill-color: #a9beb2 !important;
+  opacity: 1 !important;
+}
+.dark .login-form-card .login-input:focus {
+  border-color: #73c9a1 !important;
+  box-shadow: 0 0 0 3px rgb(115 201 161 / 18%) !important;
+}
+.dark .login-form-card .login-password-toggle {
+  color: #c4d8cc !important;
+}
+.dark .login-form-card .login-auth-note {
+  color: #b9cfc2 !important;
+}
+.dark .login-form-card [role="alert"] {
+  background: #432824 !important;
+  border-color: #87534d !important;
+  color: #ffd6d1 !important;
+}
