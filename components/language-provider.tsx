@@ -1,11 +1,16 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { Moon, Sun } from "lucide-react";
 
 export type PlatformLanguage = "en" | "zh";
 type LanguageContextValue = { language: PlatformLanguage; setLanguage: (language: PlatformLanguage) => void };
 const LanguageContext = createContext<LanguageContextValue | null>(null);
+export type PlatformTheme = "light" | "dark";
+type ThemeContextValue = { theme: PlatformTheme; setTheme: (theme: PlatformTheme) => void };
+const ThemeContext = createContext<ThemeContextValue | null>(null);
 const STORAGE_KEY = "lifewood-platform-language";
+const THEME_STORAGE_KEY = "lifewood-platform-theme";
 
 // UI-only translations. Brand names, user-entered content, prompts, URLs and tracking data are deliberately untouched.
 const zh: Record<string, string> = {
@@ -1851,6 +1856,7 @@ Object.assign(zh, {
 Object.assign(zh, {
   "Set up and look after your project here. Project Settings holds the brand details, competitors and tracking location, AI Answer Engine Connections holds the API keys for each engine, Platform Settings changes how the platform looks, and Account Settings is for your own login details. Change what you need, then press the save button in that section.": "您可以在此设置和管理项目。「项目设置」用于管理品牌资料、竞争对手及追踪地区；「AI 回答引擎连接」用于管理各引擎的 API 密钥；「平台设置」用于调整平台外观；「账户设置」用于管理您的登录资料。完成修改后，请点击相应部分的保存按钮。",
   "Each card shows one category’s most recent rank against competitors, its visibility score, and how both have changed since the start of the selected period. The previous rank and score are the values from the first tracked day in that period. Rank 1 is the best position, and an up arrow always means an improvement. The Overall card combines all categories.": "每张卡片显示一个类别最近一次相对于竞争对手的排名、可见度得分，以及这两项指标自所选时间范围开始以来的变化。上一次排名和得分取自该时间范围内第一个有追踪记录的日期。排名第 1 为最佳位置，向上箭头始终代表表现改善。「总体」卡片汇总所有类别的数据。",
+  "Each card shows one category's most recent rank against competitors, its visibility score, and how both have changed since the start of the selected period. The previous rank and score are the values from the first tracked day in that period. Rank 1 is the best position, and an up arrow always means an improvement. The Overall card combines all categories.": "每张卡片显示一个类别最近一次相对于竞争对手的排名、可见度得分，以及这两项指标自所选时间范围开始以来的变化。上一次排名和得分取自该时间范围内第一个有追踪记录的日期。排名第 1 为最佳位置，向上箭头始终代表表现改善。「总体」卡片汇总所有类别的数据。",
   "See which web pages AI answer engines point to when they answer your tracked prompts. Choose a period with the buttons, then browse the tables below, which list pages from your brand, every cited page, and outside websites that were mentioned. Each table has a search box, and you can expand it to see every row.": "查看 AI 回答引擎在回答您所追踪的提示词时引用了哪些网页。使用时间范围按钮进行筛选，然后浏览下方表格，其中列出您品牌的网站页面、所有被引用的页面，以及回答中提及的外部网站。每张表格都设有搜索框，您也可以展开表格以查看所有记录。",
   "See how ": "查看 ",
   " stacks up against its direct competitors. Use the Period, Category and Engines filters to choose what to compare, and the leaderboard updates to match. You can search for a brand by name and expand the table to see every competitor. Only brands with valid results for your selection are ranked, and ties are broken by visibility, then citations, then name. The arrow beside each rank shows how it moved since the previous period, with green for an improvement and red for a drop.": "与其直接竞争对手相比的表现。使用「时间范围」、「类别」和「AI 引擎」筛选条件选择比较范围，排行榜会自动更新。您可以按品牌名称搜索，也可以展开表格查看所有竞争对手。只有在所选范围内具有有效结果的品牌才会参与排名；若得分相同，则依次按可见度、引用次数和名称排序。每个排名旁的箭头表示与上一时间段相比的变化，绿色代表提升，红色代表下降。",
@@ -2081,16 +2087,23 @@ function translateDocument(language: PlatformLanguage) {
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [language, setLanguageState] = useState<PlatformLanguage>("en");
+  const [theme, setThemeState] = useState<PlatformTheme>("light");
   const setLanguage = (next: PlatformLanguage) => {
     setLanguageState(next);
     try { window.localStorage.setItem(STORAGE_KEY, next); } catch { /* storage may be unavailable */ }
+  };
+  const setTheme = (next: PlatformTheme) => {
+    setThemeState(next);
+    try { window.localStorage.setItem(THEME_STORAGE_KEY, next); } catch { /* storage may be unavailable */ }
   };
 
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored === "en" || stored === "zh") setLanguageState(stored);
-    } catch { /* default to English */ }
+      const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (storedTheme === "light" || storedTheme === "dark") setThemeState(storedTheme);
+    } catch { /* use default preferences */ }
   }, []);
 
   useEffect(() => {
@@ -2102,14 +2115,50 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     return () => observer.disconnect();
   }, [language]);
 
-  const value = useMemo(() => ({ language, setLanguage }), [language]);
-  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+  }, [theme]);
+
+  const languageValue = useMemo(() => ({ language, setLanguage }), [language]);
+  const themeValue = useMemo(() => ({ theme, setTheme }), [theme]);
+  return <LanguageContext.Provider value={languageValue}><ThemeContext.Provider value={themeValue}>{children}</ThemeContext.Provider></LanguageContext.Provider>;
 }
 
 export function usePlatformLanguage() {
   const value = useContext(LanguageContext);
   if (!value) throw new Error("usePlatformLanguage must be used within LanguageProvider");
   return value;
+}
+
+
+export function usePlatformTheme() {
+  const value = useContext(ThemeContext);
+  if (!value) throw new Error("usePlatformTheme must be used within LanguageProvider");
+  return value;
+}
+
+export function ThemeToggle() {
+  const { theme, setTheme } = usePlatformTheme();
+  const { language } = usePlatformLanguage();
+  const labels = language === "zh" ? ["浅色", "深色"] : ["Light", "Dark"];
+  return (
+    <div role="group" aria-label={language === "zh" ? "外观主题" : "Appearance theme"} data-no-translate="true"
+      className="relative inline-flex h-[30px] w-[104px] shrink-0 items-center rounded-full border border-white/25 bg-white/10 p-[3px] text-[10px] font-semibold shadow-inner">
+      <span aria-hidden="true" className={`pointer-events-none absolute inset-y-[3px] left-[3px] w-[calc(50%-3px)] rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${theme === "dark" ? "translate-x-full" : "translate-x-0"}`} />
+      <button type="button" onClick={() => setTheme("light")} aria-pressed={theme === "light"}
+        aria-label={language === "zh" ? "切换到浅色模式" : "Switch to light mode"}
+        className={`relative z-10 flex h-full flex-1 items-center justify-center gap-1 rounded-full px-1 transition-colors ${theme === "light" ? "text-[var(--lw-dark-serpent)]" : "text-white/80 hover:text-white"}`}>
+        <Sun size={12} />{labels[0]}
+      </button>
+      <button type="button" onClick={() => setTheme("dark")} aria-pressed={theme === "dark"}
+        aria-label={language === "zh" ? "切换到深色模式" : "Switch to dark mode"}
+        className={`relative z-10 flex h-full flex-1 items-center justify-center gap-1 rounded-full px-1 transition-colors ${theme === "dark" ? "text-[var(--lw-dark-serpent)]" : "text-white/80 hover:text-white"}`}>
+        <Moon size={12} />{labels[1]}
+      </button>
+    </div>
+  );
 }
 
 export function LanguageToggle({ compact = false }: { compact?: boolean }) {
