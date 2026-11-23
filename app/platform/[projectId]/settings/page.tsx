@@ -178,24 +178,6 @@ export default function SettingsPage(){
           </div>
         </section>
 
-        {canEdit&&<section>
-          <div className="mb-4 flex items-end gap-3 border-b border-red-300 pb-3">
-            <div className="platform-icon text-red-600"><Trash2 size={17}/></div>
-            <div><h2 className="text-xl font-semibold">Danger Zone</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Permanently remove this project and all of its associated data.</p></div>
-          </div>
-          <div className="rounded-2xl border border-red-300 bg-[var(--card)] p-5 sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <h3 className="font-semibold text-red-700">Delete Project</h3>
-                <p className="mt-1 max-w-2xl text-sm text-[var(--muted-foreground)]">Permanently deletes tracking history, AI responses, citations, reports, competitors, prompts, API key configurations, project members and project files. This action cannot be undone.</p>
-                <p className="mt-2 text-sm font-semibold">Tracked brand: <span className="font-bold">{brand.brand_name||"…"}</span></p>
-              </div>
-              <button type="button" onClick={()=>{setDeleteConfirmation("");setDeleteError("");setDeleteDialogOpen(true);}} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-red-300 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700">
-                <Trash2 size={15}/>Delete Project
-              </button>
-            </div>
-          </div>
-        </section>}
         <section>
           <div className="mb-4 flex items-end gap-3 border-b border-[var(--line)] pb-3">
             <div className="platform-icon"><Eye size={17}/></div>
@@ -303,6 +285,24 @@ export default function SettingsPage(){
           <div className="mb-4 flex items-end gap-3 border-b border-[var(--line)] pb-3"><div className="platform-icon"><LogOut size={17}/></div><div><h2 className="text-xl font-semibold">Log Out</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Sign out of this account on the current device.</p></div></div>
           <div className="platform-card"><div className="flex flex-wrap items-center justify-between gap-4 p-5 sm:p-6"><div><p className="text-sm font-semibold">Log Out</p><p className="mt-1 text-xs text-[var(--muted-foreground)]">You can sign in again from the login page.</p></div><button type="button" onClick={()=>void logOut()} disabled={loggingOut} className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm font-semibold hover:bg-[var(--soft)] disabled:opacity-50"><LogOut size={15}/>{loggingOut?"Logging Out…":"Log Out"}</button>{logoutError&&<p className="w-full text-xs text-red-600">{logoutError}</p>}</div></div>
         </section>
+        {canEdit&&<section>
+          <div className="mb-4 flex items-end gap-3 border-b border-red-300 pb-3">
+            <div className="platform-icon text-red-600"><Trash2 size={17}/></div>
+            <div><h2 className="text-xl font-semibold">Danger Zone</h2><p className="mt-1 text-sm text-[var(--muted-foreground)]">Permanently remove this project and all of its associated data.</p></div>
+          </div>
+          <div className="rounded-2xl border border-red-300 bg-[var(--card)] p-5 sm:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <h3 className="font-semibold text-red-700">Delete Project</h3>
+                <p className="mt-1 max-w-2xl text-sm text-[var(--muted-foreground)]">Permanently deletes tracking history, AI responses, citations, reports, competitors, prompts, API key configurations, project members and project files. This action cannot be undone.</p>
+                <p className="mt-2 text-sm font-semibold">Tracked brand: <span className="font-bold">{brand.brand_name||"…"}</span></p>
+              </div>
+              <button type="button" onClick={()=>{setDeleteConfirmation("");setDeleteError("");setDeleteDialogOpen(true);}} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-red-300 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700">
+                <Trash2 size={15}/>Delete Project
+              </button>
+            </div>
+          </div>
+        </section>}
         {deleteDialogOpen&&<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/65 p-4">
           <div role="dialog" aria-modal="true" aria-labelledby="delete-project-title" aria-describedby="delete-project-description" className="w-full max-w-lg rounded-2xl border border-red-300 bg-[var(--card)] p-5 shadow-2xl sm:p-6">
             <div className="flex items-start justify-between gap-4">
