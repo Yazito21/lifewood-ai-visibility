@@ -1668,6 +1668,28 @@ Object.assign(zh, {
   " of ": " / "
 });
 
+Object.assign(zh, {
+  "Edit text": "编辑文本",
+  "Edit value": "编辑数值",
+  "Reset to generated": "恢复为自动生成内容",
+  "Showing": "正在显示",
+  "of": " / ",
+  "pages": "个页面",
+  "websites": "个网站",
+  "entries": "条记录",
+  "prompts": "条提示词",
+  "brands": "个品牌",
+  "competitors": "个竞争对手",
+  "Search": "搜索",
+  "Select": "选择",
+  "Choose": "请选择",
+  "No.": "序号",
+  "rows": "行",
+  "per page": "每页",
+  "Search by brand, page name, or URL…": "按品牌、页面名称或网址搜索……",
+  "Search website or source type…": "搜索网站或来源类型……"
+});
+
 const originalText = new WeakMap<Text, { original: string; translated: string }>();
 const originalAttributes = new WeakMap<Element, Map<string, { original: string; translated: string }>>();
 
@@ -1689,11 +1711,13 @@ function translateString(value: string) {
     const showAll = key.match(/^Show all ([\d,]+) (pages|websites|entries|prompts)$/i);
     const showing = key.match(/^Showing ([\d,]+) to ([\d,]+) of ([\d,]+) (pages|websites|entries|prompts)$/i);
     const accountCount = key.match(/^(\d+) accounts$/i);
+    const countLabel = key.match(/^(\\d+) (brands|competitors|prompts|pages|websites|entries)$/i);
     const coverage = key.match(/^Competitor coverage: (\d+) of (\d+) registered direct competitors have verified observations for the selected scope\. Missing or stale observations are excluded\.$/);
     const trackingCategory = key.match(/^Tracking category (\d+) of (\d+): (.+?)[…\.]{1,3}$/);
     if (showAll) translated = "显示全部 " + showAll[1] + " " + ({pages:"个页面",websites:"个网站",entries:"条记录",prompts:"条提示词"} as Record<string,string>)[showAll[2].toLowerCase()];
     else if (showing) translated = "正在显示 " + showing[1] + " 至 " + showing[2] + " 条，共 " + showing[3] + " " + ({pages:"个页面",websites:"个网站",entries:"条记录",prompts:"条提示词"} as Record<string,string>)[showing[4].toLowerCase()];
     else if (accountCount) translated = accountCount[1] + " 个账户";
+    else if (countLabel) translated = countLabel[1] + " " + ({brands:"个品牌",competitors:"个竞争对手",prompts:"条提示词",pages:"个页面",websites:"个网站",entries:"条记录"} as Record<string,string>)[countLabel[2].toLowerCase()];
     else if (coverage) translated = "竞争对手覆盖率：" + coverage[1] + " / " + coverage[2] + " 位已登记的直接竞争对手在所选范围内具有已验证的观察数据。缺失或过期的数据将被排除。";
     else if (trackingCategory) translated = "正在追踪第 " + trackingCategory[1] + " / " + trackingCategory[2] + " 个类别：" + (zh[trackingCategory[3]] ?? trackingCategory[3]) + "……";
   }
