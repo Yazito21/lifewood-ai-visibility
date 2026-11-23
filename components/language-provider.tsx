@@ -1899,6 +1899,80 @@ Object.assign(zh, {
   "No categories are configured for this project.": "此项目尚未配置类别。"
 });
 
+Object.assign(zh, {
+  "This is your home base for seeing how often AI answer engines mention your brand. Use the period buttons to choose how far back to look, then scan the cards for each category's latest rank and score. Scroll down for daily trend charts and the most cited pages. Use Run Tracking to collect fresh results, Export Raw Data to download the answers, and Refresh to reload the numbers.": "这里是查看 AI 回答引擎提及您品牌频率的主要页面。使用时间范围按钮选择回溯时段，然后查看各类别最新的排名和得分卡片。向下滚动可查看每日趋势图表及最常被引用的页面。点击「运行追踪」收集最新结果，点击「导出原始数据」下载回答，或点击「刷新」重新加载数据。",
+  "Dig into the trends behind your numbers here. Pick a period, then choose which categories and answer engines to include, and every chart below updates to show the average across your choices. Charts are grouped into mean visibility, share of voice and average position, followed by a snapshot for each engine. A missing dot means nothing was recorded that day.": "在此深入分析数据背后的趋势。选择时间范围，再选择要纳入分析的类别和 AI 回答引擎，下方所有图表都会更新并显示所选范围的平均值。图表分为平均可见度、声量份额和平均位置，并附有各引擎的数据概览。某一天没有数据点，表示当天没有记录。",
+  "These are the questions we ask the AI answer engines every day to see whether your brand shows up. Search or filter to find a prompt, and tick the boxes to pick several at once. If you have edit access, you can add new prompts or delete the ones you picked, up to a total of 50, with at least 5 prompts for every category.": "这些是我们每天向 AI 回答引擎提出的问题，用于检查您的品牌是否会出现在回答中。您可以搜索或筛选提示词，并勾选多个项目进行批量操作。如果您拥有编辑权限，可以添加新提示词或删除所选提示词。每个项目最多可有 50 条提示词，且每个类别至少需要 5 条。",
+  "Read the actual answers the AI engines gave during tracking runs. Pick a date range, categories and engines in the filter box, then press Show responses. Use the search bar to find a prompt or a phrase, open any answer to read it in full, and press Export Excel to download what you see.": "查看 AI 引擎在追踪过程中实际生成的回答。在筛选区域选择日期范围、类别和 AI 引擎，然后点击「显示回答」。使用搜索栏查找提示词或短语，展开任意回答即可阅读完整内容，点击「导出 Excel」下载当前显示的数据。",
+  "Try out prompts here before they touch your real numbers. Pick up to 25 prompts and an answer engine, run the test, then look through the answers, cited pages and competitor mentions that come back. These are temporary runs. Results live only in this page's current session, are never saved to the database, and are left out of the Dashboard and Analytics, so download the Excel workbook before you leave or refresh the page.": "您可以先在此测试提示词，不会影响正式统计数据。最多选择 25 条提示词及一个 AI 回答引擎，运行测试后即可查看返回的回答、引用页面和竞争对手提及情况。这些测试仅为临时运行，结果只保留在当前页面会话中，不会保存到数据库，也不会纳入仪表板和分析数据。因此，请在离开或刷新页面前下载 Excel 工作簿。",
+  "Pick the prompts you want to test and the answer engine to test them on, then start the run. You can search prompts or filter them by category.": "选择要测试的提示词及相应的 AI 回答引擎，然后开始测试。您可以搜索提示词或按类别筛选。",
+  "Client-ready AI visibility, GEO and SEO audit reports. Each report combines this project's tracking data with a fresh audit of the brand's website and its top competitors. Reports are saved here, can be edited before sharing, and download as a PDF.": "可直接交付客户的 AI 可见度、GEO 和 SEO 审计报告。每份报告结合此项目的追踪数据，以及对品牌网站和主要竞争对手进行的最新审计。报告会保存在此处，分享前可以编辑，并可下载为 PDF。",
+  "See everyone who has an account on the platform, what role each person has and which projects they can open. Use Refresh to reload the list, and the buttons in each row to edit or manage an account.": "查看所有平台账户、每位用户的角色，以及他们可以访问的项目。点击「刷新」重新加载列表，并使用每行中的按钮编辑或管理账户。",
+  "See the people who can open the projects you manage and what role each of them has. Use Refresh to reload the list, and the buttons in each row to edit or manage an account.": "查看可以访问您所管理项目的用户及其角色。点击「刷新」重新加载列表，并使用每行中的按钮编辑或管理账户。",
+  "Create client-ready reports from tracking data. Export PowerPoint to retain the supplied 10-slide template design, artwork and formatting.": "根据追踪数据创建可交付客户的报告。导出 PowerPoint 时会保留所提供的 10 页模板设计、图像及格式。",
+  "Monthly report PowerPoint template": "月度报告 PowerPoint 模板",
+  "Canonical 10-slide template stored in platform storage.": "存储于平台中的标准 10 页报告模板。",
+  "Client information and branding for this project.": "此项目的客户信息和品牌资料。",
+  "Keep the client identity and visual branding together in one compact workspace.": "在同一工作区中集中管理客户身份与视觉品牌资料。",
+  "Close category picker": "关闭类别选择器",
+  "Select all": "全选",
+  "Clear": "清除",
+  "Cancel": "取消",
+  "Close": "关闭",
+  "Select visible": "选择当前可见项",
+  "Clear selection": "清除选择",
+  "Template": "模板",
+  "Bulk upload": "批量上传",
+  "AI prompt assistant": "AI 提示词助手",
+  "Add & next": "添加并继续",
+  "Add prompt": "添加提示词",
+  "Remove access": "移除访问权限",
+  "Refresh": "刷新",
+  "Add account": "添加账户",
+  "Show responses": "显示回答",
+  "Export Excel": "导出 Excel",
+  "Generate a report": "生成报告",
+  "Update template": "更新模板",
+  "Download template": "下载模板",
+  "Client Deliverables": "客户交付成果",
+  "Testing Lab": "测试实验室",
+  "System": "系统",
+  "Project Overview": "项目概览",
+  "Competitive Landscape": "竞争格局",
+  "All categories": "所有类别",
+  "All engines": "所有 AI 引擎",
+  "All": "全部",
+  "Today": "今天",
+  "Last 2 Days": "最近 2 天",
+  "Last 3 Days": "最近 3 天",
+  "Last 7 Days": "最近 7 天",
+  "Last 14 Days": "最近 14 天",
+  "Last 30 Days": "最近 30 天",
+  "Last 90 Days": "最近 90 天",
+  "All Time": "所有时间",
+  "Custom": "自定义",
+  "Period": "时间范围",
+  "Category": "类别",
+  "Engines": "AI 引擎",
+  "Start date": "开始日期",
+  "End date": "结束日期",
+  "to": "至",
+  "See how ": "查看 ",
+  " stacks up against its direct competitors. Use the Period, Category and Engines filters to choose what to compare, and the leaderboard updates to match. You can search for a brand by name and expand the table to see every competitor. Only brands with valid results for your selection are ranked, and ties are broken by visibility, then citations, then name. The arrow beside each rank shows how it moved since the previous period, with green for an improvement and red for a drop.": "与其直接竞争对手相比的表现。使用「时间范围」、「类别」和「AI 引擎」筛选条件选择比较范围，排行榜会自动更新。您可以按品牌名称搜索，也可以展开表格查看所有竞争对手。只有在所选范围内具有有效结果的品牌才会参与排名；若得分相同，则依次按可见度、引用次数和名称排序。每个排名旁的箭头表示与上一时间段相比的变化，绿色代表提升，红色代表下降。",
+  "Each card shows one category's most recent rank against competitors, its visibility score, and how both have changed since the start of the selected period. The previous rank and score are the values from the first tracked day in that period. Rank 1 is the best position, and an up arrow always means an improvement. The Overall card combines all categories.": "每张卡片显示一个类别最近一次相对于竞争对手的排名、可见度得分，以及这两项指标自所选时间范围开始以来的变化。上一次排名和得分取自该时间范围内第一个有追踪记录的日期。排名第 1 为最佳位置，向上箭头始终代表表现改善。「总体」卡片汇总所有类别的数据。",
+  "Search by brand, page name, or URL…": "按品牌、页面名称或网址搜索……",
+  "Search website or source type…": "搜索网站或来源类型……",
+  "Search brand or website…": "搜索品牌或网站……",
+  "Search prompts…": "搜索提示词……",
+  "Search prompts or responses…": "搜索提示词或回答……",
+  "Export Raw Data": "导出原始数据",
+  "Run Tracking": "运行追踪",
+  "Download Excel": "下载 Excel",
+  "Latest Performance": "最新表现",
+  "Visibility Rank": "可见度排名",
+  "Visibility Score": "可见度得分"
+});
+
 const originalText = new WeakMap<Text, { original: string; translated: string }>();
 const originalAttributes = new WeakMap<Element, Map<string, { original: string; translated: string }>>();
 
@@ -1920,6 +1994,9 @@ function translateString(value: string) {
   } else {
     const showAll = key.match(/^Show all ([\d,]+) (pages|websites|entries|prompts)$/i);
     const showing = key.match(/^Showing ([\d,]+) to ([\d,]+) of ([\d,]+) (pages|websites|entries|prompts)$/i);
+    const showingSimple = key.match(/^Showing ([\\d,]+) of ([\\d,]+) (pages|websites|entries|prompts)$/i);
+    const selectedCount = key.match(/^(\\d+) of (\\d+) selected$/i);
+    const runCategories = key.match(/^Run (\\d+) categor(y|ies)$/i);
     const accountCount = key.match(/^(\d+) accounts$/i);
     const countLabel = key.match(/^(\d+) (brands|competitors|prompts|pages|websites|entries)$/i);
     const coverage = key.match(/^Competitor coverage: (\d+) of (\d+) registered direct competitors have verified observations for the selected scope\. Missing or stale observations are excluded\.$/);
@@ -1936,6 +2013,9 @@ function translateString(value: string) {
     const failedStatus = key.match(/^Last recalculation failed: (.+)\. Use Recalculate now to retry\.$/);
     if (showAll) translated = "显示全部 " + showAll[1] + " " + ({pages:"个页面",websites:"个网站",entries:"条记录",prompts:"条提示词"} as Record<string,string>)[showAll[2].toLowerCase()];
     else if (showing) translated = "正在显示 " + showing[1] + " 至 " + showing[2] + " 条，共 " + showing[3] + " " + ({pages:"个页面",websites:"个网站",entries:"条记录",prompts:"条提示词"} as Record<string,string>)[showing[4].toLowerCase()];
+    else if (showingSimple) translated = "正在显示 " + showingSimple[1] + " / " + showingSimple[2] + " " + ({pages:"个页面",websites:"个网站",entries:"条记录",prompts:"条提示词"} as Record<string,string>)[showingSimple[3].toLowerCase()];
+    else if (selectedCount) translated = "已选择 " + selectedCount[1] + " / " + selectedCount[2] + " 项";
+    else if (runCategories) translated = "运行 " + runCategories[1] + " 个类别";
     else if (accountCount) translated = accountCount[1] + " 个账户";
     else if (countLabel) translated = countLabel[1] + " " + ({brands:"个品牌",competitors:"个竞争对手",prompts:"条提示词",pages:"个页面",websites:"个网站",entries:"条记录"} as Record<string,string>)[countLabel[2].toLowerCase()];
     else if (coverage) translated = "竞争对手覆盖率：" + coverage[1] + " / " + coverage[2] + " 位已登记的直接竞争对手在所选范围内具有已验证的观察数据。缺失或过期的数据将被排除。";
