@@ -65,8 +65,14 @@ export function MetricChart({
   if (!valid.length) return <div className={cardClass + " min-h-[19rem]"}><h4 className="text-base font-semibold">{title}</h4>{chartDescription && <p className="mt-1 text-base leading-relaxed text-[var(--muted-foreground)]">{chartDescription}</p>}<div className="flex min-h-[13rem] items-center justify-center text-center text-sm text-[var(--muted-foreground)]">No recorded values for this period. A new tracking run may be needed to populate this metric.</div></div>;
 
   const rawMax = Math.max(0, ...valid.map((point) => point.value));
-  // Rank axes use whole-number ranks starting at 1 (best) at the top.
-  const rankMax = Math.max(2, Math.ceil(rawMax));
+  // Rank axes start at 1 and expand in blocks of ten only when observations exceed the current ceiling.
+  const rankAxisMax = invert ? Math.max(10, Math.ceil(rawMax / 10) * 10) : 0;
+  const rankTickStep = rankAxisMax > 50 ? 5 : rankAxisMax > 20 ? 2 : 1;
+  const rankTicks = invert
+    ? Array.from({ length: Math.floor((rankAxisMax - 1) / rankTickStep) + 1 }, (_, index) => 1 + index * rankTickStep)
+    : [];
+  // Score charts use a fixed scale: labelled every 5.0% with a lighter gridline every 2.5%.
+
   // Score charts use a fixed scale: labelled every 5.0% with a lighter gridline every 2.5%.
   const fixedPercent = format === "percent" && !invert;
   const percentTop = Math.max(5, Math.ceil(rawMax / 5) * 5);
@@ -78,7 +84,7 @@ export function MetricChart({
     const x = left + (index / Math.max(allPoints.length - 1, 1)) * plotW;
     const normalized = Math.max(0, point.value ?? 0) / max;
     const y = invert
-      ? top + ((Math.max(1, point.value ?? 1) - 1) / (rankMax - 1)) * plotH
+      ? top + ((Math.max(1, point.value ?? 1) - 1) / (rankAxisMax - 1)) * plotH
       : top + (1 - normalized) * plotH;
     return { x, y, ...point };
   });
@@ -93,17 +99,14 @@ export function MetricChart({
   }).filter(Boolean).join(" ");
   const active = activeDate === null ? null : points.find((point) => point.label === activeDate && point.value !== null) ?? null;
   const yAxisTitle = format === "percent" ? (title.toLowerCase().includes("share of voice") ? "Share of voice (%)" : "Visibility (%)") : /position/i.test(title) ? "Average position" : /rank/i.test(title) ? "Rank" : "Value";
-  // Whole ranks up to 25, then 1 followed by every 5th rank so large rank populations stay readable.
-  const rankTicks = rankMax <= 25
-    ? Array.from({ length: rankMax }, (_, i) => i + 1)
-    : [1, ...Array.from({ length: Math.floor(rankMax / 5) }, (_, i) => (i + 1) * 5)];
   const tickValues = invert
     ? rankTicks
     : fixedPercent
       ? Array.from({ length: percentTop / 2.5 + 1 }, (_, i) => percentTop - i * 2.5)
       : Array.from({ length: 5 }, (_, i) => max - (max * i) / 4);
   const showMinorLabels = percentTop <= 30;
-  const tickStep = axisDates.length <= 14 ? 1 : axisDates.length <= 31 ? 2 : axisDates.length <= 90 ? 7 : Math.ceil(axisDates.length / 10);
+  const dateSpanDays = axisDates.length;
+  const tickStep = dateSpanDays <= 14 ? 1 : dateSpanDays <= 30 ? 2 : dateSpanDays <= 90 ? 5 : 7;
   const tickIndexes = axisDates.map((_, index) => index).filter((index) =>
     index === 0 || index === axisDates.length - 1 || index % tickStep === 0
   );
@@ -114,7 +117,7 @@ export function MetricChart({
     <div className="mb-4"><h4 className="text-lg font-semibold">{title}</h4>{chartDescription && <p className="mt-1 text-base leading-relaxed text-[var(--muted-foreground)]">{chartDescription}</p>}</div>
     <svg viewBox={"0 0 " + w + " " + h} className="block h-auto w-full overflow-visible" role="img" aria-label={title}>
       {tickValues.map((value, i) => {
-        const y = invert ? top + ((value - 1) / (rankMax - 1)) * plotH : fixedPercent ? top + (1 - value / max) * plotH : top + (i / 4) * plotH;
+        const y = invert ? top + ((value - 1) / (rankAxisMax - 1)) * plotH : fixedPercent ? top + (1 - value / max) * plotH : top + (i / 4) * plotH;
         const minor = fixedPercent && value % 5 !== 0;
         const label = invert ? String(Math.round(value)) : display(value);
         return <g key={i}>
