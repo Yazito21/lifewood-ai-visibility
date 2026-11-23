@@ -142,7 +142,7 @@ export function MetricChart({
             fontSize="22"
             fontWeight="600"
             fill="var(--muted-foreground)"
-          >{dateLabel(date)}</text>
+          >{dateLabel(date, language)}</text>
         </g>;
       })}
       <line x1={left} y1={top} x2={left} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="2.2" />
