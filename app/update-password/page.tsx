@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { LanguageToggle } from "@/components/language-provider";
 
 export default function UpdatePasswordPage(){
   const router=useRouter();
@@ -12,7 +13,8 @@ export default function UpdatePasswordPage(){
   const [done,setDone]=useState(false);
   const [loading,setLoading]=useState(false);
 
-  async function submit(e:FormEvent<HTMLFormElement>){
+  async function submit(e:FormEvent<HTMLFormElement>
+    <div className="absolute right-5 top-5 z-20"><LanguageToggle /></div>){
     e.preventDefault(); setError("");
     if(password.length<8){setError("Password must be at least 8 characters.");return}
     if(password!==confirm){setError("Passwords do not match.");return}
@@ -22,7 +24,7 @@ export default function UpdatePasswordPage(){
     setLoading(false);
   }
 
-  return <main className="flex min-h-screen items-center justify-center bg-[var(--background)] p-6">
+  return <main className="relative flex min-h-screen items-center justify-center bg-[var(--background)] p-6">
     <div className="w-full max-w-md">
       <div className="mb-8">
         <p className="page-eyebrow">Lifewood</p>
