@@ -2145,8 +2145,8 @@ export function ThemeToggle() {
   const labels = language === "zh" ? ["浅色", "深色"] : ["Light", "Dark"];
   return (
     <div role="group" aria-label={language === "zh" ? "外观主题" : "Appearance theme"} data-no-translate="true"
-      className="relative inline-flex h-[30px] w-[104px] shrink-0 items-center rounded-full border border-white/25 bg-white/10 p-[3px] text-[10px] font-semibold shadow-inner">
-      <span aria-hidden="true" className={`pointer-events-none absolute inset-y-[3px] left-[3px] w-[calc(50%-3px)] rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${theme === "dark" ? "translate-x-full" : "translate-x-0"}`} />
+      className="platform-segmented-toggle relative inline-flex h-[30px] w-[104px] shrink-0 items-center rounded-full border border-white/25 bg-[#173d2d] p-[3px] text-[10px] font-semibold shadow-inner">
+      <span aria-hidden="true" className={`platform-segmented-toggle-thumb pointer-events-none absolute inset-y-[3px] left-[3px] w-[calc(50%-3px)] rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${theme === "dark" ? "translate-x-full" : "translate-x-0"}`} />
       <button type="button" onClick={() => setTheme("light")} aria-pressed={theme === "light"}
         aria-label={language === "zh" ? "切换到浅色模式" : "Switch to light mode"}
         data-header-toggle-option="true"
@@ -2176,7 +2176,7 @@ export function LanguageToggle({ compact = false }: { compact?: boolean }) {
     >
       <span
         aria-hidden="true"
-        className={`pointer-events-none absolute inset-y-[3px] left-[3px] w-[calc(50%-3px)] rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${language === "en" ? "translate-x-full" : "translate-x-0"}`}
+        className={`platform-segmented-toggle-thumb pointer-events-none absolute inset-y-[3px] left-[3px] w-[calc(50%-3px)] rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${language === "en" ? "translate-x-full" : "translate-x-0"}`}
       />
       <button
         type="button"
