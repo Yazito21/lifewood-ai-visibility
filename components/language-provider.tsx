@@ -318,6 +318,7 @@ const zh: Record<string, string> = {
   "Delete Project": "删除项目",
   "Delete Project Permanently?": "永久删除项目？",
   "Delete Project Permanently": "永久删除项目",
+  "This action cannot be undone.": "此操作无法撤销。",
   "Permanently remove this project and all of its associated data.": "永久移除此项目及其所有相关数据。",
   "Permanently deletes tracking history, AI responses, citations, reports, competitors, prompts, API key configurations, project members and project files. This action cannot be undone.": "永久删除追踪历史记录、AI 回答、引用、报告、竞争对手、提示词、API 密钥配置、项目成员及项目文件。此操作无法撤销。",
   "All project data will be permanently deleted, including visibility records, AI responses, citations, prompts, competitors, reports, API keys and stored project files. All project members will lose access.": "所有项目数据都将被永久删除，包括可见度记录、AI 回答、引用、提示词、竞争对手、报告、API 密钥及已存储的项目文件。所有项目成员都将失去访问权限。",
