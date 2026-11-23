@@ -1994,9 +1994,9 @@ function translateString(value: string) {
   } else {
     const showAll = key.match(/^Show all ([\d,]+) (pages|websites|entries|prompts)$/i);
     const showing = key.match(/^Showing ([\d,]+) to ([\d,]+) of ([\d,]+) (pages|websites|entries|prompts)$/i);
-    const showingSimple = key.match(/^Showing ([\\d,]+) of ([\\d,]+) (pages|websites|entries|prompts)$/i);
-    const selectedCount = key.match(/^(\\d+) of (\\d+) selected$/i);
-    const runCategories = key.match(/^Run (\\d+) categor(y|ies)$/i);
+    const showingSimple = key.match(/^Showing ([\d,]+) of ([\d,]+) (pages|websites|entries|prompts)$/i);
+    const selectedCount = key.match(/^(\d+) of (\d+) selected$/i);
+    const runCategories = key.match(/^Run (\d+) categor(y|ies)$/i);
     const accountCount = key.match(/^(\d+) accounts$/i);
     const countLabel = key.match(/^(\d+) (brands|competitors|prompts|pages|websites|entries)$/i);
     const coverage = key.match(/^Competitor coverage: (\d+) of (\d+) registered direct competitors have verified observations for the selected scope\. Missing or stale observations are excluded\.$/);
