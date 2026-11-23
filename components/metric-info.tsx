@@ -41,7 +41,7 @@ export function MetricInfo({ metric }: { metric: MetricKey }) {
         <Info size={13} aria-hidden="true" />
       </button>
       {open && (
-        <span id={noteId} role="note" className="absolute left-0 top-6 z-30 block w-72 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 text-left text-xs font-normal leading-relaxed text-[var(--foreground)] shadow-xl">
+        <span id={noteId} role="note" className="absolute left-0 top-6 z-[100] block w-72 max-w-[min(18rem,calc(100vw-2.5rem))] whitespace-normal break-words rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 text-left text-xs font-normal leading-relaxed text-[var(--foreground)] shadow-xl">
           <span className="block font-semibold">{definition.label} <span className="font-normal text-[var(--muted-foreground)]">({METRIC_VERSION})</span></span>
           <span className="mt-1 block">{definition.short}</span>
           {definition.detail.length > 0 && (
