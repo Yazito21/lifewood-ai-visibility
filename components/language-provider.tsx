@@ -2149,12 +2149,12 @@ export function ThemeToggle() {
       <span aria-hidden="true" className={`pointer-events-none absolute inset-y-[3px] left-[3px] w-[calc(50%-3px)] rounded-full bg-white shadow-sm transition-transform duration-200 ease-in-out ${theme === "dark" ? "translate-x-full" : "translate-x-0"}`} />
       <button type="button" onClick={() => setTheme("light")} aria-pressed={theme === "light"}
         aria-label={language === "zh" ? "切换到浅色模式" : "Switch to light mode"}
-        className={`relative z-10 flex h-full flex-1 items-center justify-center gap-1 rounded-full px-1 transition-colors ${theme === "light" ? "text-[var(--lw-dark-serpent)]" : "text-white/80 hover:text-white"}`}>
+        className={`relative z-10 flex h-full flex-1 items-center justify-center gap-1 rounded-full px-1 transition-colors ${theme === "light" ? "!text-[#133020]" : "!text-white/90 hover:!text-white"}`}>
         <Sun size={12} />{labels[0]}
       </button>
       <button type="button" onClick={() => setTheme("dark")} aria-pressed={theme === "dark"}
         aria-label={language === "zh" ? "切换到深色模式" : "Switch to dark mode"}
-        className={`relative z-10 flex h-full flex-1 items-center justify-center gap-1 rounded-full px-1 transition-colors ${theme === "dark" ? "text-[var(--lw-dark-serpent)]" : "text-white/80 hover:text-white"}`}>
+        className={`relative z-10 flex h-full flex-1 items-center justify-center gap-1 rounded-full px-1 transition-colors ${theme === "dark" ? "!text-[#133020]" : "!text-white/90 hover:!text-white"}`}>
         <Moon size={12} />{labels[1]}
       </button>
     </div>
@@ -2181,14 +2181,14 @@ export function LanguageToggle({ compact = false }: { compact?: boolean }) {
         onClick={() => setLanguage("zh")}
         aria-pressed={language === "zh"}
         aria-label={language === "zh" ? "已选择中文" : "Switch to Chinese"}
-        className={`relative z-10 flex h-full flex-1 items-center justify-center rounded-full px-1 transition-colors duration-200 ${language === "zh" ? "text-[var(--lw-dark-serpent)]" : "text-white/80 hover:text-white"}`}
+        className={`relative z-10 flex h-full flex-1 items-center justify-center rounded-full px-1 transition-colors duration-200 ${language === "zh" ? "!text-[#133020]" : "!text-white/90 hover:!text-white"}`}
       >中文</button>
       <button
         type="button"
         onClick={() => setLanguage("en")}
         aria-pressed={language === "en"}
         aria-label={language === "en" ? "English selected" : "切换到英语"}
-        className={`relative z-10 flex h-full flex-1 items-center justify-center rounded-full px-1 transition-colors duration-200 ${language === "en" ? "text-[var(--lw-dark-serpent)]" : "text-white/80 hover:text-white"}`}
+        className={`relative z-10 flex h-full flex-1 items-center justify-center rounded-full px-1 transition-colors duration-200 ${language === "en" ? "!text-[#133020]" : "!text-white/90 hover:!text-white"}`}
       >English</button>
     </div>
   );
