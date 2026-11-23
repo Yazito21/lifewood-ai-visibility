@@ -330,6 +330,7 @@ const zh: Record<string, string> = {
   "This project could not be found. It may already have been deleted.": "找不到此项目。它可能已被删除。",
   "Enter the tracked brand name to confirm deletion.": "请输入追踪品牌名称以确认删除。",
   "Project files could not all be removed. The project database records were not deleted.": "无法删除所有项目文件，因此项目数据库记录未被删除。",
+  "The project database records could not be deleted. Project storage files have already been removed.": "无法删除项目数据库记录。项目存储文件已被移除。",
   "The project could not be deleted. Please try again.": "无法删除项目。请重试。",
   "Permanently delete this project and all of its associated data.": "永久删除此项目及其所有相关数据。",
   "Delete project": "删除项目",
