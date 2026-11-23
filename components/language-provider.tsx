@@ -1842,6 +1842,7 @@ const originalAttributes = new WeakMap<Element, Map<string, { original: string; 
 function translateString(value: string) {
   const key = value.trim();
   if (!key) return value;
+  if (zh[value]) return zh[value];
   if (zh[key]) return value.replace(key, zh[key]);
 
   let translated = key;
