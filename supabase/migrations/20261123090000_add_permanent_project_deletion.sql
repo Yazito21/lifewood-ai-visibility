@@ -52,7 +52,7 @@ begin
     raise exception 'PROJECT_DELETE_NOT_AUTHORIZED' using errcode = '42501';
   end if;
 
-  if p_confirmed_brand_name is distinct from v_brand_name then
+  if pg_catalog.btrim(p_confirmed_brand_name) is distinct from pg_catalog.btrim(v_brand_name) then
     raise exception 'PROJECT_NAME_CONFIRMATION_MISMATCH' using errcode = '22023';
   end if;
 
