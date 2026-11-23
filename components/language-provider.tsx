@@ -1836,6 +1836,18 @@ Object.assign(zh, {
   "Reset to generated": "恢复为自动生成内容"
 });
 
+Object.assign(zh, {
+  "Set new password": "设置新密码",
+  "Choose a new password for your AI Visibility account.": "为您的 AI 可见度账户设置新密码。",
+  "Password updated successfully.": "密码已成功更新。",
+  "Back to sign in": "返回登录页面",
+  "New password": "新密码",
+  "Confirm password": "确认密码",
+  "Reset your password": "重置密码",
+  "Enter your registered email. Password recovery is handled by Supabase Auth.": "请输入您注册时使用的电子邮件。密码恢复由 Supabase Auth 处理。",
+  "If the account exists, a password reset email has been sent.": "如果该账户存在，密码重置邮件已发送。"
+});
+
 const originalText = new WeakMap<Text, { original: string; translated: string }>();
 const originalAttributes = new WeakMap<Element, Map<string, { original: string; translated: string }>>();
 
