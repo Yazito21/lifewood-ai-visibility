@@ -2155,7 +2155,8 @@ export function ThemeToggle() {
       </button>
       <button type="button" onClick={() => setTheme("dark")} aria-pressed={theme === "dark"}
         aria-label={language === "zh" ? "切换到深色模式" : "Switch to dark mode"}
-        className={`relative z-10 flex h-full flex-1 items-center justify-center gap-1 rounded-full px-1 transition-colors ${theme === "dark" ? "!text-[#133020]" : "!text-white/90 hover:!text-white"}`}>
+        data-header-toggle-option="true"
+        className={`platform-header-toggle-option relative z-10 flex h-full flex-1 items-center justify-center gap-1 rounded-full px-1 transition-colors ${theme === "dark" ? "is-selected" : ""}`}>
         <Moon size={12} />{labels[1]}
       </button>
     </div>
