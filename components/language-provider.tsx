@@ -1703,7 +1703,7 @@ function translateString(value: string) {
   if (metricHelp) {
     translated = "如何计算「" + (zh[metricHelp[1]] ?? metricHelp[1]) + "」";
   }
-  const categoryMetric = key.match(/^(Overall|Skin|Mind|Longevity) Daily Visibility (Score|Rank)$/);
+  const categoryMetric = key.match(/^(.+) Daily Visibility (Score|Rank)$/);
   if (categoryMetric) {
     const category = zh[categoryMetric[1]] ?? categoryMetric[1];
     translated = category + (categoryMetric[2] === "Score" ? " 每日可见度得分" : " 每日可见度排名");
