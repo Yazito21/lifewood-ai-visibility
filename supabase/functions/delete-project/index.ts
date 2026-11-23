@@ -31,7 +31,7 @@ function configuredKey(primary: string, jsonEnv: string, legacy?: string) {
 }
 
 async function collectProjectObjects(
-  admin: ReturnType<typeof createClient>,
+  admin: any,
   bucket: string,
   projectId: string,
 ) {
@@ -66,7 +66,7 @@ async function collectProjectObjects(
 }
 
 async function removeProjectStorage(
-  admin: ReturnType<typeof createClient>,
+  admin: any,
   projectId: string,
 ) {
   // These buckets contain project-owned assets. Client report templates are
