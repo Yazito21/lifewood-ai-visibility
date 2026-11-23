@@ -71,6 +71,18 @@ export default function ResponsesPage() {
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string[]>([]);
+  const [trackedBrandName, setTrackedBrandName] = useState("");
+  const [brandMatchTerms, setBrandMatchTerms] = useState<string[]>([]);
+
+  const containsTrackedBrand = useCallback((row: ResponseRow) => {
+    const answer = responseText(row).toLocaleLowerCase();
+    if (!answer.trim()) return false;
+    const terms = [...new Set([row.brand_name_snapshot || trackedBrandName, ...brandMatchTerms].map((term) => term.trim().toLocaleLowerCase()).filter(Boolean))];
+    return terms.some((term) => {
+      const normalized = term.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/$/, "");
+      return answer.includes(normalized);
+    });
+  }, [trackedBrandName, brandMatchTerms]);
 
   const loadResponses = useCallback(async () => {
     if (!fromDate || !toDate || !categories.length || !provider.length) { setError("Choose a date range, at least one category, and at least one AI engine."); return; }
@@ -128,11 +140,13 @@ export default function ResponsesPage() {
     let cancelled = false;
     async function loadFilters() {
       const [{ data: project }, { data: promptRows }] = await Promise.all([
-        supabase.from("projects").select("tracking_market").eq("id", projectId).single(),
+        supabase.from("projects").select("tracking_market,brand_name,brand_domains,brand_terms").eq("id", projectId).single(),
         supabase.from("prompts").select("id,category").eq("project_id", projectId).limit(2000),
       ]);
       if (cancelled) return;
       setTrackingLocation(project?.tracking_market ?? "MY");
+      setTrackedBrandName(String(project?.brand_name ?? ""));
+      setBrandMatchTerms([...(Array.isArray(project?.brand_terms) ? project.brand_terms : []), ...(Array.isArray(project?.brand_domains) ? project.brand_domains : [])].map((term: unknown) => String(term)));
       setCategoryOptions([...new Set((promptRows ?? []).map((p) => String((p as Record<string, unknown>).category ?? "")).filter(Boolean))].sort());
     }
     void loadFilters();
@@ -151,8 +165,27 @@ export default function ResponsesPage() {
     ].some((value) => value.toLowerCase().includes(needle));
   }), [rows, provider, status, search]);
 
-  const grouped = useMemo(() => { const map = new Map<string, ResponseRow[]>(); for (const row of filtered) { const key = row.prompt_id || row.prompt_snapshot || row.id; map.set(key, [...(map.get(key) || []), row]); } return [...map.entries()].map(([key, responses]) => ({key, prompt: responses[0].prompt_snapshot || "Prompt unavailable", responses})); }, [filtered]);
-  const pageCount = Math.max(1, Math.ceil(grouped.length / PAGE_SIZE));
+  const grouped = useMemo(() => {
+    const map = new Map<string, ResponseRow[]>();
+    for (const row of filtered) {
+      const key = row.prompt_id || row.prompt_snapshot || row.id;
+      map.set(key, [...(map.get(key) || []), row]);
+    }
+    return [...map.entries()].map(([key, responses]) => {
+      const readable = responses.filter((row) => row.response_status === "completed" && responseText(row).trim());
+      const availableEngines = new Set(readable.map((row) => row.llm_provider));
+      const mentionedEngines = new Set(readable.filter(containsTrackedBrand).map((row) => row.llm_provider));
+      return {
+        key,
+        prompt: responses[0].prompt_snapshot || "Prompt unavailable",
+        responses,
+        mentionStatus: readable.length === 0 ? "unknown" : mentionedEngines.size > 0 ? "mentioned" : "not-mentioned",
+        mentionedEngineCount: mentionedEngines.size,
+        availableEngineCount: availableEngines.size,
+      };
+    });
+  }, [filtered, containsTrackedBrand]);
+    const pageCount = Math.max(1, Math.ceil(grouped.length / PAGE_SIZE));
   const visible = grouped.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function exportExcel() {
@@ -163,6 +196,7 @@ export default function ResponsesPage() {
       Platform: providerLabels[row.llm_provider] ?? row.llm_provider,
       Region: row.tracking_location ?? "",
       Status: row.response_status,
+      Brand_Mentioned: row.response_status !== "completed" || !responseText(row).trim() ? "Unable to verify" : containsTrackedBrand(row) ? "Yes" : "No",
       Response: responseText(row),
       Raw_Response_JSON: row.raw_response == null ? "" : JSON.stringify(row.raw_response),
       Error: row.error_message ?? "",
@@ -229,8 +263,16 @@ export default function ResponsesPage() {
                   <button type="button" onClick={() => setExpanded(isOpen ? expanded.filter((x) => x !== group.key && !x.startsWith(group.key + "::")) : [...expanded, group.key])} className="flex w-full min-w-0 items-center gap-3 p-4 text-left transition hover:bg-[var(--accent)]/50 sm:px-5">
                     <span className="shrink-0 text-[var(--muted-foreground)]">{isOpen ? <ChevronDown size={17}/> : <ChevronRight size={17}/>}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold text-[var(--foreground)]">{group.prompt}</span>
-                      <span className="mt-1 block text-xs text-[var(--muted-foreground)]">{group.responses.length} engine response{group.responses.length === 1 ? "" : "s"} across {byDate.size} date{byDate.size === 1 ? "" : "s"}</span>
+                      <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
+                        <span>{group.prompt}</span>
+                        <span className={group.mentionStatus === "mentioned" ? "inline-flex shrink-0 items-center rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300" : group.mentionStatus === "not-mentioned" ? "inline-flex shrink-0 items-center rounded-full bg-rose-500/10 px-2 py-1 text-[10px] font-semibold text-rose-700 dark:text-rose-300" : "inline-flex shrink-0 items-center rounded-full bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300"}>
+                          {group.mentionStatus === "mentioned" ? "Mentioned" : group.mentionStatus === "not-mentioned" ? "Not mentioned" : "Unable to verify"}
+                        </span>
+                      </span>
+                      <span className="mt-1 block text-xs text-[var(--muted-foreground)]">
+                        {group.responses.length} engine response{group.responses.length === 1 ? "" : "s"} across {byDate.size} date{byDate.size === 1 ? "" : "s"}
+                        {group.mentionStatus !== "unknown" ? " · " + group.mentionedEngineCount + "/" + group.availableEngineCount + " engines mentioned the tracked brand" : ""}
+                      </span>
                     </span>
                     <span className="shrink-0 text-xs text-[var(--muted-foreground)]">{isOpen ? "Collapse prompt" : "Expand prompt"}</span>
                   </button>
