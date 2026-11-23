@@ -1711,7 +1711,7 @@ function translateString(value: string) {
     const showAll = key.match(/^Show all ([\d,]+) (pages|websites|entries|prompts)$/i);
     const showing = key.match(/^Showing ([\d,]+) to ([\d,]+) of ([\d,]+) (pages|websites|entries|prompts)$/i);
     const accountCount = key.match(/^(\d+) accounts$/i);
-    const countLabel = key.match(/^(\\d+) (brands|competitors|prompts|pages|websites|entries)$/i);
+    const countLabel = key.match(/^(\d+) (brands|competitors|prompts|pages|websites|entries)$/i);
     const coverage = key.match(/^Competitor coverage: (\d+) of (\d+) registered direct competitors have verified observations for the selected scope\. Missing or stale observations are excluded\.$/);
     const trackingCategory = key.match(/^Tracking category (\d+) of (\d+): (.+?)[…\.]{1,3}$/);
     if (showAll) translated = "显示全部 " + showAll[1] + " " + ({pages:"个页面",websites:"个网站",entries:"条记录",prompts:"条提示词"} as Record<string,string>)[showAll[2].toLowerCase()];
