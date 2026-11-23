@@ -102,7 +102,7 @@ Deno.serve(async (req: Request) => {
       return json({ error: "SERVER_CONFIGURATION_ERROR" }, 500);
     }
 
-    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\\s+/i, "").trim();
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
     if (!token) return json({ error: "AUTHORIZATION_TOKEN_MISSING" }, 401);
 
     const userResponse = await fetch(supabaseUrl + "/auth/v1/user", {
