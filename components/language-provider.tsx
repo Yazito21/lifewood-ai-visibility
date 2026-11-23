@@ -1663,6 +1663,11 @@ Object.assign(zh, {
   "Search competitor domains": "搜索竞争对手域名"
 });
 
+Object.assign(zh, {
+  "registered direct competitors have verified observations for the selected scope. Missing or stale observations are excluded.": "位已登记的直接竞争对手在所选范围内具有已验证的观察数据。缺失或过期的数据将被排除。",
+  " of ": " / "
+});
+
 const originalText = new WeakMap<Text, { original: string; translated: string }>();
 const originalAttributes = new WeakMap<Element, Map<string, { original: string; translated: string }>>();
 
@@ -1681,11 +1686,11 @@ function translateString(value: string) {
     const category = zh[categoryMetric[1]] ?? categoryMetric[1];
     translated = category + (categoryMetric[2] === "Score" ? " 每日可见度得分" : " 每日可见度排名");
   } else {
-    const showAll = key.match(/^Show all ([\\d,]+) (pages|websites|entries|prompts)$/i);
-    const showing = key.match(/^Showing ([\\d,]+) to ([\\d,]+) of ([\\d,]+) (pages|websites|entries|prompts)$/i);
-    const accountCount = key.match(/^(\\d+) accounts$/i);
-    const coverage = key.match(/^Competitor coverage: (\\d+) of (\\d+) registered direct competitors have verified observations for the selected scope\\. Missing or stale observations are excluded\\.$/);
-    const trackingCategory = key.match(/^Tracking category (\\d+) of (\\d+): (.+?)[…\\.]{1,3}$/);
+    const showAll = key.match(/^Show all ([\d,]+) (pages|websites|entries|prompts)$/i);
+    const showing = key.match(/^Showing ([\d,]+) to ([\d,]+) of ([\d,]+) (pages|websites|entries|prompts)$/i);
+    const accountCount = key.match(/^(\d+) accounts$/i);
+    const coverage = key.match(/^Competitor coverage: (\d+) of (\d+) registered direct competitors have verified observations for the selected scope\. Missing or stale observations are excluded\.$/);
+    const trackingCategory = key.match(/^Tracking category (\d+) of (\d+): (.+?)[…\.]{1,3}$/);
     if (showAll) translated = "显示全部 " + showAll[1] + " " + ({pages:"个页面",websites:"个网站",entries:"条记录",prompts:"条提示词"} as Record<string,string>)[showAll[2].toLowerCase()];
     else if (showing) translated = "正在显示 " + showing[1] + " 至 " + showing[2] + " 条，共 " + showing[3] + " " + ({pages:"个页面",websites:"个网站",entries:"条记录",prompts:"条提示词"} as Record<string,string>)[showing[4].toLowerCase()];
     else if (accountCount) translated = accountCount[1] + " 个账户";
