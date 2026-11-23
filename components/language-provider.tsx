@@ -1848,6 +1848,57 @@ Object.assign(zh, {
   "If the account exists, a password reset email has been sent.": "如果该账户存在，密码重置邮件已发送。"
 });
 
+Object.assign(zh, {
+  "Set up and look after your project here. Project Settings holds the brand details, competitors and tracking location, AI Answer Engine Connections holds the API keys for each engine, Platform Settings changes how the platform looks, and Account Settings is for your own login details. Change what you need, then press the save button in that section.": "您可以在此设置和管理项目。「项目设置」用于管理品牌资料、竞争对手及追踪地区；「AI 回答引擎连接」用于管理各引擎的 API 密钥；「平台设置」用于调整平台外观；「账户设置」用于管理您的登录资料。完成修改后，请点击相应部分的保存按钮。",
+  "Each card shows one category’s most recent rank against competitors, its visibility score, and how both have changed since the start of the selected period. The previous rank and score are the values from the first tracked day in that period. Rank 1 is the best position, and an up arrow always means an improvement. The Overall card combines all categories.": "每张卡片显示一个类别最近一次相对于竞争对手的排名、可见度得分，以及这两项指标自所选时间范围开始以来的变化。上一次排名和得分取自该时间范围内第一个有追踪记录的日期。排名第 1 为最佳位置，向上箭头始终代表表现改善。「总体」卡片汇总所有类别的数据。",
+  "See which web pages AI answer engines point to when they answer your tracked prompts. Choose a period with the buttons, then browse the tables below, which list pages from your brand, every cited page, and outside websites that were mentioned. Each table has a search box, and you can expand it to see every row.": "查看 AI 回答引擎在回答您所追踪的提示词时引用了哪些网页。使用时间范围按钮进行筛选，然后浏览下方表格，其中列出您品牌的网站页面、所有被引用的页面，以及回答中提及的外部网站。每张表格都设有搜索框，您也可以展开表格以查看所有记录。",
+  "See how ": "查看 ",
+  " stacks up against its direct competitors. Use the Period, Category and Engines filters to choose what to compare, and the leaderboard updates to match. You can search for a brand by name and expand the table to see every competitor. Only brands with valid results for your selection are ranked, and ties are broken by visibility, then citations, then name. The arrow beside each rank shows how it moved since the previous period, with green for an improvement and red for a drop.": "与其直接竞争对手相比的表现。使用「时间范围」、「类别」和「AI 引擎」筛选条件选择比较范围，排行榜会自动更新。您可以按品牌名称搜索，也可以展开表格查看所有竞争对手。只有在所选范围内具有有效结果的品牌才会参与排名；若得分相同，则依次按可见度、引用次数和名称排序。每个排名旁的箭头表示与上一时间段相比的变化，绿色代表提升，红色代表下降。",
+  "Last 2 Days": "最近 2 天",
+  "Last 3 Days": "最近 3 天",
+  "Last 7 Days": "最近 7 天",
+  "Last 14 Days": "最近 14 天",
+  "Last 30 Days": "最近 30 天",
+  "Last 90 Days": "最近 90 天",
+  "All Time": "所有时间",
+  "Today": "今天",
+  "Custom": "自定义",
+  "Period": "时间范围",
+  "Category": "类别",
+  "Engines": "AI 引擎",
+  "Start date": "开始日期",
+  "End date": "结束日期",
+  "to": "至",
+  "Each card shows one category’s most recent rank against competitors, its visibility score, and how both have changed since the start of the selected period.": "每张卡片显示一个类别最近一次相对于竞争对手的排名、可见度得分，以及这两项指标自所选时间范围开始以来的变化。",
+  "Search by brand, page name, or URL…": "按品牌、页面名称或网址搜索……",
+  "Search website or source type…": "搜索网站或来源类型……",
+  "Search brand or website…": "搜索品牌或网站……",
+  "Direct competitor rankings": "直接竞争对手排名",
+  "Your brand and its competitors, ordered from the strongest visibility score to the weakest for the filters you chose.": "根据您选择的筛选条件，按照可见度得分从高到低排列您的品牌及其竞争对手。",
+  "entries including tracked brand": "条记录（包括正在追踪的品牌）",
+  "page": "个页面",
+  "pages": "个页面",
+  "website": "个网站",
+  "websites": "个网站",
+  "entries": "条记录",
+  "Showing ": "正在显示 ",
+  " of ": "，共 ",
+  " pages": " 个页面",
+  " websites": " 个网站",
+  " entries": " 条记录",
+  "Project workspace": "项目工作区",
+  "All projects": "所有项目",
+  "AI Visibility Intelligence Platform": "AI 可见度智能平台",
+  "Toggle project navigation": "切换项目导航",
+  "Search": "搜索",
+  "Close": "关闭",
+  "Show first 10": "显示前 10 条",
+  "Show all ": "显示全部 ",
+  "Selected": "已选择",
+  "selected": "已选择",
+  "No categories are configured for this project.": "此项目尚未配置类别。"
+});
+
 const originalText = new WeakMap<Text, { original: string; translated: string }>();
 const originalAttributes = new WeakMap<Element, Map<string, { original: string; translated: string }>>();
 
@@ -1984,18 +2035,28 @@ export function usePlatformLanguage() {
 export function LanguageToggle({ compact = false }: { compact?: boolean }) {
   const { language, setLanguage } = usePlatformLanguage();
   return (
-    <button
-      type="button"
-      onClick={() => setLanguage(language === "en" ? "zh" : "en")}
-      className={compact
-        ? "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/20"
-        : "inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20"}
-      aria-label={language === "en" ? "切换到中文" : "Switch to English"}
-      title={language === "en" ? "Switch language to Chinese" : "将语言切换为英语"}
+    <div
+      role="group"
+      aria-label="Language"
       data-no-translate="true"
+      className={compact
+        ? "inline-flex h-[30px] w-[104px] shrink-0 items-center rounded-full border border-white/25 bg-white/10 p-[3px] text-[10px] font-semibold shadow-inner"
+        : "inline-flex h-[30px] w-[104px] shrink-0 items-center rounded-full border border-white/25 bg-white/10 p-[3px] text-[10px] font-semibold shadow-inner"}
     >
-      <span aria-hidden="true">文</span>
-      {language === "en" ? "中文" : "English"}
-    </button>
+      <button
+        type="button"
+        onClick={() => setLanguage("zh")}
+        aria-pressed={language === "zh"}
+        aria-label="切换到中文"
+        className={`flex h-full flex-1 items-center justify-center rounded-full px-1 transition-all duration-200 ${language === "zh" ? "bg-white text-[var(--lw-dark-serpent)] shadow-sm" : "text-white/80 hover:bg-white/10 hover:text-white"}`}
+      >中文</button>
+      <button
+        type="button"
+        onClick={() => setLanguage("en")}
+        aria-pressed={language === "en"}
+        aria-label="Switch to English"
+        className={`flex h-full flex-1 items-center justify-center rounded-full px-1 transition-all duration-200 ${language === "en" ? "bg-white text-[var(--lw-dark-serpent)] shadow-sm" : "text-white/80 hover:bg-white/10 hover:text-white"}`}
+      >English</button>
+    </div>
   );
 }
