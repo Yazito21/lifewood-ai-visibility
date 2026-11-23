@@ -790,3 +790,22 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
 .monthly-area-grid section:nth-child(3) { border-top-color: #a5a5a5; }
 .monthly-area-grid section:nth-child(4) { border-top-color: #ffc000; }
 .monthly-area-grid section:nth-child(5) { border-top-color: #70ad47; }
+
+
+/* Header segmented controls: explicit contrast wins over dark-theme button defaults. */
+.platform-header-toggle-option,
+.platform-header-toggle-option:visited {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+}
+.platform-header-toggle-option:hover {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+.platform-header-toggle-option.is-selected,
+.platform-header-toggle-option.is-selected:hover {
+  color: #133020 !important;
+  -webkit-text-fill-color: #133020 !important;
+  opacity: 1 !important;
+}
