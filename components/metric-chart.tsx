@@ -68,11 +68,13 @@ export function MetricChart({
   // Rank axes start at 1 and expand in blocks of ten only when observations exceed the current ceiling.
   const rankAxisMax = invert ? Math.max(10, Math.ceil(rawMax / 10) * 10) : 0;
   const rankTickStep = rankAxisMax > 50 ? 5 : rankAxisMax > 20 ? 2 : 1;
+  // Keep rank 1 as the best-position anchor, then label even ranks or multiples of five.
   const rankTicks = invert
-    ? Array.from({ length: Math.floor((rankAxisMax - 1) / rankTickStep) + 1 }, (_, index) => 1 + index * rankTickStep)
+    ? [1, ...Array.from(
+        { length: Math.floor((rankAxisMax - 1) / rankTickStep) },
+        (_, index) => (index + 1) * rankTickStep
+      )]
     : [];
-  // Score charts use a fixed scale: labelled every 5.0% with a lighter gridline every 2.5%.
-
   // Score charts use a fixed scale: labelled every 5.0% with a lighter gridline every 2.5%.
   const fixedPercent = format === "percent" && !invert;
   const percentTop = Math.max(5, Math.ceil(rawMax / 5) * 5);
@@ -106,7 +108,7 @@ export function MetricChart({
       : Array.from({ length: 5 }, (_, i) => max - (max * i) / 4);
   const showMinorLabels = percentTop <= 30;
   const dateSpanDays = axisDates.length;
-  const tickStep = dateSpanDays <= 14 ? 1 : dateSpanDays <= 30 ? 2 : dateSpanDays <= 90 ? 5 : 7;
+  const tickStep = dateSpanDays <= 14 ? 1 : dateSpanDays <= 30 ? 5 : 7;
   const tickIndexes = axisDates.map((_, index) => index).filter((index) =>
     index === 0 || index === axisDates.length - 1 || index % tickStep === 0
   );
