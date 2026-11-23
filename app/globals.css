@@ -864,3 +864,37 @@ html.dark body button.platform-header-toggle-option.is-selected:hover {
   border-color: #87534d !important;
   color: #ffd6d1 !important;
 }
+
+
+/* Header language/theme controls keep one identical appearance in both themes. */
+.platform-segmented-toggle {
+  background: #173d2d !important;
+  border-color: rgb(255 255 255 / 28%) !important;
+}
+.platform-segmented-toggle-thumb {
+  background: #ffffff !important;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 18%) !important;
+}
+html body button.platform-header-toggle-option,
+html body button.platform-header-toggle-option:visited,
+html body button.platform-header-toggle-option:hover {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+  background: transparent !important;
+}
+html body button.platform-header-toggle-option.is-selected,
+html body button.platform-header-toggle-option.is-selected:hover {
+  color: #133020 !important;
+  -webkit-text-fill-color: #133020 !important;
+  background: transparent !important;
+  opacity: 1 !important;
+}
+.dark .login-logo-container,
+html.dark .login-logo-container {
+  background: #ffffff !important;
+}
+.dark .login-form-card .login-label,
+html.dark .login-form-card .login-label {
+  color: #edf7f1 !important;
+}
