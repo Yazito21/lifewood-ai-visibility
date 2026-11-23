@@ -322,7 +322,6 @@ const zh: Record<string, string> = {
   "Permanently deletes tracking history, AI responses, citations, reports, competitors, prompts, API key configurations, project members and project files. This action cannot be undone.": "永久删除追踪历史记录、AI 回答、引用、报告、竞争对手、提示词、API 密钥配置、项目成员及项目文件。此操作无法撤销。",
   "All project data will be permanently deleted, including visibility records, AI responses, citations, prompts, competitors, reports, API keys and stored project files. All project members will lose access.": "所有项目数据都将被永久删除，包括可见度记录、AI 回答、引用、提示词、竞争对手、报告、API 密钥及已存储的项目文件。所有项目成员都将失去访问权限。",
   "Tracked brand:": "追踪品牌：",
-  "Tracked brand name": "追踪品牌名称",
   "To confirm, type the tracked brand name exactly as shown above.": "请准确输入上方显示的追踪品牌名称以确认删除。",
   "Type the tracked brand name": "输入追踪品牌名称",
   "Deleting project…": "正在删除项目……",
