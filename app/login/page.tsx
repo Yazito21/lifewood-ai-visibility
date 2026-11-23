@@ -51,7 +51,7 @@ export default function LoginPage() {
 
     return (
         <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-[#071b14] px-6 py-12">
-            <div className="absolute right-5 top-5 z-20"><><LanguageToggle /><ThemeToggle /></></div>
+            <div className="absolute right-5 top-5 z-20 flex items-center justify-end gap-2"><LanguageToggle /><ThemeToggle /></div>
             <div
                 aria-hidden="true"
                 className="pointer-events-none absolute inset-0 bg-cover bg-center"
