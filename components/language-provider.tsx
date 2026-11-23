@@ -1796,6 +1796,46 @@ Object.assign(zh, {
   " project": " 项目"
 });
 
+Object.assign(zh, {
+  "prompts after adding": "条提示词（添加后）",
+  "Only ": "仅剩 ",
+  " slot": " 个名额",
+  " slots": " 个名额",
+  " left. Untick ": "。请取消勾选 ",
+  "Add selected (": "添加所选（",
+  "Refresh profile": "刷新品牌资料",
+  "English": "英语",
+  "Malay": "马来语",
+  "Chinese": "中文",
+  "Japanese": "日语",
+  "Korean": "韩语",
+  "Thai": "泰语",
+  "Indonesian": "印度尼西亚语",
+  "Arabic": "阿拉伯语",
+  "Other": "其他",
+  "Signing in…": "正在登录……",
+  "Sign in": "登录",
+  "Authentication is securely handled by Supabase Auth.": "身份验证由 Supabase Auth 安全处理。",
+  "AI visibility · Search intelligence · Tracking insights": "AI 可见度 · 搜索智能分析 · 追踪洞察",
+  "Project setup failed and the incomplete project was removed:": "项目设置失败，未完成的项目已被移除：",
+  "Validated": "已验证",
+  "brand-category rows across": "条品牌-类别记录，涵盖",
+  "categories.": "个类别。",
+  "Open project": "打开项目",
+  "Add selected": "添加所选",
+  "Historical competitor statistics": "历史竞争对手统计数据",
+  "When the competitor list changes, visibility, rank and citation statistics are recalculated for every tracked day from the stored raw responses.": "竞争对手名单变更时，系统会根据已存储的原始回答，重新计算所有追踪日期的可见度、排名及引用统计数据。",
+  "Recalculate now": "立即重新计算",
+  "No recalculation has run for this project yet.": "此项目尚未执行过重新计算。",
+  "Recalculation queued. It starts within about a minute.": "重新计算任务已排队，预计约一分钟内开始。",
+  "unknown error": "未知错误",
+  "Recalculate now to retry.": "点击「立即重新计算」重试。",
+  "Only visibility, share of voice and citation totals are filled automatically. Knowledge assets and external presence, including their descriptions and breakdowns, are manual audit fields.": "系统仅自动填入可见度、声量份额及引用总数。知识资产和外部曝光度（包括其描述及细分数据）需要通过人工审计填写。",
+  "Edit text": "编辑文本",
+  "Edit value": "编辑数值",
+  "Reset to generated": "恢复为自动生成内容"
+});
+
 const originalText = new WeakMap<Text, { original: string; translated: string }>();
 const originalAttributes = new WeakMap<Element, Map<string, { original: string; translated: string }>>();
 
@@ -1820,12 +1860,32 @@ function translateString(value: string) {
     const countLabel = key.match(/^(\d+) (brands|competitors|prompts|pages|websites|entries)$/i);
     const coverage = key.match(/^Competitor coverage: (\d+) of (\d+) registered direct competitors have verified observations for the selected scope\. Missing or stale observations are excluded\.$/);
     const trackingCategory = key.match(/^Tracking category (\d+) of (\d+): (.+?)[…\.]{1,3}$/);
+    const validatedRows = key.match(/^Validated (\d+) brand-category rows across (\d+) categories\.$/);
+    const openProject = key.match(/^Open (.+) project$/);
+    const addedPrompts = key.match(/^(\d+) prompts? added to the library\.$/);
+    const slotWarning = key.match(/^Only (\d+) slots? left\. Untick (\d+)\.$/);
+    const addSelected = key.match(/^Add selected \((\d+)\)$/);
+    const setupFailure = key.match(/^Project setup failed and the incomplete project was removed: (.+)$/);
+    const queuedStatus = key.match(/^Queued on (.+)\. It will start with the next scheduled run\.$/);
+    const runningStatus = key.match(/^Recalculating since (.+)…$/);
+    const completedStatus = key.match(/^Up to date\. Last recalculated on (.+?)( \((\d+) competitors, (\d+) category-days\))?\.$/);
+    const failedStatus = key.match(/^Last recalculation failed: (.+)\. Use Recalculate now to retry\.$/);
     if (showAll) translated = "显示全部 " + showAll[1] + " " + ({pages:"个页面",websites:"个网站",entries:"条记录",prompts:"条提示词"} as Record<string,string>)[showAll[2].toLowerCase()];
     else if (showing) translated = "正在显示 " + showing[1] + " 至 " + showing[2] + " 条，共 " + showing[3] + " " + ({pages:"个页面",websites:"个网站",entries:"条记录",prompts:"条提示词"} as Record<string,string>)[showing[4].toLowerCase()];
     else if (accountCount) translated = accountCount[1] + " 个账户";
     else if (countLabel) translated = countLabel[1] + " " + ({brands:"个品牌",competitors:"个竞争对手",prompts:"条提示词",pages:"个页面",websites:"个网站",entries:"条记录"} as Record<string,string>)[countLabel[2].toLowerCase()];
     else if (coverage) translated = "竞争对手覆盖率：" + coverage[1] + " / " + coverage[2] + " 位已登记的直接竞争对手在所选范围内具有已验证的观察数据。缺失或过期的数据将被排除。";
     else if (trackingCategory) translated = "正在追踪第 " + trackingCategory[1] + " / " + trackingCategory[2] + " 个类别：" + (zh[trackingCategory[3]] ?? trackingCategory[3]) + "……";
+    else if (validatedRows) translated = "已验证 " + validatedRows[1] + " 条品牌-类别记录，涵盖 " + validatedRows[2] + " 个类别。";
+    else if (openProject) translated = "打开 " + openProject[1] + " 项目";
+    else if (addedPrompts) translated = "已将 " + addedPrompts[1] + " 条提示词添加到提示词库。";
+    else if (slotWarning) translated = "仅剩 " + slotWarning[1] + " 个名额。请取消勾选 " + slotWarning[2] + " 条提示词。";
+    else if (addSelected) translated = "添加所选（" + addSelected[1] + "）";
+    else if (setupFailure) translated = "项目设置失败，未完成的项目已被移除：" + setupFailure[1];
+    else if (queuedStatus) translated = "排队时间：" + queuedStatus[1] + "。将在下一次计划运行时开始。";
+    else if (runningStatus) translated = "开始重新计算时间：" + runningStatus[1] + "……";
+    else if (completedStatus) translated = "数据已是最新。上次重新计算时间：" + completedStatus[1] + (completedStatus[3] ? "（" + completedStatus[3] + " 个竞争对手，" + completedStatus[4] + " 个类别-日期）" : "") + "。";
+    else if (failedStatus) translated = "上次重新计算失败：" + failedStatus[1] + "。请点击「立即重新计算」重试。";
   }
   return translated === key ? value : value.replace(key, translated);
 }
