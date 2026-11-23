@@ -367,7 +367,7 @@ export default function DashboardPage() {
             <div className="mt-5 flex justify-end gap-2 border-t border-[var(--border)] pt-4">
               <button type="button" className="platform-btn" onClick={() => setShowCategoryPicker(false)}>Cancel</button>
               <button type="button" className="platform-btn platform-btn-primary disabled:opacity-50" disabled={!selectedCategories.length || tracking} onClick={() => void runTracking()}>
-                <Play size={14} /> Run {selectedCategories.length || ""} category{selectedCategories.length === 1 ? "" : "s"}
+                <Play size={14} /> Run {selectedCategories.length || ""} categor{selectedCategories.length === 1 ? "y" : "ies"}
               </button>
             </div>
           </div>
