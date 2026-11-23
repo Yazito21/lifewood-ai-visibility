@@ -20,7 +20,7 @@ export default function ForgotPasswordPage(){
   }
 
   return <main className="relative flex min-h-screen items-center justify-center bg-[var(--background)] p-6">
-    <div className="absolute right-5 top-5 z-20"><><LanguageToggle /><ThemeToggle /></></div>
+    <div className="absolute right-5 top-5 z-20 flex items-center justify-end gap-2"><LanguageToggle /><ThemeToggle /></div>
     <div className="w-full max-w-md">
       <div className="mb-8">
         <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--lw-castleton-green)]/10 text-[var(--lw-castleton-green)]"><Mail size={22}/></div>
