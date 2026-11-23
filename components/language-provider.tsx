@@ -30,14 +30,6 @@ const zh: Record<string, string> = {
 const originalText = new WeakMap<Text, { original: string; translated: string }>();
 const originalAttributes = new WeakMap<Element, Map<string, { original: string; translated: string }>>();
 
-function translateValue(value: string, language: PlatformLanguage) {
-  const trimmed = value.trim();
-  if (!trimmed) return value;
-  const translated = language === "zh" ? zh[trimmed] : en[trimmed];
-  if (!translated) return value;
-  return value.replace(trimmed, translated);
-}
-
 function translateDocument(language: PlatformLanguage) {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];
