@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Mail } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { LanguageToggle } from "@/components/language-provider";
 
 export default function ForgotPasswordPage(){
   const [email,setEmail]=useState("");
@@ -18,7 +19,7 @@ export default function ForgotPasswordPage(){
     setLoading(false);
   }
 
-  return <main className="flex min-h-screen items-center justify-center bg-[var(--background)] p-6">
+  return <main className="relative flex min-h-screen items-center justify-center bg-[var(--background)] p-6">\n    <div className="absolute right-5 top-5 z-20"><LanguageToggle /></div>
     <div className="w-full max-w-md">
       <div className="mb-8">
         <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--lw-castleton-green)]/10 text-[var(--lw-castleton-green)]"><Mail size={22}/></div>
