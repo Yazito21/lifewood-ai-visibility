@@ -8,7 +8,7 @@ import {
   Menu, Settings, ShieldCheck, UsersRound, X, FlaskConical, MessageSquareText, Trophy, FileText,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { LanguageToggle } from "@/components/language-provider";
+import { LanguageToggle, ThemeToggle } from "@/components/language-provider";
 
 export type ProjectContext = {
   id: string;
@@ -116,7 +116,7 @@ export function ProjectShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             <span className="hidden rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-white/65 lg:inline-flex">Project workspace</span>
-            <LanguageToggle />
+            <><LanguageToggle /><ThemeToggle /></>
           </div>
           <button type="button" onClick={() => setMobileNavOpen((v) => !v)} className="rounded-lg p-2 text-white hover:bg-white/10 sm:hidden" aria-label="Toggle project navigation">
             {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
