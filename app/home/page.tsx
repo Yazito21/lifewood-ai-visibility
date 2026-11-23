@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Download, FileSpreadsheet, FolderKanban, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { LanguageToggle } from "@/components/language-provider";
+import { LanguageToggle, ThemeToggle } from "@/components/language-provider";
 import { DEFAULT_CATEGORY, parseCategoryList, resolveProjectCategories, trackedBrandRows } from "@/lib/project-setup";
 import { downloadBrandTemplate, parseBrandWorkbook, saveProjectBrandRegistry, validateBrandRows, type BrandImportRow } from "@/lib/brand-registry";
 
@@ -137,7 +137,7 @@ export default function ProjectsPage(){
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {role&&<span className="hidden rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium capitalize text-white/70 sm:inline-flex"><ShieldCheck size={13} className="mr-1 inline"/>{role}</span>}
-          <LanguageToggle />
+          <><LanguageToggle /><ThemeToggle /></>
         </div>
       </div>
     </header>
