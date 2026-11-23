@@ -61,7 +61,7 @@ export default function LoginPage() {
 
             <div className="relative z-10 w-full max-w-md">
                 <div className="mb-8 text-center">
-                    <div className="mx-auto mb-7 inline-flex max-w-full items-center justify-center rounded-2xl bg-white px-5 py-3.5 shadow-[0_10px_35px_rgba(0,0,0,0.18)] sm:px-6 sm:py-4">
+                    <div className="mx-auto mb-7 inline-flex max-w-full items-center justify-center login-logo-container rounded-2xl bg-white px-5 py-3.5 shadow-[0_10px_35px_rgba(0,0,0,0.18)] sm:px-6 sm:py-4">
                         <img
                             src="/lifewood-wordmark.svg"
                             alt="Lifewood"
@@ -88,7 +88,7 @@ export default function LoginPage() {
 
                         <label className="block">
                             <div className="flex items-center justify-between gap-4">
-                                <span className="text-sm font-semibold text-[var(--lw-dark-serpent)]">Password</span>
+                                <span className="login-label text-sm font-semibold text-[var(--lw-dark-serpent)]">Password</span>
                                 <Link href="/forgot-password" className="login-link text-xs font-semibold text-[var(--lw-castleton-green)] transition hover:opacity-80">Forgot your password?</Link>
                             </div>
                             <div className="relative mt-2">
