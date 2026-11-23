@@ -2117,7 +2117,7 @@ export function LanguageToggle({ compact = false }: { compact?: boolean }) {
   return (
     <div
       role="group"
-      aria-label="Language"
+      aria-label={language === "zh" ? "语言" : "Language"}
       data-no-translate="true"
       className={compact
         ? "inline-flex h-[30px] w-[104px] shrink-0 items-center rounded-full border border-white/25 bg-white/10 p-[3px] text-[10px] font-semibold shadow-inner"
@@ -2127,14 +2127,14 @@ export function LanguageToggle({ compact = false }: { compact?: boolean }) {
         type="button"
         onClick={() => setLanguage("zh")}
         aria-pressed={language === "zh"}
-        aria-label="切换到中文"
+        aria-label={language === "zh" ? "已选择中文" : "Switch to Chinese"}
         className={`flex h-full flex-1 items-center justify-center rounded-full px-1 transition-all duration-200 ${language === "zh" ? "bg-white text-[var(--lw-dark-serpent)] shadow-sm" : "text-white/80 hover:bg-white/10 hover:text-white"}`}
       >中文</button>
       <button
         type="button"
         onClick={() => setLanguage("en")}
         aria-pressed={language === "en"}
-        aria-label="Switch to English"
+        aria-label={language === "en" ? "English selected" : "切换到英语"}
         className={`flex h-full flex-1 items-center justify-center rounded-full px-1 transition-all duration-200 ${language === "en" ? "bg-white text-[var(--lw-dark-serpent)] shadow-sm" : "text-white/80 hover:bg-white/10 hover:text-white"}`}
       >English</button>
     </div>
