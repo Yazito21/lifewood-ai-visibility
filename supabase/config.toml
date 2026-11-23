@@ -12,6 +12,9 @@ verify_jwt = true
 [functions.llm-key-management]
 verify_jwt = false
 
+[functions.delete-project]
+verify_jwt = false
+
 [functions.visibility-tracking]
 verify_jwt = true
 
