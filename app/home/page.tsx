@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Download, FileSpreadsheet, FolderKanban, LogOut, Plus, ShieldCheck, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { LanguageToggle, ThemeToggle } from "@/components/language-provider";
 import { DEFAULT_CATEGORY, parseCategoryList, resolveProjectCategories, trackedBrandRows } from "@/lib/project-setup";
 import { downloadBrandTemplate, parseBrandWorkbook, saveProjectBrandRegistry, validateBrandRows, type BrandImportRow } from "@/lib/brand-registry";
 
@@ -134,8 +135,9 @@ export default function ProjectsPage(){
             <div className="mt-1 flex items-center gap-2 text-[9px] font-semibold uppercase tracking-[0.18em] text-white/50 sm:text-[10px]"><span className="h-1.5 w-1.5 rounded-full bg-[var(--lw-saffaron)]" /> Cross-project workspace</div>
           </div>
         </div>
-        <div className="hidden shrink-0 items-center gap-2 sm:flex">
-          {role&&<span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium capitalize text-white/70"><ShieldCheck size={13} className="mr-1 inline"/>{role}</span>}
+        <div className="flex shrink-0 items-center gap-2">
+          {role&&<span className="hidden rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium capitalize text-white/70 sm:inline-flex"><ShieldCheck size={13} className="mr-1 inline"/>{role}</span>}
+          <><LanguageToggle /><ThemeToggle /></>
         </div>
       </div>
     </header>

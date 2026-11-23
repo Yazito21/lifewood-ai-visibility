@@ -790,3 +790,127 @@ h1,h2,h3,h4,h5,h6 { text-transform: capitalize; }
 .monthly-area-grid section:nth-child(3) { border-top-color: #a5a5a5; }
 .monthly-area-grid section:nth-child(4) { border-top-color: #ffc000; }
 .monthly-area-grid section:nth-child(5) { border-top-color: #70ad47; }
+
+
+/* Header segmented controls: explicit contrast wins over dark-theme button defaults. */
+.platform-header-toggle-option,
+.platform-header-toggle-option:visited {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+}
+.platform-header-toggle-option:hover {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+.platform-header-toggle-option.is-selected,
+.platform-header-toggle-option.is-selected:hover {
+  color: #133020 !important;
+  -webkit-text-fill-color: #133020 !important;
+  opacity: 1 !important;
+}
+
+
+/* Explicitly isolate header toggle foregrounds from inherited dark-theme button utilities. */
+html.dark body button.platform-header-toggle-option,
+html.dark body button.platform-header-toggle-option:visited,
+html.dark body button.platform-header-toggle-option:hover {
+  color: #f7fbf8 !important;
+  -webkit-text-fill-color: #f7fbf8 !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+html.dark body button.platform-header-toggle-option.is-selected,
+html.dark body button.platform-header-toggle-option.is-selected:hover {
+  color: #123d2d !important;
+  -webkit-text-fill-color: #123d2d !important;
+}
+
+/* Login page dark palette: keep every form control and label readable. */
+.dark .login-form-card {
+  background: #173227 !important;
+  border-color: #355b47 !important;
+  color: #edf7f1 !important;
+}
+.dark .login-form-card .login-label {
+  color: #edf7f1 !important;
+}
+.dark .login-form-card .login-link {
+  color: #91dfb8 !important;
+}
+.dark .login-form-card .login-input {
+  background: #10271e !important;
+  border-color: #426653 !important;
+  color: #f4faf6 !important;
+  -webkit-text-fill-color: #f4faf6 !important;
+}
+.dark .login-form-card .login-input::placeholder {
+  color: #a9beb2 !important;
+  -webkit-text-fill-color: #a9beb2 !important;
+  opacity: 1 !important;
+}
+.dark .login-form-card .login-input:focus {
+  border-color: #73c9a1 !important;
+  box-shadow: 0 0 0 3px rgb(115 201 161 / 18%) !important;
+}
+.dark .login-form-card .login-password-toggle {
+  color: #c4d8cc !important;
+}
+.dark .login-form-card .login-auth-note {
+  color: #b9cfc2 !important;
+}
+.dark .login-form-card [role="alert"] {
+  background: #432824 !important;
+  border-color: #87534d !important;
+  color: #ffd6d1 !important;
+}
+
+
+/* Header language/theme controls keep one identical appearance in both themes. */
+.platform-segmented-toggle {
+  background: #173d2d !important;
+  border-color: rgb(255 255 255 / 28%) !important;
+}
+.platform-segmented-toggle-thumb {
+  background: #ffffff !important;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 18%) !important;
+}
+html body button.platform-header-toggle-option,
+html body button.platform-header-toggle-option:visited,
+html body button.platform-header-toggle-option:hover {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+  background: transparent !important;
+}
+html body button.platform-header-toggle-option.is-selected,
+html body button.platform-header-toggle-option.is-selected:hover {
+  color: #133020 !important;
+  -webkit-text-fill-color: #133020 !important;
+  background: transparent !important;
+  opacity: 1 !important;
+}
+.dark .login-logo-container,
+html.dark .login-logo-container {
+  background: #ffffff !important;
+}
+.dark .login-form-card .login-label,
+html.dark .login-form-card .login-label {
+  color: #edf7f1 !important;
+}
+
+
+/* In dark mode, every toggle label stays white, including the currently selected option. */
+html.dark body button.platform-header-toggle-option,
+html.dark body button.platform-header-toggle-option:visited,
+html.dark body button.platform-header-toggle-option:hover,
+html.dark body button.platform-header-toggle-option.is-selected,
+html.dark body button.platform-header-toggle-option.is-selected:hover {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  opacity: 1 !important;
+}
+html.dark body button.platform-header-toggle-option svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}

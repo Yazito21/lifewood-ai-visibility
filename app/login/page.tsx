@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowRight, Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { LanguageToggle, ThemeToggle } from "@/components/language-provider";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -50,6 +51,7 @@ export default function LoginPage() {
 
     return (
         <main className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-[#071b14] px-6 py-12">
+            <div className="absolute right-5 top-5 z-20 flex items-center justify-end gap-2"><LanguageToggle /><ThemeToggle /></div>
             <div
                 aria-hidden="true"
                 className="pointer-events-none absolute inset-0 bg-cover bg-center"
@@ -59,7 +61,7 @@ export default function LoginPage() {
 
             <div className="relative z-10 w-full max-w-md">
                 <div className="mb-8 text-center">
-                    <div className="mx-auto mb-7 inline-flex max-w-full items-center justify-center rounded-2xl bg-white px-5 py-3.5 shadow-[0_10px_35px_rgba(0,0,0,0.18)] sm:px-6 sm:py-4">
+                    <div className="mx-auto mb-7 inline-flex max-w-full items-center justify-center login-logo-container rounded-2xl bg-white px-5 py-3.5 shadow-[0_10px_35px_rgba(0,0,0,0.18)] sm:px-6 sm:py-4">
                         <img
                             src="/lifewood-wordmark.svg"
                             alt="Lifewood"
@@ -71,7 +73,7 @@ export default function LoginPage() {
                     <p className="mt-3 text-sm leading-6 text-emerald-50/70">Sign in to access your AI visibility projects and tracking workspace.</p>
                 </div>
 
-                <form onSubmit={handleSubmit} className="rounded-3xl border border-emerald-900/20 bg-white p-7 shadow-[0_24px_70px_rgba(0,0,0,0.28)] sm:p-8">
+                <form onSubmit={handleSubmit} className="login-form-card rounded-3xl border border-emerald-900/20 bg-white p-7 shadow-[0_24px_70px_rgba(0,0,0,0.28)] sm:p-8">
                     {error && (
                         <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-700">
                             {error}
@@ -80,18 +82,18 @@ export default function LoginPage() {
 
                     <div className="space-y-5">
                         <label className="block">
-                            <span className="text-sm font-semibold text-[var(--lw-dark-serpent)]">Email</span>
-                            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" required disabled={loading} placeholder="you@company.com" className="mt-2 w-full rounded-xl border border-[var(--lw-border)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--lw-castleton-green)] focus:ring-2 focus:ring-[var(--lw-castleton-green)]/15 disabled:opacity-60" />
+                            <span className="login-label text-sm font-semibold text-[var(--lw-dark-serpent)]">Email</span>
+                            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" required disabled={loading} placeholder="you@company.com" className="login-input mt-2 w-full rounded-xl border border-[var(--lw-border)] bg-white px-4 py-3 text-sm outline-none transition focus:border-[var(--lw-castleton-green)] focus:ring-2 focus:ring-[var(--lw-castleton-green)]/15 disabled:opacity-60" />
                         </label>
 
                         <label className="block">
                             <div className="flex items-center justify-between gap-4">
-                                <span className="text-sm font-semibold text-[var(--lw-dark-serpent)]">Password</span>
-                                <Link href="/forgot-password" className="text-xs font-semibold text-[var(--lw-castleton-green)] transition hover:opacity-80">Forgot your password?</Link>
+                                <span className="login-label text-sm font-semibold text-[var(--lw-dark-serpent)]">Password</span>
+                                <Link href="/forgot-password" className="login-link text-xs font-semibold text-[var(--lw-castleton-green)] transition hover:opacity-80">Forgot your password?</Link>
                             </div>
                             <div className="relative mt-2">
-                                <input value={password} onChange={(e) => setPassword(e.target.value)} type={showPassword ? "text" : "password"} autoComplete="current-password" required disabled={loading} placeholder="••••••••" className="w-full rounded-xl border border-[var(--lw-border)] bg-white px-4 py-3 pr-11 text-sm outline-none transition focus:border-[var(--lw-castleton-green)] focus:ring-2 focus:ring-[var(--lw-castleton-green)]/15 disabled:opacity-60" />
-                                <button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--lw-text-light)]" aria-label={showPassword ? "Hide password" : "Show password"}>
+                                <input value={password} onChange={(e) => setPassword(e.target.value)} type={showPassword ? "text" : "password"} autoComplete="current-password" required disabled={loading} placeholder="••••••••" className="login-input w-full rounded-xl border border-[var(--lw-border)] bg-white px-4 py-3 pr-11 text-sm outline-none transition focus:border-[var(--lw-castleton-green)] focus:ring-2 focus:ring-[var(--lw-castleton-green)]/15 disabled:opacity-60" />
+                                <button type="button" onClick={() => setShowPassword((value) => !value)} className="login-password-toggle absolute right-3 top-1/2 -translate-y-1/2 text-[var(--lw-text-light)]" aria-label={showPassword ? "Hide password" : "Show password"}>
                                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                 </button>
                             </div>
@@ -103,7 +105,7 @@ export default function LoginPage() {
                         {!loading && <ArrowRight size={17} />}
                     </button>
 
-                    <p className="mt-5 text-center text-xs leading-5 text-[var(--lw-text-light)]">Authentication is securely handled by Supabase Auth.</p>
+                    <p className="login-auth-note mt-5 text-center text-xs leading-5 text-[var(--lw-text-light)]">Authentication is securely handled by Supabase Auth.</p>
                 </form>
                 <p className="mt-6 text-center text-[0.65rem] font-medium uppercase tracking-[0.24em] text-emerald-100/35">AI visibility · Search intelligence · Tracking insights</p>
             </div>

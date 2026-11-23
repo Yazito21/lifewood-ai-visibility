@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { usePlatformLanguage } from "@/components/language-provider";
 
 export type ChartPoint = { label: string; value: number | null };
 
-function dateLabel(date: string) {
-  return new Date(date + "T00:00:00+08:00").toLocaleDateString(undefined, { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric" });
+function dateLabel(date: string, language: "en" | "zh") {
+  return new Date(date + "T00:00:00+08:00").toLocaleDateString(language === "zh" ? "zh-CN" : "en-MY", { timeZone: "Asia/Kuala_Lumpur", month: "short", day: "numeric" });
 }
 
 function datesBetween(start: string, end: string) {
@@ -41,6 +42,7 @@ export function MetricChart({
   valueDecimals?: number;
 }) {
   const [activeDate, setActiveDate] = useState<string | null>(null);
+  const { language } = usePlatformLanguage();
   const chartDescription = description ?? (format === "percent"
     ? "Daily visibility score expressed as a percentage of recorded AI responses. Only observed dates are plotted."
     : "Daily visibility rank from recorded results; lower values indicate a stronger position. Only observed dates are plotted.");
@@ -140,7 +142,7 @@ export function MetricChart({
             fontSize="22"
             fontWeight="600"
             fill="var(--muted-foreground)"
-          >{dateLabel(date)}</text>
+          >{dateLabel(date, language)}</text>
         </g>;
       })}
       <line x1={left} y1={top} x2={left} y2={top + plotH} stroke="var(--foreground)" strokeOpacity="0.65" strokeWidth="2.2" />
@@ -148,7 +150,7 @@ export function MetricChart({
       <text x={22} y={top + plotH / 2} transform={"rotate(-90 22 " + (top + plotH / 2) + ")"} textAnchor="middle" fontSize="24" fontWeight="700" fill="var(--foreground)">{yAxisTitle}</text>
       <text x={left + plotW / 2} y={h - 22} textAnchor="middle" fontSize="25" fontWeight="700" fill="var(--foreground)">Tracking date</text>
       <path d={path} fill="none" stroke={tone === "overall" ? "var(--orange)" : "var(--primary)"} strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-      {points.map((point) => point.value === null || !Number.isFinite(point.value) ? null : <circle key={point.label} cx={point.x} cy={point.y} r={activeDate === point.label ? 13 : 11} fill={tone === "overall" ? "var(--orange)" : "var(--primary)"} stroke="var(--card)" strokeWidth="3" tabIndex={0} role="button" aria-label={dateLabel(point.label) + ": " + display(point.value)} onMouseEnter={() => setActiveDate(point.label)} onMouseLeave={() => setActiveDate(null)} onFocus={() => setActiveDate(point.label)} onBlur={() => setActiveDate(null)}><title>{dateLabel(point.label)}: {display(point.value)}</title></circle>)}
+      {points.map((point) => point.value === null || !Number.isFinite(point.value) ? null : <circle key={point.label} cx={point.x} cy={point.y} r={activeDate === point.label ? 13 : 11} fill={tone === "overall" ? "var(--orange)" : "var(--primary)"} stroke="var(--card)" strokeWidth="3" tabIndex={0} role="button" aria-label={dateLabel(point.label, language) + ": " + display(point.value)} onMouseEnter={() => setActiveDate(point.label)} onMouseLeave={() => setActiveDate(null)} onFocus={() => setActiveDate(point.label)} onBlur={() => setActiveDate(null)}><title>{dateLabel(point.label, language)}: {display(point.value)}</title></circle>)}
       {active && active.value !== null && <g pointerEvents="none">
         <line x1={active.x} y1={active.y} x2={active.x} y2={top + plotH} stroke="var(--primary)" strokeOpacity="0.38" strokeDasharray="4 4" />
         <rect x={tooltipX - 54} y={tooltipY - 22} width="108" height="30" rx="8" fill="var(--foreground)" />
