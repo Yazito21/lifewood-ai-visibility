@@ -265,7 +265,7 @@ export default function ResponsesPage() {
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
                         <span>{group.prompt}</span>
-                        <span className={group.mentionStatus === "mentioned" ? "inline-flex shrink-0 items-center rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300" : group.mentionStatus === "not-mentioned" ? "inline-flex shrink-0 items-center rounded-full bg-rose-500/10 px-2 py-1 text-[10px] font-semibold text-rose-700 dark:text-rose-300" : "inline-flex shrink-0 items-center rounded-full bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-700 dark:text-amber-300"}>
+                        <span className={group.mentionStatus === "mentioned" ? "inline-flex shrink-0 items-center rounded-full border border-emerald-700 bg-emerald-100 px-3 py-1.5 text-xs font-bold text-emerald-900 shadow-sm dark:border-emerald-400 dark:bg-emerald-950 dark:text-emerald-100" : group.mentionStatus === "not-mentioned" ? "inline-flex shrink-0 items-center rounded-full border border-rose-700 bg-rose-100 px-3 py-1.5 text-xs font-bold text-rose-900 shadow-sm dark:border-rose-400 dark:bg-rose-950 dark:text-rose-100" : "inline-flex shrink-0 items-center rounded-full border border-amber-700 bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-900 shadow-sm dark:border-amber-400 dark:bg-amber-950 dark:text-amber-100"}>
                           {group.mentionStatus === "mentioned" ? "Mentioned" : group.mentionStatus === "not-mentioned" ? "Not mentioned" : "Unable to verify"}
                         </span>
                       </span>
