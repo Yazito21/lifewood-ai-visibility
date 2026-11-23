@@ -13,8 +13,7 @@ export default function UpdatePasswordPage(){
   const [done,setDone]=useState(false);
   const [loading,setLoading]=useState(false);
 
-  async function submit(e:FormEvent<HTMLFormElement>
-    <div className="absolute right-5 top-5 z-20"><LanguageToggle /></div>){
+  async function submit(e:FormEvent<HTMLFormElement>){
     e.preventDefault(); setError("");
     if(password.length<8){setError("Password must be at least 8 characters.");return}
     if(password!==confirm){setError("Passwords do not match.");return}
@@ -25,6 +24,7 @@ export default function UpdatePasswordPage(){
   }
 
   return <main className="relative flex min-h-screen items-center justify-center bg-[var(--background)] p-6">
+    <div className="absolute right-5 top-5 z-20"><LanguageToggle /></div>
     <div className="w-full max-w-md">
       <div className="mb-8">
         <p className="page-eyebrow">Lifewood</p>
